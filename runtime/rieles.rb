@@ -240,10 +240,62 @@ module Rieles
     ENV.fetch("DATABASE_PATH", "./db/development.sqlite3")
   end
 
-  def self.connect
-    db = Tep::SQLite.new
-    db.open(database_path)
+  class RecordInvalid < StandardError; end
+  class StatementInvalid < StandardError; end
+
+  # One connection per process. Tep::SQLite has a single cursor, which is
+  # fine because relations load every row before handing any out.
+  class Database
+    def initialize
+      @conn = Tep::SQLite.new
+      @open = false
+    end
+
+    def connection
+      return @conn if @open
+      raise StatementInvalid, "can't open " + Rieles.database_path unless @conn.open(Rieles.database_path)
+      @open = true
+      @conn
+    end
+  end
+
+  DB = Database.new
+
+  def self.db = DB.connection
+
+  def self.now = Time.now.strftime("%Y-%m-%d %H:%M:%S")
+
+  # Cache only SQL fixed at build time; tep keeps 64 cached statements.
+  def self.prepare(sql, cached)
+    db = Rieles.db
+    ok = cached ? db.prepare_cached(sql) : db.prepare(sql)
+    raise StatementInvalid, "can't prepare: " + sql unless ok
     db
+  end
+
+  def self.write(db, name, sql, t0)
+    rc = db.step
+    db.finalize
+    Rieles.log.sql(name, sql, t0)
+    raise StatementInvalid, "failed: " + sql if rc < 0
+    true
+  end
+
+  def self.transaction
+    db = Rieles.db
+    db.exec("BEGIN")
+    begin
+      result = yield
+      db.exec("COMMIT")
+      result
+    rescue StandardError => e
+      db.exec("ROLLBACK")
+      raise e
+    end
+  end
+
+  def self.humanize(attribute)
+    attribute.sub(/_id\z/, "").tr("_", " ").capitalize
   end
 
   class Record
@@ -256,10 +308,15 @@ module Rieles
       @full_messages = []
     end
 
-    def add(attribute, message, full_message)
-      @attributes << attribute
+    def add(attribute, message, full_message = "")
+      name = attribute.to_s
+      full = full_message
+      if full.empty?
+        full = name == "base" ? message : Rieles.humanize(name) + " " + message
+      end
+      @attributes << name
       @messages << message
-      @full_messages << full_message
+      @full_messages << full
     end
 
     def clear

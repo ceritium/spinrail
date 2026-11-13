@@ -317,7 +317,7 @@ module Rieles
 
     def schema_setup(schema)
       statements = schema.tables.values.map { |t| "  db.exec(#{t.create_sql.inspect})" }
-      "on_start do\n  db = Rieles.connect\n#{statements.join("\n")}\n  db.close\nend\n"
+      "on_start do\n  db = Rieles.db\n#{statements.join("\n")}\nend\n"
     end
 
     def action_route_block(route)
@@ -354,6 +354,9 @@ module Rieles
           rescue Rieles::RecordNotFound => e
             Rieles.log.error(e)
             c.render_error(404, "Not found")
+          rescue Rieles::RecordInvalid => e
+            Rieles.log.error(e)
+            c.render_error(422, e.message)
           rescue StandardError => e
             Rieles.log.error(e)
             c.render_error(500, "Something went wrong")

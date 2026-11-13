@@ -10,7 +10,8 @@ module Rieles
     case node
     when Prism::StringNode then node.unescaped
     when Prism::SymbolNode then node.unescaped.to_sym
-    when Prism::IntegerNode then node.value
+    when Prism::IntegerNode, Prism::FloatNode then node.value
+    when Prism::NilNode then nil
     when Prism::TrueNode then true
     when Prism::FalseNode then false
     when Prism::ArrayNode then node.elements.map { |e| literal(e) }

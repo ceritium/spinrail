@@ -4,24 +4,25 @@ Roughly in priority order within each section.
 
 ## Models
 
-- [ ] Associations: `belongs_to`, `has_many`, `has_one`.
-- [ ] Own SQLite adapter: `Tep::SQLite` allows one open cursor per process, so a
-      query inside another query's loop (associations in a view) breaks it.
-      Reuse the connection and cache prepared statements.
-- [ ] `count` with `SELECT COUNT(*)` instead of loading every row.
-- [ ] Query API: `find_by`, `first`, `last`, `exists?`, `pluck`, `offset`,
-      `where.not`, string `order`.
-- [ ] `create`, `update(attrs)`, `update!`/`save!` raising on invalid records.
-- [ ] Validations: `numericality`, `format`, `inclusion`, `uniqueness`,
-      custom `validate :method`, validations on integer columns.
-- [ ] Callbacks: `before_save`, `after_create`, ...
-- [ ] Column types: boolean, float/decimal.
+- [x] Associations: `belongs_to` (required unless `optional: true`), `has_many`,
+      `has_one`, `dependent: :destroy | :delete_all`.
+- [x] One connection per process, statements fixed at build time cached.
+- [x] `count` with `SELECT COUNT(*)`.
+- [x] Query API: `find_by`, `first`, `last`, `exists?`, `pluck`, `offset`,
+      `where.not`, string `order`, `delete_all`; relations are immutable.
+- [x] `create`, `create!`, `update`, `update!`, `save!`, `reload`.
+- [x] Validations: `numericality`, `format`, `inclusion`, `exclusion`,
+      `uniqueness`, `length: { is: }`, custom `validate :method`, `message:`.
+- [x] Callbacks: `before/after_validation|save|create|update|destroy`.
+- [x] Column types: boolean (`published?`), float/decimal, `default:`.
+- [ ] Building through associations: `post.comments.create(...)`, `post.comments.new`.
+- [ ] `includes`/eager loading (N+1 today), `joins`, `group`, `update_all`, scopes.
+- [ ] `if:`/`unless:`/`on:` on validations and callbacks; halting with `throw :abort`.
 - [ ] Nullable columns. Today every column is `NOT NULL` with a default,
       because spinel can't hold nil where a String is expected.
 - [ ] Migrations in `db/migrate` with a schema version, instead of
       `CREATE TABLE IF NOT EXISTS` at boot.
 - [ ] `db/seeds.rb`.
-- [ ] Transactions.
 - [ ] PostgreSQL (tep ships an opt-in `PG` battery).
 
 ## Controllers
@@ -65,6 +66,7 @@ Roughly in priority order within each section.
 - [ ] `rieles server` watching files and restarting on change.
 - [ ] Map compile errors in `tmp/rieles/app.rb` back to the source `.rb`/`.erb` line.
 - [ ] Unit tests for the compiler (ERB, lowering, routes, models, static checks).
+- [x] Framework request tests in `test/dummy` (`bin/rieles test` there).
 - [ ] Tests: model tests without HTTP, fixtures, `assert_select` on HTML,
       cookies/session across requests.
 - [ ] CI.

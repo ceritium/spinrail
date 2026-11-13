@@ -77,10 +77,13 @@ Helpers: `get/post/put/patch/delete`, `response`, `follow_redirect!`,
 ## Supported so far
 
 - Routes: `root`, `resources` (with `only:`/`except:`), `get/post/... "path", to:`.
-- Models: columns from `create_table` (`string`, `text`, `integer`, `datetime`,
-  `references`, `timestamps`); `all`, `where`, `order`, `limit`, `count`,
-  `find` (404 when missing), `save`, `destroy`; `validates` with `presence`
-  and `length`; `errors.any?`, `errors.full_messages`, `errors[:attr]`.
+- Models: columns from `create_table` (`string`, `text`, `integer`, `float`,
+  `boolean`, `datetime`, `references`, `timestamps`, `default:`); `all`,
+  `where`, `where.not`, `order`, `limit`, `offset`, `first`, `last`, `count`,
+  `exists?`, `pluck`, `find`, `find_by`, `create`, `save`, `update`,
+  `destroy` and their `!` forms, `transaction`; validations (`presence`,
+  `length`, `numericality`, `format`, `inclusion`, `exclusion`, `uniqueness`,
+  `validate :method`); callbacks; `belongs_to`, `has_many`, `has_one`.
 - Controllers: `params[:x]`, `render :action, status:`, `render plain:`,
   `render view: Views::Stats::Show, exposure: value`,
   `redirect_to path, status:`, implicit render of `controller/action`.

@@ -1,0 +1,4 @@
+/dummy
+/tmp/
+/log/
+/db/*.sqlite3

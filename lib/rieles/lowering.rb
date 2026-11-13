@@ -7,6 +7,7 @@ module Rieles
     def initialize(source)
       @source = source.b
       @edits = []
+      @active = []
     end
 
     def replace(node, &fn)
@@ -20,11 +21,14 @@ module Rieles
     def emit(start = 0, stop = @source.bytesize)
       out = +""
       pos = start
-      inside = @edits.select { |e| e.start >= start && e.stop <= stop && !(e.start == start && e.stop == stop) }
+      # An edit slicing its own node must see the original source, not itself.
+      inside = @edits.select { |e| e.start >= start && e.stop <= stop && !@active.include?(e) }
       inside.sort_by { |e| [e.start, -e.stop] }.each do |e|
         next if e.start < pos
         out << @source.byteslice(pos, e.start - pos)
+        @active.push(e)
         out << e.fn.call.b
+        @active.pop
         pos = e.stop
       end
       out << @source.byteslice(pos, stop - pos)
@@ -58,7 +62,9 @@ module Rieles
     end
 
     def visit_call_node(node)
-      if params_lookup?(node)
+      if query_call?(node)
+        lower_query(node)
+      elsif params_lookup?(node)
         key = Rieles.literal(node.arguments.arguments.first).to_s
         @rw.replace(node) { "param(#{key.inspect})" }
       elsif @ctx.action? && local?(node.receiver, :response) && node.name == :render
@@ -106,6 +112,33 @@ module Rieles
     private
 
     def where(node) = "#{@file}:#{node.location.start_line}"
+
+    # Query forms whose argument types differ from the common case get
+    # their own method: where.not(...), pluck(:col), order("sql"), exists?(...).
+    def query_call?(node)
+      args = node.arguments&.arguments || []
+      case node.name
+      when :not then node.receiver.is_a?(Prism::CallNode) && node.receiver.name == :where && node.receiver.arguments.nil?
+      when :pluck then args.size == 1 && args.first.is_a?(Prism::SymbolNode)
+      when :order then args.size == 1 && args.first.is_a?(Prism::StringNode)
+      when :exists? then args.size == 1
+      else false
+      end
+    end
+
+    def lower_query(node)
+      recv = node.name == :not ? node.receiver.receiver : node.receiver
+      prefix = -> { recv ? "#{@rw.slice(recv)}." : "" }
+      arg = node.arguments.arguments.first
+      @rw.replace(node) do
+        case node.name
+        when :not then "#{prefix.call}where_not(#{@rw.slice(arg)})"
+        when :pluck then "#{prefix.call}pluck_#{arg.unescaped}"
+        when :order then "#{prefix.call}order_sql(#{@rw.slice(arg)})"
+        when :exists? then "#{prefix.call}where(#{@rw.slice(arg)}).exists?"
+        end
+      end
+    end
 
     def record_ivar_write(node)
       fail!(node, "templates can't assign instance variables") if @ctx.view?
