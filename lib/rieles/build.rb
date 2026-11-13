@@ -36,12 +36,19 @@ module Rieles
     # that inherits ApplicationController's response helpers.
     ActionClass = Struct.new(:key, :class_name, :source)
 
+    Filter = Struct.new(:kind, :name, :only, :except) do
+      def applies?(action) = (only.nil? || only.include?(action)) && !except&.include?(action)
+    end
+
+    RescueHandler = Struct.new(:exception, :handler)
+
     # What the lowering records and resolves for one file.
     class Context
       attr_reader :dir, :exposures, :assigns, :responses
 
-      def initialize(build, dir, view:, ivars: true, action: nil)
+      def initialize(build, dir, view:, ivars: true, action: nil, controller: false)
         @build = build
+        @controller = controller
         @dir = dir
         @view = view
         @ivars = ivars
@@ -53,6 +60,7 @@ module Rieles
       end
 
       def view? = @view
+      def controller? = @controller
       def action? = !@action.nil?
       def enter_def(name) = @current = name
 
@@ -149,6 +157,7 @@ module Rieles
         *controllers.map { |name, c| render_methods(name, c) }.compact,
         *@actions.values.map(&:source),
         schema_setup(schema),
+        method_override,
         *routes.routes.map { |r| route_block(r, controllers) },
         not_found_block
       ].join("\n")
@@ -244,16 +253,90 @@ module Rieles
         unless klass&.constant_path&.slice == name
           raise CompileError, "#{rel(file)}: expected class #{name}"
         end
-        actions = (klass.body&.body || []).grep(Prism::DefNode).map { |d| d.name.to_s }
-        ctx = Context.new(self, dir, view: false)
+        ctx = Context.new(self, dir, view: false, controller: true)
         lowered = Lowering.lower(source, rel(file), ctx)
-        controllers[name] = { dir: dir, actions: actions, source: lowered, ctx: ctx, file: rel(file) }
+        controllers[name] = controller_declarations(klass, rel(file)).merge(dir: dir, source: lowered, ctx: ctx, file: rel(file))
       end
       controllers["ApplicationController"] ||= {
-        dir: "application", actions: [], source: "class ApplicationController < Rieles::Controller\nend\n",
-        ctx: Context.new(self, "application", view: false), file: "app/controllers/application_controller.rb"
+        dir: "application", actions: [], filters: [], skips: [], rescues: [], arities: {},
+        source: "class ApplicationController < Rieles::Controller\nend\n",
+        ctx: Context.new(self, "application", view: false, controller: true), file: "app/controllers/application_controller.rb"
       }
-      controllers
+      @controllers = controllers
+    end
+
+    # Public methods are actions; filters and rescue_from are read here
+    # and dropped from the generated class.
+    def controller_declarations(klass, file)
+      decl = { actions: [], filters: [], skips: [], rescues: [], arities: {} }
+      visible = true
+      (klass.body&.body || []).each do |stmt|
+        if stmt.is_a?(Prism::DefNode)
+          decl[:arities][stmt.name.to_s] = stmt.parameters&.requireds&.size.to_i
+          decl[:actions] << stmt.name.to_s if visible && stmt.receiver.nil?
+          next
+        end
+        next unless stmt.is_a?(Prism::CallNode) && stmt.receiver.nil?
+        args, kw = Rieles.call_args(stmt)
+        case stmt.name
+        when :private, :protected
+          visible = false if args.empty?
+          args.each do |a|
+            if a.is_a?(Prism::DefNode)
+              decl[:arities][a.name.to_s] = a.parameters&.requireds&.size.to_i
+            else
+              decl[:actions].delete(Rieles.literal(a).to_s)
+            end
+          end
+        when :public
+          visible = true if args.empty?
+        when :before_action, :after_action, :skip_before_action, :skip_after_action
+          only = kw[:only] && Array(Rieles.literal(kw[:only])).map(&:to_s)
+          except = kw[:except] && Array(Rieles.literal(kw[:except])).map(&:to_s)
+          unknown = kw.keys - %i[only except]
+          raise CompileError, "#{file}:#{stmt.location.start_line}: unsupported option #{unknown.first}" if unknown.any?
+          kind = stmt.name.to_s.delete_prefix("skip_")
+          list = stmt.name.to_s.start_with?("skip_") ? decl[:skips] : decl[:filters]
+          args.each { |a| list << Filter.new(kind, Rieles.literal(a).to_s, only, except) }
+        when :rescue_from
+          handler = kw[:with] or raise CompileError, "#{file}:#{stmt.location.start_line}: rescue_from needs with: :method"
+          args.each { |a| decl[:rescues] << RescueHandler.new(a.slice, Rieles.literal(handler).to_s) }
+        end
+      end
+      decl
+    end
+
+    def app_controller = @controllers.fetch("ApplicationController")
+
+    def filters_for(name, action, kind)
+      own = name == "ApplicationController" ? nil : @controllers[name]
+      chain = app_controller[:filters] + (own ? own[:filters] : [])
+      skips = own ? own[:skips] : []
+      chain.select do |f|
+        f.kind == kind && f.applies?(action) &&
+          skips.none? { |s| s.kind == kind && s.name == f.name && s.applies?(action) }
+      end
+    end
+
+    # Before filters run first, so what they assign counts for the action.
+    def assigns_for(name, action)
+      controller = @controllers[name]
+      assigned = controller[:ctx].assigns[action].to_a
+      filters_for(name, action, "before_action").each do |f|
+        owner = controller[:arities].key?(f.name) ? controller : app_controller
+        assigned |= owner[:ctx].assigns[f.name].to_a
+      end
+      assigned
+    end
+
+    # Later declarations win, the controller's before ApplicationController's.
+    def rescues_for(name)
+      own = name == "ApplicationController" ? [] : @controllers[name][:rescues]
+      (own.reverse + app_controller[:rescues].reverse).map do |r|
+        owner = @controllers[name][:arities].key?(r.handler) ? @controllers[name] : app_controller
+        arity = owner[:arities][r.handler] or raise CompileError, "#{owner[:file]}: rescue_from handler #{r.handler} is not defined"
+        [r.exception, arity.zero? ? r.handler : "#{r.handler}(e)"]
+      end
     end
 
     # Every template an action renders must find each exposure assigned in
@@ -263,7 +346,7 @@ module Rieles
         c[:ctx].responses.each do |action, responses|
           responses.each do |r|
             next unless r.template
-            missing = @templates[r.template].exposures - c[:ctx].assigns[action].to_a
+            missing = @templates[r.template].exposures - assigns_for(name, action)
             next if missing.empty?
             raise CompileError, "#{r.where}: #{r.template} reads #{missing.map { |m| "@#{m}" }.join(', ')}, " \
                                 "which #{name}##{action} doesn't assign"
@@ -277,10 +360,11 @@ module Rieles
     def implicit_template(controller, action)
       t = @templates["#{controller[:dir]}/#{action}"]
       return nil unless t&.page?
-      return t if (t.exposures - controller[:ctx].assigns[action].to_a).empty?
+      name = @controllers.key(controller)
+      missing = t.exposures - assigns_for(name, action)
+      return t if missing.empty?
       return nil if controller[:ctx].responses[action].any?
-      raise CompileError, "#{controller[:file]}: #{t.key} reads " \
-                          "#{(t.exposures - controller[:ctx].assigns[action].to_a).map { |m| "@#{m}" }.join(', ')}, " \
+      raise CompileError, "#{controller[:file]}: #{t.key} reads #{missing.map { |m| "@#{m}" }.join(', ')}, " \
                           "which ##{action} doesn't assign"
     end
 
@@ -315,6 +399,18 @@ module Rieles
       RUBY
     end
 
+    # HTML forms can only POST; `_method` picks PATCH, PUT or DELETE.
+    def method_override
+      <<~RUBY
+        before do
+          if req.verb == "POST"
+            override = Tep.param(req, "_method").upcase
+            req.verb = override if override == "PATCH" || override == "PUT" || override == "DELETE"
+          end
+        end
+      RUBY
+    end
+
     def schema_setup(schema)
       statements = schema.tables.values.map { |t| "  db.exec(#{t.create_sql.inspect})" }
       "on_start do\n  db = Rieles.db\n#{statements.join("\n")}\nend\n"
@@ -323,8 +419,8 @@ module Rieles
     def action_route_block(route)
       action = @actions[route.action] or
         raise CompileError, "config/routes.rb: no app/actions/#{route.action.tr('.', '/')}.rb for #{Rieles.class_name(route.action, "Actions")}"
-      dispatch(route, action.class_name, "handle(req, res)", Rieles.class_name(route.action, "Actions"),
-               "c.render_error(500, \"#{action.class_name} didn't respond\") unless c.performed?")
+      dispatch(route, action.class_name, "ApplicationController", "handle(@req, @res)", Rieles.class_name(route.action, "Actions"),
+               "render_error(500, \"#{action.class_name} didn't respond\") unless performed?")
     end
 
     def route_block(route, controllers)
@@ -336,21 +432,45 @@ module Rieles
       end
       template = implicit_template(controller, route.action)
       implicit = if template
-                   "c.#{template.render_method}(200) unless c.performed?"
+                   "#{template.render_method}(200) unless performed?"
                  else
-                   "c.render_error(500, \"No template for #{route.controller}/#{route.action}\") unless c.performed?"
+                   "render_error(500, \"No template for #{route.controller}/#{route.action}\") unless performed?"
                  end
-      dispatch(route, klass, route.action, "#{klass}##{route.action}", implicit)
+      dispatch(route, klass, klass, route.action, "#{klass}##{route.action}", implicit)
     end
 
-    def dispatch(route, klass, call, label, fallback)
+    # The chain runs inside the controller, where private filters and
+    # handlers are callable (spinel enforces visibility).
+    def dispatch(route, klass, controller, call, label, fallback)
+      action = call.sub(/\(.*/, "")
+      runner = "rieles_#{route.verb}_#{route.path.gsub(/[^a-z0-9]+/i, '_')}"
+      befores = filters_for(controller, action, "before_action").map(&:name)
+      afters = filters_for(controller, action, "after_action").map(&:name)
+      steps = befores.each_with_index.map { |f, i| i.zero? ? f : "#{f} unless performed?" }
+      body = [call, fallback, *afters]
+      body = ["unless performed?", *body.map { |l| "  #{l}" }, "end"] if befores.any?
+      rescues = rescues_for(controller)
+      handler_defs = rescues.each_with_index.map do |(_, handler), i|
+        "def #{runner}_rescue#{i}(e)\n  #{handler}\n  render_error(500, \"Something went wrong\") unless performed?\nend"
+      end
+      handlers = rescues.each_with_index.map do |(exception, _), i|
+        "rescue #{exception} => e\n  Rieles.log.error(e)\n  c.#{runner}_rescue#{i}(e)"
+      end
       <<~RUBY
+        class #{klass}
+          def #{runner}
+        #{(steps + body).map { |l| "    #{l}" }.join("\n")}
+          end
+
+        #{handler_defs.join("\n\n").gsub(/^(?=.)/, "  ")}
+        end
+
         #{route.verb} #{route.path.inspect} do
           Rieles.log.start(req.verb, req.path, #{label.inspect}, req.params)
           c = #{klass}.new(req, res)
           begin
-            c.#{call}
-            #{fallback}
+            c.#{runner}
+        #{handlers.join("\n").gsub(/^(?=.)/, "  ")}
           rescue Rieles::RecordNotFound => e
             Rieles.log.error(e)
             c.render_error(404, "Not found")

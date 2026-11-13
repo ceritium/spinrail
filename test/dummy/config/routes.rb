@@ -5,4 +5,11 @@ Rieles.routes.draw do
   get "/models/associations", to: "models#associations"
   get "/models/transaction", to: "models#transaction"
   get "/models/bang", to: "models#bang"
+
+  get "/widgets", to: "widgets#index"
+  get "/widgets/:id", to: "widgets#show"
+  patch "/widgets/:id", to: "widgets#update"
+  delete "/widgets/:id", to: "widgets#destroy"
+  get "/open", to: "widgets#open"
+  get "/boom", to: "widgets#boom"
 end

@@ -158,6 +158,8 @@ module Rieles
     def select_sql = "SELECT #{columns.map(&:name).join(', ')} FROM #{@table.name}"
     def relation = "#{@name}Relation"
 
+    def json_fields = columns.map { |c| "#{%("#{c.name}":).inspect} + @#{c.name}.to_json" }.join(%( + "," + ))
+
     def insert_sql
       names = writable.map(&:name) + columns.select(&:timestamp?).map(&:name)
       "INSERT INTO #{@table.name} (#{names.join(', ')}) VALUES (#{(['?'] * names.size).join(', ')})"
@@ -351,6 +353,10 @@ module Rieles
           def update!(#{update_kwargs})
         #{indent(assign, 4)}
             save!
+          end
+
+          def to_json
+            "{" + #{json_fields} + "}"
           end
 
           def reload
@@ -584,6 +590,7 @@ module Rieles
             to_a.each_with_index { |record, i| yield record, i }
           end
 
+          def to_json = to_a.to_json
           def size = count
           def length = to_a.length
           def empty? = !exists?

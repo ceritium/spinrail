@@ -27,16 +27,19 @@ Roughly in priority order within each section.
 
 ## Controllers
 
-- [ ] `before_action` / `after_action` / `skip_before_action`.
+- [x] `before_action` / `after_action` / `skip_*` with `only:`/`except:`;
+      what before filters assign counts for the template check.
 - [ ] Strong params, `params.require(:entry).permit(...)`, and nested form
       names (`entry[name]`).
 - [ ] Sessions and cookies (tep has signed cookie sessions).
 - [ ] `flash` / `notice:` / `alert:`.
 - [ ] CSRF protection (authenticity token).
-- [ ] `render json:`, `head :no_content`, `respond_to`.
-- [ ] PATCH/PUT/DELETE from HTML forms (`_method` override).
-- [ ] Only public methods are actions (ignore methods after `private`).
-- [ ] `rescue_from`.
+- [x] `render json:` (literals encoded at build time, models and relations
+      have `to_json`), `head :no_content`.
+- [ ] `respond_to` / formats.
+- [x] PATCH/PUT/DELETE from HTML forms (`_method` override).
+- [x] Only public methods are actions.
+- [x] `rescue_from`; `RecordInvalid` answers 422.
 
 ## Views
 

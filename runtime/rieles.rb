@@ -39,6 +39,36 @@ module Tep
   end
 end
 
+# `render json:` calls to_json on whatever it gets; models and relations
+# generate theirs.
+class String
+  def to_json = Tep::Json.quote(self)
+end
+
+class Integer
+  def to_json = to_s
+end
+
+class Float
+  def to_json = to_s
+end
+
+class TrueClass
+  def to_json = "true"
+end
+
+class FalseClass
+  def to_json = "false"
+end
+
+class NilClass
+  def to_json = "null"
+end
+
+class Array
+  def to_json = "[" + map { |item| item.to_json }.join(",") + "]"
+end
+
 module Rieles
   class RecordNotFound < StandardError; end
 
@@ -365,6 +395,9 @@ module Rieles
       @performed
     end
 
+    def request = @req
+    def response = @res
+
     def response_body
       @response_body
     end
@@ -386,6 +419,15 @@ module Rieles
       @res.set_status(status)
       @response_body = html
       @performed = true
+    end
+
+    def render_json(text, status)
+      @res.headers["Content-Type"] = "application/json"
+      render_html(text, status)
+    end
+
+    def head(status)
+      render_html("", status)
     end
 
     def render_plain(text, status)

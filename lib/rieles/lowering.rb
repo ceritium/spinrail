@@ -48,6 +48,11 @@ module Rieles
       internal_server_error: 500
     }.freeze
 
+    # Class-level controller declarations; the build reads them, the
+    # generated class doesn't need them.
+    CONTROLLER_DSL = %i[before_action after_action skip_before_action skip_after_action
+                        rescue_from protect_from_forgery skip_forgery_protection].freeze
+
     def self.lower(source, file, context)
       root = Rieles.parse(source, file)
       rewriter = SourceRewriter.new(source)
@@ -71,10 +76,13 @@ module Rieles
         lower_action_render(node)
       elsif @ctx.action? && local?(node.receiver, :response) && node.name == :redirect_to
         lower_redirect(node)
+      elsif node.receiver.nil? && @ctx.controller? && CONTROLLER_DSL.include?(node.name)
+        @rw.replace(node) { "" }
       elsif node.receiver.nil? && node.block.nil?
         case node.name
         when :render then lower_render(node)
         when :redirect_to then lower_redirect(node)
+        when :head then lower_head(node)
         end
       end
       super
@@ -196,6 +204,9 @@ module Rieles
           values = view.exposures.map { |e| @rw.slice(exposures.fetch(e.to_sym)) }
           "render_view(ApplicationView.new.#{view.method_name}(#{values.join(', ')}), #{status})"
         end
+      elsif kw[:json]
+        @ctx.record_response(nil, where(node))
+        @rw.replace(node) { "render_json(#{json(kw[:json])}, #{status})" }
       elsif kw[:plain]
         @ctx.record_response(nil, where(node))
         @rw.replace(node) { "render_plain(#{@rw.slice(kw[:plain])}, #{status})" }
@@ -207,6 +218,31 @@ module Rieles
         @rw.replace(node) { "#{method}(#{status})" }
       else
         fail!(node, "unsupported render: `#{node.slice}`")
+      end
+    end
+
+    def lower_head(node)
+      args, = Rieles.call_args(node)
+      fail!(node, "head takes a status") unless args.size == 1
+      @ctx.record_response(nil, where(node))
+      code = status_code(args.first)
+      @rw.replace(node) { "head(#{code})" }
+    end
+
+    # Hash and array literals are encoded at build time; anything else
+    # answers to_json (models, relations, core values; see the runtime).
+    def json(node)
+      case node
+      when Prism::HashNode, Prism::KeywordHashNode
+        pairs = node.elements.map do |a|
+          fail!(a, "JSON keys must be symbols or strings") unless a.key.is_a?(Prism::SymbolNode) || a.key.is_a?(Prism::StringNode)
+          "#{"#{a.key.unescaped.to_json}:".inspect} + #{json(a.value)}"
+        end
+        pairs.empty? ? '"{}"' : "\"{\" + #{pairs.join(' + "," + ')} + \"}\""
+      when Prism::ArrayNode
+        items = node.elements.map { |e| json(e) }
+        items.empty? ? '"[]"' : "\"[\" + #{items.join(' + "," + ')} + \"]\""
+      else "(#{@rw.slice(node)}).to_json"
       end
     end
 
