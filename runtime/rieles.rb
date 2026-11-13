@@ -105,6 +105,14 @@ module Rieles
     def h(value)
       Tep.h(value)
     end
+  end
+
+  # Templates are methods on ApplicationView; they see only what they are
+  # passed, never controller state.
+  class View
+    def h(value)
+      Tep.h(value)
+    end
 
     def pluralize(count, singular)
       count.to_s + " " + (count == 1 ? singular : singular + "s")

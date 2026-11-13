@@ -9,10 +9,15 @@ computed names, autoloading), so `rieles build` resolves the conventions at
 build time and writes plain Ruby: one file that `tep build` and spinel
 compile into a single native binary.
 
+Internally each endpoint is action → view with explicit exposures → template.
+A controller action is lowered to that: the @ivars its template reads become
+the template's parameters, and the build fails if the action doesn't assign
+them, instead of rendering nil.
+
 ```
 app/models/entry.rb          → Entry + EntryRelation, typed from db/schema.rb
 app/controllers/*.rb         → same classes; render/redirect_to/params lowered
-app/views/**/*.html.erb      → methods on the controller (typed ivars, loops)
+app/views/**/*.html.erb      → ApplicationView methods; @ivars become parameters
 config/routes.rb             → tep routes + path helpers
 db/schema.rb                 → CREATE TABLE IF NOT EXISTS at boot
 app/assets/*                 → embedded in the binary

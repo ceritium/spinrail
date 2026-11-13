@@ -47,6 +47,12 @@ Roughly in priority order within each section.
 - [ ] Layout per controller and `layout` option on `render`.
 - [ ] Trim the blank line left after `<%= render ... %>` in loops.
 
+## Actions and views
+
+- [ ] Hanami-style endpoints alongside controllers: one action class per
+      endpoint, view classes with `expose`, routed with `to: Entries::Show`.
+      Both lower to the same action → view → template model.
+
 ## Routing
 
 - [ ] Nested resources, `member`/`collection`, `namespace`, singular `resource`.

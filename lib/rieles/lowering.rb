@@ -33,7 +33,9 @@ module Rieles
   end
 
   # Rewrites Rails idioms that need runtime metaprogramming into plain calls:
-  # params[:x], render, redirect_to.
+  # params[:x], render, redirect_to. In templates, @ivar reads become the
+  # template's exposures (explicit parameters); in controllers, ivar writes
+  # and renders are recorded per action so the build can check them.
   class Lowering < Prism::Visitor
     STATUS = {
       ok: 200, created: 201, no_content: 204, moved_permanently: 301, found: 302,
@@ -68,7 +70,43 @@ module Rieles
       super
     end
 
+    def visit_def_node(node)
+      @ctx.enter_def(node.name.to_s)
+      super
+    end
+
+    def visit_instance_variable_read_node(node)
+      if @ctx.view?
+        name = node.name.to_s.delete_prefix("@")
+        @ctx.expose(name, where(node))
+        @rw.replace(node) { "iv_#{name}" }
+      end
+      super
+    end
+
+    def visit_instance_variable_write_node(node)
+      record_ivar_write(node)
+      super
+    end
+
+    def visit_instance_variable_or_write_node(node)
+      record_ivar_write(node)
+      super
+    end
+
+    def visit_instance_variable_operator_write_node(node)
+      record_ivar_write(node)
+      super
+    end
+
     private
+
+    def where(node) = "#{@file}:#{node.location.start_line}"
+
+    def record_ivar_write(node)
+      fail!(node, "templates can't assign instance variables") if @ctx.view?
+      @ctx.assign(node.name.to_s.delete_prefix("@"))
+    end
 
     def params_lookup?(node)
       return false unless node.name == :[] && node.arguments&.arguments&.size == 1
@@ -80,6 +118,7 @@ module Rieles
       args, kw = Rieles.call_args(node)
       fail!(node, "redirect_to needs a location") if args.empty?
       status = kw[:status] ? status_code(kw[:status]) : 302
+      @ctx.record_response(nil, where(node))
       @rw.replace(node) { "redirect_to(#{@rw.slice(args.first)}, #{status})" }
     end
 
@@ -91,12 +130,14 @@ module Rieles
     def lower_template(node, args, kw)
       status = kw[:status] ? status_code(kw[:status]) : 200
       if kw[:plain]
+        @ctx.record_response(nil, where(node))
         @rw.replace(node) { "render_plain(#{@rw.slice(kw[:plain])}, #{status})" }
       elsif args.first
         name = Rieles.literal(args.first).to_s
         template = name.include?("/") ? name : "#{@ctx.dir}/#{name}"
-        method = @ctx.template_method(template) or fail!(node, "missing template app/views/#{template}.html.erb")
-        @rw.replace(node) { "render_view(#{method}, #{status})" }
+        method = @ctx.render_method(template) or fail!(node, "missing template app/views/#{template}.html.erb")
+        @ctx.record_response(template, where(node))
+        @rw.replace(node) { "#{method}(#{status})" }
       else
         fail!(node, "unsupported render: `#{node.slice}`")
       end
