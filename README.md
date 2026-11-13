@@ -43,7 +43,4 @@ when something doesn't compile.
 
 ## Not yet
 
-Associations, `before_action`, strong params (forms use flat field names),
-flash and sessions, CSRF protection, PATCH/DELETE from HTML forms,
-migrations, generators, i18n, nil columns (every column is `NOT NULL` with
-a default, since spinel can't put nil where a String is expected).
+See [TODO.md](TODO.md).
