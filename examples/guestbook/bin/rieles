@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+# Runs rieles against this app from any directory.
+require_relative "../../../lib/rieles"
+
+Rieles::CLI.new(ARGV, File.expand_path("..", __dir__)).run

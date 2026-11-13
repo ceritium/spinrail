@@ -61,7 +61,8 @@ Roughly in priority order within each section.
 ## Tooling
 
 - [ ] `rieles new` (app skeleton) and `rieles generate model|controller|scaffold`.
-- [ ] `rieles server`: rebuild and restart on file changes.
+- [x] `rieles server` rebuilds when sources changed.
+- [ ] `rieles server` watching files and restarting on change.
 - [ ] Map compile errors in `tmp/rieles/app.rb` back to the source `.rb`/`.erb` line.
 - [ ] Tests for the compiler, and request tests for apps.
 - [ ] CI.

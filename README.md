@@ -43,8 +43,9 @@ checks that `render` passes exactly the view's exposures.
 
 ```sh
 cd examples/guestbook
-make run        # http://localhost:3000; first run builds ../../vendor (~1 min)
-make routes
+bin/rieles server   # http://localhost:3000; first run builds ../../../vendor (~1 min)
+bin/rieles routes
+bin/rieles          # all commands: server, build, routes, clean, setup
 ```
 
 The generated source lands in `tmp/rieles/app.rb`, which is the place to look
