@@ -1,0 +1,14 @@
+<p><a href="<%= root_path %>">← All messages</a></p>
+<header>
+  <h1>Stats</h1>
+  <p class="lead"><%= pluralize(count, "message") %> so far.</p>
+</header>
+
+<% if latest.any? %>
+  <h2>Latest</h2>
+  <ul class="entries">
+    <% latest.each do |entry| %>
+      <li><p class="meta"><a href="<%= entry_path(entry) %>"><%= entry.name %></a> · <%= entry.created_at %></p></li>
+    <% end %>
+  </ul>
+<% end %>

@@ -23,6 +23,20 @@ db/schema.rb                 → CREATE TABLE IF NOT EXISTS at boot
 app/assets/*                 → embedded in the binary
 ```
 
+Endpoints can also be written Hanami-style, mixed freely with controllers:
+
+```
+get "/stats", to: "stats.show"
+
+app/actions/stats/show.rb             class Actions::Stats::Show < Rieles::Action
+                                        def handle(request, response)
+                                          response.render(view, count: Entry.count, ...)
+app/views/stats/show.rb               class Views::Stats::Show < Rieles::View; expose :count, ...
+app/templates/stats/show.html.erb     reads `count` as a local
+```
+
+The build checks that `render` passes exactly the view's exposures.
+
 ## Try it
 
 ```sh

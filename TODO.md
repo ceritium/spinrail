@@ -49,9 +49,9 @@ Roughly in priority order within each section.
 
 ## Actions and views
 
-- [ ] Hanami-style endpoints alongside controllers: one action class per
-      endpoint, view classes with `expose`, routed with `to: Entries::Show`.
-      Both lower to the same action → view → template model.
+- [x] Hanami-style endpoints alongside controllers (`to: "stats.show"`).
+- [ ] View classes with methods and computed exposures (`expose :x do ... end`).
+- [ ] `response.status=`, `request.params` beyond `[:key]`, `halt`.
 
 ## Routing
 

@@ -61,6 +61,10 @@ module Rieles
       if params_lookup?(node)
         key = Rieles.literal(node.arguments.arguments.first).to_s
         @rw.replace(node) { "param(#{key.inspect})" }
+      elsif @ctx.action? && local?(node.receiver, :response) && node.name == :render
+        lower_action_render(node)
+      elsif @ctx.action? && local?(node.receiver, :response) && node.name == :redirect_to
+        lower_redirect(node)
       elsif node.receiver.nil? && node.block.nil?
         case node.name
         when :render then lower_render(node)
@@ -111,7 +115,27 @@ module Rieles
     def params_lookup?(node)
       return false unless node.name == :[] && node.arguments&.arguments&.size == 1
       recv = node.receiver
-      recv.is_a?(Prism::CallNode) && recv.name == :params && recv.receiver.nil? && recv.arguments.nil?
+      return false unless recv.is_a?(Prism::CallNode) && recv.name == :params && recv.arguments.nil?
+      recv.receiver.nil? || local?(recv.receiver, :request)
+    end
+
+    def local?(node, name)
+      node.is_a?(Prism::LocalVariableReadNode) && node.name == name
+    end
+
+    # Action classes: response.render(view, name: value, ...) passes the
+    # view's exposures by name; the build checks them against `expose`.
+    def lower_action_render(node)
+      args, kw = Rieles.call_args(node)
+      unless args.size == 1 && args.first.is_a?(Prism::CallNode) && args.first.name == :view
+        fail!(node, "expected response.render(view, exposure: value, ...)")
+      end
+      view = @ctx.action_view(kw.keys, where(node))
+      @ctx.record_response(nil, where(node))
+      @rw.replace(node) do
+        values = view.exposures.map { |e| @rw.slice(kw.fetch(e.to_sym)) }
+        "render_view(ApplicationView.new.#{view.method_name}(#{values.join(', ')}), 200)"
+      end
     end
 
     def lower_redirect(node)

@@ -76,10 +76,13 @@ module Rieles
       @routes << Route.new(verb, path, controller, action.to_s)
     end
 
+    # "entries#index" is a controller action; "stats.show" an action class
+    # (Actions::Stats::Show), returned with a nil controller.
     def endpoint(node, target)
       value = Rieles.literal(target).to_s
+      return [nil, value] if value.match?(/\A[a-z_]+(\.[a-z_]+)+\z/)
       controller, action = value.split("#", 2)
-      fail!(node, "expected \"controller#action\", got #{value.inspect}") unless action
+      fail!(node, "expected \"controller#action\" or \"stats.show\", got #{value.inspect}") unless action
       [controller, action]
     end
 
