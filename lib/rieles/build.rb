@@ -1,4 +1,5 @@
 require "set"
+require "securerandom"
 
 module Rieles
   # Reads an app laid out like a Rails app and writes one tep source file
@@ -147,6 +148,7 @@ module Rieles
         # The default prefork server ignores SIGINT while a keep-alive
         # connection is idle (OriPekelman/tep#277).
         "set :scheduler, :scheduled",
+        "Tep.session_secret = ENV.fetch(\"SECRET_KEY_BASE\", #{local_secret.inspect})",
         File.read(RUNTIME),
         application_record,
         *Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }.map { |f| Model.new(f, schema).to_ruby },
@@ -161,6 +163,16 @@ module Rieles
         *routes.routes.map { |r| route_block(r, controllers) },
         not_found_block
       ].join("\n")
+    end
+
+    # Development secret, kept across builds; production sets SECRET_KEY_BASE.
+    def local_secret
+      file = path("tmp/local_secret.txt")
+      unless File.exist?(file)
+        FileUtils.mkdir_p(File.dirname(file))
+        File.write(file, SecureRandom.hex(32))
+      end
+      File.read(file).strip
     end
 
     def application_record
@@ -258,7 +270,7 @@ module Rieles
         controllers[name] = controller_declarations(klass, rel(file)).merge(dir: dir, source: lowered, ctx: ctx, file: rel(file))
       end
       controllers["ApplicationController"] ||= {
-        dir: "application", actions: [], filters: [], skips: [], rescues: [], arities: {},
+        dir: "application", actions: [], filters: [], skips: [], rescues: [], arities: {}, forgery: nil,
         source: "class ApplicationController < Rieles::Controller\nend\n",
         ctx: Context.new(self, "application", view: false, controller: true), file: "app/controllers/application_controller.rb"
       }
@@ -268,7 +280,7 @@ module Rieles
     # Public methods are actions; filters and rescue_from are read here
     # and dropped from the generated class.
     def controller_declarations(klass, file)
-      decl = { actions: [], filters: [], skips: [], rescues: [], arities: {} }
+      decl = { actions: [], filters: [], skips: [], rescues: [], arities: {}, forgery: nil }
       visible = true
       (klass.body&.body || []).each do |stmt|
         if stmt.is_a?(Prism::DefNode)
@@ -298,6 +310,8 @@ module Rieles
           kind = stmt.name.to_s.delete_prefix("skip_")
           list = stmt.name.to_s.start_with?("skip_") ? decl[:skips] : decl[:filters]
           args.each { |a| list << Filter.new(kind, Rieles.literal(a).to_s, only, except) }
+        when :skip_forgery_protection then decl[:forgery] = false
+        when :protect_from_forgery then decl[:forgery] = true
         when :rescue_from
           handler = kw[:with] or raise CompileError, "#{file}:#{stmt.location.start_line}: rescue_from needs with: :method"
           args.each { |a| decl[:rescues] << RescueHandler.new(a.slice, Rieles.literal(handler).to_s) }
@@ -307,6 +321,11 @@ module Rieles
     end
 
     def app_controller = @controllers.fetch("ApplicationController")
+
+    def forgery_protection?(name)
+      own = name == "ApplicationController" ? nil : @controllers[name][:forgery]
+      own.nil? ? app_controller[:forgery] != false : own
+    end
 
     def filters_for(name, action, kind)
       own = name == "ApplicationController" ? nil : @controllers[name]
@@ -376,7 +395,7 @@ module Rieles
         t = @templates[key]
         args = t.exposures.map { |n| "@#{n}" }.join(", ")
         "  def #{t.render_method}(status)\n" \
-          "    render_view(ApplicationView.new.#{t.method_name}#{args.empty? ? '' : "(#{args})"}, status)\n" \
+          "    render_view(ApplicationView.new(self).#{t.method_name}#{args.empty? ? '' : "(#{args})"}, status)\n" \
           "  end"
       end
       "class #{name}\n#{defs.join("\n\n")}\nend\n"
@@ -387,7 +406,7 @@ module Rieles
       <<~RUBY
         class ApplicationController
           def render_view(html, status)
-            render_html(#{layout ? "ApplicationView.new.#{layout.method_name}(html)" : 'html'}, status)
+            render_html(#{layout ? "ApplicationView.new(self).#{layout.method_name}(html)" : 'html'}, status)
           end
 
           def render_error(status, message)
@@ -449,6 +468,10 @@ module Rieles
       steps = befores.each_with_index.map { |f, i| i.zero? ? f : "#{f} unless performed?" }
       body = [call, fallback, *afters]
       body = ["unless performed?", *body.map { |l| "  #{l}" }, "end"] if befores.any?
+      if forgery_protection?(controller)
+        steps.unshift("if Rieles.forgery_protection? && !verified_request?",
+                      "  render_error(422, \"Invalid authenticity token\")", "  return", "end")
+      end
       rescues = rescues_for(controller)
       handler_defs = rescues.each_with_index.map do |(_, handler), i|
         "def #{runner}_rescue#{i}(e)\n  #{handler}\n  render_error(500, \"Something went wrong\") unless performed?\nend"

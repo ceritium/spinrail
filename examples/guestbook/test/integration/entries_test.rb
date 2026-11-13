@@ -35,3 +35,17 @@ class EntriesTest < Rieles::IntegrationTest
     assert_response :not_found
   end
 end
+
+class EntriesFormTest < Rieles::IntegrationTest
+  forgery_protection!
+
+  def test_the_form_carries_a_valid_token
+    get "/"
+    token = response.body[/name="authenticity_token" value="([^"]+)"/, 1]
+    post "/entries", params: { name: "Ana", body: "hi", authenticity_token: token }
+    assert_response :see_other
+
+    post "/entries", params: { name: "Ana", body: "hi" }
+    assert_response 422
+  end
+end

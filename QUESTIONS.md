@@ -13,3 +13,7 @@ is easy to revisit.
   Rails; `find` would raise instead.
 - Framework tests live in `test/dummy`, a Rails-style dummy app, and run
   through the same `bin/rieles test` apps use.
+- Session values are Strings (`session[:visits] = 1` reads back "1");
+  Rails' cookie store keeps JSON types.
+- CSRF is on by default outside tests, so plain `curl -d` POSTs get 422;
+  APIs need `skip_forgery_protection`.

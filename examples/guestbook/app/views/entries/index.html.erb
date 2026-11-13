@@ -4,6 +4,7 @@
 </header>
 
 <form method="post" action="<%= entries_path %>">
+  <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
   <% if @entry.errors.any? %>
     <ul class="errors">
       <% @entry.errors.full_messages.each do |message| %>

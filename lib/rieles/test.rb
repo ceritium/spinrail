@@ -13,19 +13,27 @@ module Rieles
 
     attr_reader :response
 
+    # Rails turns CSRF checks off in tests; a test class can turn them on.
+    def self.forgery_protection! = @forgery_protection = true
+    def self.forgery_protection? = @forgery_protection == true
+
     def setup
       @db_dir = Dir.mktmpdir("rieles-test")
       @port = free_port
       log = File.open(File.join(ENV.fetch("RIELES_APP"), "log/test.log"), "a")
       log.puts "", "== #{self.class.name}##{name}"
       log.flush
-      env = { "DATABASE_PATH" => File.join(@db_dir, "test.sqlite3"), "RIELES_LOG_FORMAT" => "dev" }
+      env = { "DATABASE_PATH" => File.join(@db_dir, "test.sqlite3"), "RIELES_LOG_FORMAT" => "dev",
+              "RIELES_ENV" => "test", "RIELES_FORGERY_PROTECTION" => self.class.forgery_protection? ? "1" : "0" }
       @pid = Process.spawn(env, ENV.fetch("RIELES_BINARY"), "-p", @port.to_s,
                            chdir: ENV.fetch("RIELES_APP"), out: log, err: log)
       log.close
       wait_for_server
       @response = nil
+      @cookies = {}
     end
+
+    def cookies = @cookies
 
     def teardown
       stop_server if @pid
@@ -76,7 +84,12 @@ module Rieles
     def request(klass, path, params, headers)
       req = klass.new(path, headers)
       req.set_form_data(params.transform_keys(&:to_s)) if params
+      req["Cookie"] = @cookies.map { |k, v| "#{k}=#{v}" }.join("; ") unless @cookies.empty?
       @response = Net::HTTP.start("127.0.0.1", @port, read_timeout: 5) { |http| http.request(req) }
+      @response.get_fields("set-cookie")&.each do |line|
+        name, value = line.split(";", 2).first.split("=", 2)
+        @cookies[name] = value
+      end
       @response.body&.force_encoding("UTF-8")
       @response
     end

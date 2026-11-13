@@ -1,0 +1,6 @@
+<% if notice %><p class="notice"><%= notice %></p><% end %>
+<% if flash[:alert] %><p class="alert"><%= flash[:alert] %></p><% end %>
+<p>user=<%= @user %> visits=<%= @visits %></p>
+<form method="post" action="/session/logout">
+  <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+</form>

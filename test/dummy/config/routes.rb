@@ -12,4 +12,9 @@ Rieles.routes.draw do
   delete "/widgets/:id", to: "widgets#destroy"
   get "/open", to: "widgets#open"
   get "/boom", to: "widgets#boom"
+
+  post "/session", to: "sessions#create"
+  get "/session", to: "sessions#show"
+  post "/session/logout", to: "sessions#destroy"
+  get "/session/now", to: "sessions#now"
 end

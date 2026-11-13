@@ -31,9 +31,12 @@ Roughly in priority order within each section.
       what before filters assign counts for the template check.
 - [ ] Strong params, `params.require(:entry).permit(...)`, and nested form
       names (`entry[name]`).
-- [ ] Sessions and cookies (tep has signed cookie sessions).
-- [ ] `flash` / `notice:` / `alert:`.
-- [ ] CSRF protection (authenticity token).
+- [x] Sessions on tep's signed cookie (`SECRET_KEY_BASE`, a dev secret in
+      `tmp/local_secret.txt`).
+- [ ] `cookies[:x]` / `cookies.signed`.
+- [x] `flash`, `flash.now`, `redirect_to ..., notice:/alert:`, `notice`/`alert` in views.
+- [x] CSRF protection (form param or `X-CSRF-Token`), `skip_forgery_protection`,
+      `csrf_meta_tags`; off in tests unless `forgery_protection!`.
 - [x] `render json:` (literals encoded at build time, models and relations
       have `to_json`), `head :no_content`.
 - [ ] `respond_to` / formats.

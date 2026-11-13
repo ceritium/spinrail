@@ -69,6 +69,8 @@ module Rieles
     def visit_call_node(node)
       if query_call?(node)
         lower_query(node)
+      elsif (store = store_access(node))
+        lower_store(node, *store)
       elsif params_lookup?(node)
         key = Rieles.literal(node.arguments.arguments.first).to_s
         @rw.replace(node) { "param(#{key.inspect})" }
@@ -134,6 +136,36 @@ module Rieles
       end
     end
 
+    # session[:k], session[:k] = v, session.delete(:k), flash[:k],
+    # flash[:k] = v, flash.now[:k] = v: Tep's session is a String store.
+    def store_access(node)
+      recv = node.receiver
+      return nil unless recv.is_a?(Prism::CallNode) && recv.arguments.nil?
+      if recv.name == :now && bare?(recv.receiver, :flash) && node.name == :[]=
+        return [:flash_now, :set]
+      end
+      return nil unless recv.receiver.nil? && %i[session flash].include?(recv.name)
+      case node.name
+      when :[] then [recv.name, :get]
+      when :[]= then [recv.name, :set]
+      when :delete then recv.name == :session ? [:session, :delete] : nil
+      end
+    end
+
+    def bare?(node, name) = node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == name && node.arguments.nil?
+
+    def lower_store(node, store, op)
+      key, value = node.arguments.arguments
+      @rw.replace(node) do
+        k = key.is_a?(Prism::SymbolNode) || key.is_a?(Prism::StringNode) ? key.unescaped.inspect : "(#{@rw.slice(key)}).to_s"
+        case op
+        when :get then "#{store}_get(#{k})"
+        when :set then "#{store}_set(#{k}, #{@rw.slice(value)})"
+        when :delete then "#{store}_delete(#{k})"
+        end
+      end
+    end
+
     def lower_query(node)
       recv = node.name == :not ? node.receiver.receiver : node.receiver
       prefix = -> { recv ? "#{@rw.slice(recv)}." : "" }
@@ -175,7 +207,7 @@ module Rieles
       @ctx.record_response(nil, where(node))
       @rw.replace(node) do
         values = view.exposures.map { |e| @rw.slice(kw.fetch(e.to_sym)) }
-        "render_view(ApplicationView.new.#{view.method_name}(#{values.join(', ')}), 200)"
+        "render_view(ApplicationView.new(self).#{view.method_name}(#{values.join(', ')}), 200)"
       end
     end
 
@@ -184,7 +216,17 @@ module Rieles
       fail!(node, "redirect_to needs a location") if args.empty?
       status = kw[:status] ? status_code(kw[:status]) : 302
       @ctx.record_response(nil, where(node))
-      @rw.replace(node) { "redirect_to(#{@rw.slice(args.first)}, #{status})" }
+      unknown = kw.keys - %i[status notice alert]
+      fail!(node, "unsupported redirect_to option #{unknown.first}") if unknown.any?
+      if kw[:notice] || kw[:alert]
+        @rw.replace(node) do
+          n = kw[:notice] ? @rw.slice(kw[:notice]) : '""'
+          a = kw[:alert] ? @rw.slice(kw[:alert]) : '""'
+          "redirect_with_flash(#{@rw.slice(args.first)}, #{status}, #{n}, #{a})"
+        end
+      else
+        @rw.replace(node) { "redirect_to(#{@rw.slice(args.first)}, #{status})" }
+      end
     end
 
     def lower_render(node)
@@ -202,7 +244,7 @@ module Rieles
         @ctx.record_response(nil, where(node))
         @rw.replace(node) do
           values = view.exposures.map { |e| @rw.slice(exposures.fetch(e.to_sym)) }
-          "render_view(ApplicationView.new.#{view.method_name}(#{values.join(', ')}), #{status})"
+          "render_view(ApplicationView.new(self).#{view.method_name}(#{values.join(', ')}), #{status})"
         end
       elsif kw[:json]
         @ctx.record_response(nil, where(node))

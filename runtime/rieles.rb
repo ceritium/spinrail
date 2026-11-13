@@ -266,6 +266,13 @@ module Rieles
 
   def self.log = LOG
 
+  def self.env = ENV.fetch("RIELES_ENV", "development")
+
+  # Off in tests unless a test asks for it, as in Rails.
+  def self.forgery_protection?
+    ENV.fetch("RIELES_FORGERY_PROTECTION", Rieles.env == "test" ? "0" : "1") == "1"
+  end
+
   def self.database_path
     ENV.fetch("DATABASE_PATH", "./db/development.sqlite3")
   end
@@ -389,6 +396,73 @@ module Rieles
       @res = res
       @performed = false
       @response_body = ""
+      @flash = Tep.str_hash
+      sweep_flash
+    end
+
+    # Flash set by the previous request is readable now and gone after.
+    def sweep_flash
+      data = @req.session.data
+      keys = []
+      data.each { |k, _| keys << k if k.start_with?("_flash.") }
+      keys.each do |k|
+        @flash[k.delete_prefix("_flash.")] = data[k]
+        data.delete(k)
+      end
+      @req.session.dirty = true unless keys.empty?
+    end
+
+    def flash = @flash
+    def flash_get(key) = @flash[key]
+
+    def flash_set(key, value)
+      @flash[key] = value
+      @req.session.set("_flash." + key, value)
+    end
+
+    def flash_now_set(key, value)
+      @flash[key] = value
+    end
+
+    def session_get(key) = @req.session.data[key]
+
+    def session_set(key, value)
+      @req.session.set(key, value.to_s)
+    end
+
+    def session_delete(key)
+      @req.session.data.delete(key)
+      @req.session.dirty = true
+    end
+
+    def reset_session
+      @req.session.clear
+    end
+
+    def form_authenticity_token
+      token = @req.session.data["_csrf_token"]
+      return token if token && token.length > 0
+      fresh = Crypto.sp_crypto_random_b64url(32)
+      @req.session.set("_csrf_token", fresh)
+      fresh
+    end
+
+    def verified_request?
+      return true if @req.verb == "GET" || @req.verb == "HEAD"
+      expected = @req.session.data["_csrf_token"]
+      return false if expected.nil? || expected.empty?
+      token = Tep.param(@req, "authenticity_token")
+      if token.empty?
+        header = @req.req_headers["x-csrf-token"]
+        token = header if header
+      end
+      Tep.timing_safe_eq(token, expected)
+    end
+
+    def redirect_with_flash(location, status, notice, alert)
+      flash_set("notice", notice) unless notice.empty?
+      flash_set("alert", alert) unless alert.empty?
+      redirect_to(location, status)
     end
 
     def performed?
@@ -443,6 +517,22 @@ module Rieles
   # Templates are methods on ApplicationView; they see only what they are
   # passed, never controller state.
   class View
+    def initialize(controller)
+      @controller = controller
+    end
+
+    def flash = @controller.flash
+    def flash_get(key) = @controller.flash_get(key)
+    def notice = @controller.flash_get("notice")
+    def alert = @controller.flash_get("alert")
+    def session_get(key) = @controller.session_get(key)
+    def form_authenticity_token = @controller.form_authenticity_token
+
+    def csrf_meta_tags
+      "<meta name=\"csrf-param\" content=\"authenticity_token\">\n" \
+        "<meta name=\"csrf-token\" content=\"" + h(form_authenticity_token) + "\">"
+    end
+
     def h(value)
       Tep.h(value)
     end
