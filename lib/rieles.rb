@@ -1,0 +1,47 @@
+require "prism"
+require "fileutils"
+
+module Rieles
+  class CompileError < StandardError; end
+
+  RUNTIME = File.expand_path("../runtime/rieles.rb", __dir__)
+
+  def self.literal(node)
+    case node
+    when Prism::StringNode then node.unescaped
+    when Prism::SymbolNode then node.unescaped.to_sym
+    when Prism::IntegerNode then node.value
+    when Prism::TrueNode then true
+    when Prism::FalseNode then false
+    when Prism::ArrayNode then node.elements.map { |e| literal(e) }
+    when Prism::HashNode, Prism::KeywordHashNode
+      node.elements.to_h { |a| [literal(a.key), literal(a.value)] }
+    else raise CompileError, "line #{node.location.start_line}: expected a literal, got `#{node.slice}`"
+    end
+  end
+
+  # Splits a call's arguments into positional nodes and a {Symbol => node} hash.
+  def self.call_args(node)
+    args = (node.arguments&.arguments || []).dup
+    kw = args.last.is_a?(Prism::KeywordHashNode) ? args.pop : nil
+    keywords = (kw&.elements || []).to_h { |a| [literal(a.key), a.value] }
+    [args, keywords]
+  end
+
+  def self.parse(source, file)
+    result = Prism.parse(source)
+    if result.failure?
+      e = result.errors.first
+      raise CompileError, "#{file}:#{e.location.start_line}: #{e.message}"
+    end
+    result.value
+  end
+end
+
+require_relative "rieles/inflector"
+require_relative "rieles/lowering"
+require_relative "rieles/routes"
+require_relative "rieles/schema"
+require_relative "rieles/models"
+require_relative "rieles/views"
+require_relative "rieles/build"

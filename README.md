@@ -1,0 +1,49 @@
+# rieles
+
+A Rails-inspired web framework for [spinel](https://github.com/matz/spinel),
+built on [tep](https://github.com/OriPekelman/tep). Working name; prototype.
+
+Apps keep the Rails layout and conventions. Spinel can't do the runtime
+metaprogramming Rails relies on (`method_missing`, `define_method` with
+computed names, autoloading), so `rieles build` resolves the conventions at
+build time and writes plain Ruby: one file that `tep build` and spinel
+compile into a single native binary.
+
+```
+app/models/entry.rb          → Entry + EntryRelation, typed from db/schema.rb
+app/controllers/*.rb         → same classes; render/redirect_to/params lowered
+app/views/**/*.html.erb      → methods on the controller (typed ivars, loops)
+config/routes.rb             → tep routes + path helpers
+db/schema.rb                 → CREATE TABLE IF NOT EXISTS at boot
+app/assets/*                 → embedded in the binary
+```
+
+## Try it
+
+```sh
+cd examples/guestbook
+make run        # http://localhost:3000; first run builds ../../vendor (~1 min)
+make routes
+```
+
+The generated source lands in `tmp/rieles/app.rb`, which is the place to look
+when something doesn't compile.
+
+## Supported so far
+
+- Routes: `root`, `resources` (with `only:`/`except:`), `get/post/... "path", to:`.
+- Models: columns from `create_table` (`string`, `text`, `integer`, `datetime`,
+  `references`, `timestamps`); `all`, `where`, `order`, `limit`, `count`,
+  `find` (404 when missing), `save`, `destroy`; `validates` with `presence`
+  and `length`; `errors.any?`, `errors.full_messages`, `errors[:attr]`.
+- Controllers: `params[:x]`, `render :action, status:`, `render plain:`,
+  `redirect_to path, status:`, implicit render of `controller/action`.
+- Views: layout with `yield`, partials (`render "entry", entry: entry`),
+  `<%= %>` escapes, `<%== %>` and `raw` don't, `pluralize`.
+
+## Not yet
+
+Associations, `before_action`, strong params (forms use flat field names),
+flash and sessions, CSRF protection, PATCH/DELETE from HTML forms,
+migrations, generators, i18n, nil columns (every column is `NOT NULL` with
+a default, since spinel can't put nil where a String is expected).

@@ -1,0 +1,28 @@
+#!/usr/bin/env ruby
+require_relative "../lib/rieles"
+
+def usage
+  abort "usage: rieles build [APP_DIR] [-o OUTPUT]   (needs TEP=path/to/tep/bin/tep)\n" \
+        "       rieles routes [APP_DIR]"
+end
+
+command = ARGV.shift or usage
+output = (i = ARGV.index("-o")) ? ARGV.slice!(i, 2).last : nil
+app_dir = File.expand_path(ARGV.shift || ".")
+
+begin
+  build = Rieles::Build.new(app_dir)
+  case command
+  when "build"
+    tep = ENV["TEP"] or abort "rieles: set TEP to tep's bin/tep"
+    source = build.write(File.join(app_dir, "tmp/rieles"))
+    exec(tep, "build", source, "-o", output || File.join(app_dir, File.basename(app_dir)))
+  when "routes"
+    build.routes.routes.each do |r|
+      puts format("%-7s %-22s %s#%s", r.verb.to_s.upcase, r.path, r.controller, r.action)
+    end
+  else usage
+  end
+rescue Rieles::CompileError => e
+  abort "rieles: #{e.message}"
+end

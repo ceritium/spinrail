@@ -1,0 +1,26 @@
+<header>
+  <h1>Guestbook</h1>
+  <p class="lead">Rails-shaped Ruby, compiled to a native binary.</p>
+</header>
+
+<form method="post" action="<%= entries_path %>">
+  <% if @entry.errors.any? %>
+    <ul class="errors">
+      <% @entry.errors.full_messages.each do |message| %>
+        <li><%= message %></li>
+      <% end %>
+    </ul>
+  <% end %>
+  <label for="name">Name</label>
+  <input id="name" name="name" maxlength="40" value="<%= @entry.name %>">
+  <label for="body">Message</label>
+  <textarea id="body" name="body" maxlength="500" rows="3"><%= @entry.body %></textarea>
+  <button>Sign</button>
+</form>
+
+<h2><%= pluralize(@entries.count, "message") %></h2>
+<ul class="entries">
+  <% @entries.each do |entry| %>
+    <%= render "entry", entry: entry %>
+  <% end %>
+</ul>
