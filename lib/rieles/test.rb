@@ -1,0 +1,120 @@
+require "minitest/autorun"
+require "net/http"
+require "socket"
+require "tmpdir"
+require "uri"
+require_relative "../rieles"
+
+module Rieles
+  # Request tests run in CRuby against the compiled binary over HTTP. Each
+  # test gets its own server and an empty database, so tests don't leak.
+  class IntegrationTest < Minitest::Test
+    STATUS_GROUPS = { success: 200..299, redirect: 300..399, missing: 404..404, error: 500..599 }.freeze
+
+    attr_reader :response
+
+    def setup
+      @db_dir = Dir.mktmpdir("rieles-test")
+      @port = free_port
+      log = File.open(File.join(ENV.fetch("RIELES_APP"), "log/test.log"), "a")
+      log.puts "", "== #{self.class.name}##{name}"
+      log.flush
+      env = { "DATABASE_PATH" => File.join(@db_dir, "test.sqlite3"), "RIELES_LOG_FORMAT" => "dev" }
+      @pid = Process.spawn(env, ENV.fetch("RIELES_BINARY"), "-p", @port.to_s,
+                           chdir: ENV.fetch("RIELES_APP"), out: log, err: log)
+      log.close
+      wait_for_server
+      @response = nil
+    end
+
+    def teardown
+      stop_server if @pid
+      FileUtils.rm_rf(@db_dir)
+    end
+
+    def get(path, headers: {}) = request(Net::HTTP::Get, path, nil, headers)
+    def post(path, params: {}, headers: {}) = request(Net::HTTP::Post, path, params, headers)
+    def put(path, params: {}, headers: {}) = request(Net::HTTP::Put, path, params, headers)
+    def patch(path, params: {}, headers: {}) = request(Net::HTTP::Patch, path, params, headers)
+    def delete(path, headers: {}) = request(Net::HTTP::Delete, path, nil, headers)
+
+    def follow_redirect!
+      location = response["Location"] or flunk "expected a redirect, got #{response.code}"
+      get(local_path(location))
+    end
+
+    def assert_response(expected, message = nil)
+      status = response.code.to_i
+      ok = case expected
+           when Integer then status == expected
+           when *STATUS_GROUPS.keys then STATUS_GROUPS[expected].cover?(status)
+           else status == Lowering::STATUS.fetch(expected) { raise ArgumentError, "unknown status :#{expected}" }
+           end
+      assert ok, message || "Expected response #{expected.inspect}, got #{status}\n#{response.body}"
+    end
+
+    def assert_redirected_to(path)
+      assert_response :redirect
+      assert_equal path, local_path(response["Location"])
+    end
+
+    def assert_body_includes(text)
+      assert_includes response.body, text
+    end
+
+    def refute_body_includes(text)
+      refute_includes response.body, text
+    end
+
+    private
+
+    def local_path(location)
+      uri = URI(location)
+      uri.host ? uri.request_uri : location
+    end
+
+    def request(klass, path, params, headers)
+      req = klass.new(path, headers)
+      req.set_form_data(params.transform_keys(&:to_s)) if params
+      @response = Net::HTTP.start("127.0.0.1", @port, read_timeout: 5) { |http| http.request(req) }
+      @response.body&.force_encoding("UTF-8")
+      @response
+    end
+
+    def stop_server
+      Process.kill("INT", @pid)
+      Process.kill("KILL", @pid) unless wait_exit(2)
+    rescue Errno::ESRCH
+      nil
+    end
+
+    def free_port
+      server = TCPServer.new("127.0.0.1", 0)
+      server.addr[1]
+    ensure
+      server&.close
+    end
+
+    def wait_for_server
+      100.times do
+        TCPSocket.new("127.0.0.1", @port).close
+        return
+      rescue Errno::ECONNREFUSED
+        flunk "server exited, see log/test.log" if wait_exit(0)
+        sleep 0.02
+      end
+      flunk "server didn't start on port #{@port}"
+    end
+
+    def wait_exit(seconds)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + seconds
+      loop do
+        return true if Process.wait(@pid, Process::WNOHANG)
+        return false if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+        sleep 0.01
+      end
+    rescue Errno::ECHILD
+      true
+    end
+  end
+end

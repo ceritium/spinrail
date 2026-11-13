@@ -13,10 +13,11 @@ module Rieles
       "server" => "Build if needed and start the server (-p PORT, default 3000)",
       "build" => "Compile the app into a native binary (-o OUTPUT)",
       "routes" => "List the routes",
-      "clean" => "Remove the binary, tmp/ and the development database",
+      "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
+      "clean" => "Remove the binary, tmp/, log/ and the development database",
       "setup" => "Clone and build spinel + tep into vendor/ (build and server do it on demand)"
     }.freeze
-    ALIASES = { "s" => "server", "b" => "build", "r" => "routes" }.freeze
+    ALIASES = { "s" => "server", "b" => "build", "r" => "routes", "t" => "test" }.freeze
 
     def initialize(argv, app_dir = Dir.pwd)
       @argv = argv.dup
@@ -30,6 +31,7 @@ module Rieles
       when "server" then server
       when "build" then build(option("-o") || binary, force: true)
       when "routes" then routes
+      when "test" then test
       when "clean" then clean
       when "setup" then setup
       else help(command)
@@ -70,8 +72,22 @@ module Rieles
       end
     end
 
+    def test
+      Dir.chdir(@app)
+      files, options = @argv.partition { |a| a.end_with?(".rb") || File.directory?(a) }
+      files = ["test"] if files.empty?
+      files = files.flat_map { |f| f.end_with?(".rb") ? [f] : Dir[File.join(f, "**/*_test.rb")].sort }
+      abort "rieles: no tests in test/" if files.empty?
+      build(binary) if stale?
+      FileUtils.mkdir_p(File.join(@app, "log"))
+      File.write(File.join(@app, "log/test.log"), "")
+      env = { "RIELES_APP" => @app, "RIELES_BINARY" => binary }
+      loader = "files = ARGV.shift(#{files.size}); files.each { |f| require File.expand_path(f) }"
+      exec(env, RbConfig.ruby, "-I", File.join(FRAMEWORK, "lib"), "-r", "rieles/test", "-e", loader, *files, *options)
+    end
+
     def clean
-      FileUtils.rm_rf([binary, File.join(@app, "tmp"), *Dir[File.join(@app, "db/*.sqlite3")]])
+      FileUtils.rm_rf([binary, File.join(@app, "tmp"), File.join(@app, "log"), *Dir[File.join(@app, "db/*.sqlite3")]])
     end
 
     def setup

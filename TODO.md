@@ -64,7 +64,9 @@ Roughly in priority order within each section.
 - [x] `rieles server` rebuilds when sources changed.
 - [ ] `rieles server` watching files and restarting on change.
 - [ ] Map compile errors in `tmp/rieles/app.rb` back to the source `.rb`/`.erb` line.
-- [ ] Tests for the compiler, and request tests for apps.
+- [ ] Unit tests for the compiler (ERB, lowering, routes, models, static checks).
+- [ ] Tests: model tests without HTTP, fixtures, `assert_select` on HTML,
+      cookies/session across requests.
 - [ ] CI.
 - [ ] Package as a gem or spin package; stop requiring `TEP` in the environment.
 

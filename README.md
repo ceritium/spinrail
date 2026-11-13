@@ -45,11 +45,34 @@ checks that `render` passes exactly the view's exposures.
 cd examples/guestbook
 bin/rieles server   # http://localhost:3000; first run builds ../../../vendor (~1 min)
 bin/rieles routes
-bin/rieles          # all commands: server, build, routes, clean, setup
+bin/rieles test     # test/**/*_test.rb against the compiled binary
+bin/rieles          # all commands: server, build, routes, test, clean, setup
 ```
 
 The generated source lands in `tmp/rieles/app.rb`, which is the place to look
 when something doesn't compile.
+
+## Tests
+
+`bin/rieles test [FILES] [minitest options]` builds the app if needed and runs
+Minitest in CRuby. `Rieles::IntegrationTest` starts the binary for every test
+with an empty database and talks to it over HTTP; the server log goes to
+`log/test.log`.
+
+```ruby
+class EntriesTest < Rieles::IntegrationTest
+  def test_create
+    post "/entries", params: { name: "Ana", body: "hi" }
+    assert_redirected_to "/entries/1"
+    follow_redirect!
+    assert_body_includes "Ana"
+  end
+end
+```
+
+Helpers: `get/post/put/patch/delete`, `response`, `follow_redirect!`,
+`assert_response` (status, `:success`, `:redirect`, `:not_found`...),
+`assert_redirected_to`, `assert_body_includes`.
 
 ## Supported so far
 
