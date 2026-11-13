@@ -80,7 +80,7 @@ Roughly in priority order within each section.
 
 - [ ] Drop `set :scheduler, :scheduled` once
       [OriPekelman/tep#277](https://github.com/OriPekelman/tep/issues/277) is fixed.
-- [ ] tep answers every status with the reason phrase `OK` (`303 OK`, `422 OK`);
-      worth an issue.
+- [ ] Upstream the fuller `Tep.reason` table (runtime/rieles.rb overrides tep's,
+      which answers `OK` for any code it doesn't know, e.g. `303 OK`), then drop the override.
 - [ ] Compare notes with [rubys/roundhouse](https://github.com/rubys/roundhouse),
       which lowers real Rails apps for spinel.
