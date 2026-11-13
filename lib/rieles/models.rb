@@ -65,6 +65,8 @@ module Rieles
     def columns = @table.columns
     def writable = columns.reject { |c| c.name == "id" || c.timestamp? }
     def select_sql = "SELECT #{columns.map(&:name).join(', ')} FROM #{@table.name}"
+    def find_sql = "#{select_sql} WHERE id = ?"
+    def delete_sql = "DELETE FROM #{@table.name} WHERE id = ?"
     def relation = "#{@name}Relation"
 
     def binds(cols)
@@ -120,17 +122,20 @@ module Rieles
           def self.count = all.count
 
           def self.find(id)
+            t0 = Rieles.clock
             db = Rieles.connect
-            db.prepare(#{"#{select_sql} WHERE id = ?".inspect})
+            db.prepare(#{find_sql.inspect})
             db.bind_int(1, id.to_s.to_i)
             if db.step == 1
               record = #{@name}.from_row(db)
               db.finalize
               db.close
+              Rieles.log.sql("#{@name} Load", #{find_sql.inspect}, t0)
               return record
             end
             db.finalize
             db.close
+            Rieles.log.sql("#{@name} Load", #{find_sql.inspect}, t0)
             raise Rieles::RecordNotFound, "Couldn't find #{@name} with 'id'=" + id.to_s
           end
 
@@ -144,6 +149,7 @@ module Rieles
 
           def save
             return false unless valid?
+            t0 = Rieles.clock
             db = Rieles.connect
             if persisted?
               db.prepare(#{update_sql.inspect})
@@ -151,26 +157,31 @@ module Rieles
               db.bind_int(#{writable.size + 1}, @id)
               db.step
               db.finalize
+              db.close
+              Rieles.log.sql("#{@name} Update", #{update_sql.inspect}, t0)
             else
               db.prepare(#{insert_sql.inspect})
         #{binds(writable)}
               db.step
               db.finalize
               @id = db.last_rowid
+              db.close
+              Rieles.log.sql("#{@name} Create", #{insert_sql.inspect}, t0)
             end
-            db.close
             saved = #{@name}.find(@id)
         #{reload_timestamps}
             true
           end
 
           def destroy
+            t0 = Rieles.clock
             db = Rieles.connect
-            db.prepare(#{"DELETE FROM #{@table.name} WHERE id = ?".inspect})
+            db.prepare(#{delete_sql.inspect})
             db.bind_int(1, @id)
             db.step
             db.finalize
             db.close
+            Rieles.log.sql("#{@name} Destroy", #{delete_sql.inspect}, t0)
             true
           end
 
@@ -223,6 +234,7 @@ module Rieles
             sql = sql + " WHERE " + @wheres.join(" AND ") unless @wheres.empty?
             sql = sql + " ORDER BY " + @order
             sql = sql + " LIMIT " + @limit.to_s if @limit >= 0
+            t0 = Rieles.clock
             db = Rieles.connect
             db.prepare(sql)
             i = 0
@@ -235,6 +247,7 @@ module Rieles
             end
             db.finalize
             db.close
+            Rieles.log.sql("#{@name} Load", sql, t0)
             @loaded = true
             @records
           end

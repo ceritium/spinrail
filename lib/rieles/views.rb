@@ -7,11 +7,14 @@ module Rieles
   module Erb
     module_function
 
-    def compile(source, signature, layout: false)
+    # log_as: template name for the request log; partials pass nil.
+    def compile(source, signature, layout: false, log_as: nil)
       tokens = tokenize(source)
       trim_code_lines(tokens)
       body = tokens.map { |kind, text| emit(kind, text, layout) }.join
-      "def #{signature}\n  out = +\"\"\n#{body}  out\nend\n"
+      return "def #{signature}\n  out = +\"\"\n#{body}  out\nend\n" unless log_as
+      "def #{signature}\n  rieles_t0 = Rieles.log.render_start\n  out = +\"\"\n#{body}" \
+        "  Rieles.log.render_end(#{log_as.inspect}, rieles_t0)\n  out\nend\n"
     end
 
     def tokenize(source)

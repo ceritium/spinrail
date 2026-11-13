@@ -63,6 +63,9 @@ when something doesn't compile.
   `redirect_to path, status:`, implicit render of `controller/action`.
 - Views: layout with `yield`, partials (`render "entry", entry: entry`),
   `<%= %>` escapes, `<%== %>` and `raw` don't, `pluralize`.
+- Request log: Rails-style by default (params with `password`/`token`/`secret`
+  filtered, SQL, rendered templates, timings); one line per request with
+  `RIELES_LOG_FORMAT=logfmt` or `RIELES_LOG_FORMAT=json`.
 
 ## Not yet
 

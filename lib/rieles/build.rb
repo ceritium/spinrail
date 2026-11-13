@@ -168,7 +168,8 @@ module Rieles
     def compile_views
       methods = @templates.values.map do |t|
         signature = t.layout? ? "#{t.method_name}(content)" : "#{t.method_name}__SIGNATURE__"
-        ruby = Erb.compile(File.read(t.path), signature, layout: t.layout?)
+        ruby = Erb.compile(File.read(t.path), signature, layout: t.layout?,
+                                                         log_as: t.partial? ? nil : rel(t.path).delete_prefix("app/views/"))
         ctx = Context.new(self, t.dir, view: true, ivars: t.page?)
         lowered = Lowering.lower(ruby, rel(t.path), ctx)
         t.exposures = ctx.exposures.keys.sort
@@ -180,7 +181,7 @@ module Rieles
       end
       defs += @action_views.values.map do |v|
         signature = "#{v.method_name}(#{v.exposures.join(', ')})"
-        ruby = Erb.compile(File.read(v.template_path), signature)
+        ruby = Erb.compile(File.read(v.template_path), signature, log_as: rel(v.template_path).delete_prefix("app/"))
         ctx = Context.new(self, File.dirname(v.key.tr('.', '/')), view: true, ivars: false)
         Lowering.lower(ruby, rel(v.template_path), ctx)
       end
@@ -322,7 +323,7 @@ module Rieles
     def action_route_block(route)
       action = @actions[route.action] or
         raise CompileError, "config/routes.rb: no app/actions/#{route.action.tr('.', '/')}.rb for #{Rieles.class_name(route.action, "Actions")}"
-      dispatch(route, action.class_name, "handle(req, res)",
+      dispatch(route, action.class_name, "handle(req, res)", Rieles.class_name(route.action, "Actions"),
                "c.render_error(500, \"#{action.class_name} didn't respond\") unless c.performed?")
     end
 
@@ -339,23 +340,25 @@ module Rieles
                  else
                    "c.render_error(500, \"No template for #{route.controller}/#{route.action}\") unless c.performed?"
                  end
-      dispatch(route, klass, route.action, implicit)
+      dispatch(route, klass, route.action, "#{klass}##{route.action}", implicit)
     end
 
-    def dispatch(route, klass, call, fallback)
+    def dispatch(route, klass, call, label, fallback)
       <<~RUBY
         #{route.verb} #{route.path.inspect} do
-          puts req.verb + " " + req.path + " -> #{klass}##{call.sub(/\(.*/, '')}"
+          Rieles.log.start(req.verb, req.path, #{label.inspect}, req.params)
           c = #{klass}.new(req, res)
           begin
             c.#{call}
             #{fallback}
           rescue Rieles::RecordNotFound => e
+            Rieles.log.error(e)
             c.render_error(404, "Not found")
           rescue StandardError => e
-            puts "  " + e.class.name + ": " + e.message
+            Rieles.log.error(e)
             c.render_error(500, "Something went wrong")
           end
+          Rieles.log.finish(res.status)
           c.response_body
         end
       RUBY
@@ -364,8 +367,10 @@ module Rieles
     def not_found_block
       <<~RUBY
         not_found do
+          Rieles.log.start(req.verb, req.path, "", req.params)
           c = ApplicationController.new(req, res)
           c.render_error(404, "Not found")
+          Rieles.log.finish(res.status)
           c.response_body
         end
       RUBY

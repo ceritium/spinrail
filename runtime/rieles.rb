@@ -42,6 +42,200 @@ end
 module Rieles
   class RecordNotFound < StandardError; end
 
+  FILTERED_PARAMS = ["password", "token", "secret"].freeze
+
+  def self.clock
+    Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  end
+
+  # Collects one request's timings; subclasses decide how it is printed.
+  # A worker serves one request at a time, so a single instance is enough.
+  class Logger
+    def initialize
+      @color = $stdout.tty?
+      reset
+    end
+
+    def reset
+      @started = 0.0
+      @db = 0.0
+      @view = 0.0
+      @depth = 0
+      @verb = ""
+      @path = ""
+      @action = ""
+      @location = ""
+      @error = ""
+      @param_names = []
+      @param_values = []
+    end
+
+    def start(verb, path, action, params)
+      reset
+      @started = Rieles.clock
+      @verb = verb
+      @path = path
+      @action = action
+      params.each do |name, value|
+        @param_names << name
+        @param_values << (filtered?(name) ? "[FILTERED]" : value.dup.force_encoding("UTF-8").scrub("?"))
+      end
+      on_start
+    end
+
+    def sql(name, statement, t0)
+      ms = since(t0)
+      @db += ms
+      on_sql(name, statement, ms)
+    end
+
+    def render_start
+      @depth += 1
+      Rieles.clock
+    end
+
+    def render_end(template, t0)
+      ms = since(t0)
+      @depth -= 1
+      @view += ms if @depth == 0
+      on_render(template, ms)
+    end
+
+    def redirect(location)
+      @location = location
+      on_redirect
+    end
+
+    def error(e)
+      @error = e.class.name + ": " + e.message
+      on_error
+    end
+
+    def finish(status)
+      on_finish(status, since(@started))
+    end
+
+    def on_start; end
+    def on_sql(name, statement, elapsed); end
+    def on_render(template, elapsed); end
+    def on_redirect; end
+    def on_error; end
+    def on_finish(status, elapsed); end
+
+    def since(t0) = (Rieles.clock - t0) * 1000.0
+    def ms(value) = format("%.1f", value)
+    def time = Time.now.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+    def filtered?(name)
+      key = name.downcase
+      FILTERED_PARAMS.any? { |f| key.include?(f) }
+    end
+
+    def escape(text)
+      out = +""
+      text.each_char do |c|
+        if c == "\"" then out << "\\\""
+        elsif c == "\\" then out << "\\\\"
+        elsif c == "\n" then out << "\\n"
+        elsif c == "\t" then out << "\\t"
+        else out << c
+        end
+      end
+      out
+    end
+
+    def paint(text, code)
+      @color ? "\e[" + code + "m" + text + "\e[0m" : text
+    end
+  end
+
+  # Rails-style, several lines per request.
+  class DevLogger < Logger
+    def on_start
+      puts ""
+      puts "Started " + @verb + " " + @path.inspect + " at " + Time.now.strftime("%Y-%m-%d %H:%M:%S")
+      puts "Processing by " + @action if @action.length > 0
+      return if @param_names.empty?
+      pairs = []
+      i = 0
+      while i < @param_names.length
+        pairs << @param_names[i].inspect + " => " + @param_values[i].inspect
+        i += 1
+      end
+      puts "  Parameters: {" + pairs.join(", ") + "}"
+    end
+
+    def on_sql(name, statement, elapsed)
+      puts "  " + paint(name + " (" + ms(elapsed) + "ms)", "1;36") + "  " + paint(statement, "1;34")
+    end
+
+    def on_render(template, elapsed)
+      puts "  Rendered " + template + " (" + ms(elapsed) + "ms)"
+    end
+
+    def on_redirect
+      puts "Redirected to " + @location
+    end
+
+    def on_error
+      puts paint("  " + @error, "1;31")
+    end
+
+    def on_finish(status, elapsed)
+      line = "Completed " + status.to_s + " " + Tep.reason(status) + " in " + ms(elapsed) + "ms" \
+             " (Views: " + ms(@view) + "ms | DB: " + ms(@db) + "ms)"
+      puts paint(line, status >= 500 ? "1;31" : (status >= 400 ? "1;33" : "1;32"))
+    end
+  end
+
+  # One line per request: key=value, quoted when needed.
+  class LogfmtLogger < Logger
+    def on_finish(status, elapsed)
+      line = "time=" + time + " method=" + @verb + " path=" + value(@path)
+      line = line + " action=" + value(@action) if @action.length > 0
+      line = line + " status=" + status.to_s + " duration_ms=" + ms(elapsed) +
+             " view_ms=" + ms(@view) + " db_ms=" + ms(@db)
+      line = line + " location=" + value(@location) if @location.length > 0
+      line = line + " error=" + value(@error) if @error.length > 0
+      puts line
+    end
+
+    def value(text)
+      return text unless text.empty? || text.include?(" ") || text.include?("=") || text.include?("\"")
+      "\"" + escape(text) + "\""
+    end
+  end
+
+  # One JSON object per request.
+  class JsonLogger < Logger
+    def on_finish(status, elapsed)
+      fields = ["\"time\":" + str(time), "\"method\":" + str(@verb), "\"path\":" + str(@path)]
+      fields << "\"action\":" + str(@action) if @action.length > 0
+      fields << "\"status\":" + status.to_s
+      fields << "\"duration_ms\":" + ms(elapsed)
+      fields << "\"view_ms\":" + ms(@view)
+      fields << "\"db_ms\":" + ms(@db)
+      fields << "\"location\":" + str(@location) if @location.length > 0
+      fields << "\"error\":" + str(@error) if @error.length > 0
+      puts "{" + fields.join(",") + "}"
+    end
+
+    def str(text)
+      "\"" + escape(text) + "\""
+    end
+  end
+
+  def self.build_logger
+    format = ENV.fetch("RIELES_LOG_FORMAT", "dev")
+    return LogfmtLogger.new if format == "logfmt"
+    return JsonLogger.new if format == "json"
+    DevLogger.new
+  end
+
+  LOG = build_logger
+
+  def self.log = LOG
+
   def self.database_path
     ENV.fetch("DATABASE_PATH", "./db/development.sqlite3")
   end
@@ -124,6 +318,7 @@ module Rieles
     end
 
     def redirect_to(location, status)
+      Rieles.log.redirect(location)
       @res.set_status(status)
       @res.headers["Location"] = location
       @response_body = ""
