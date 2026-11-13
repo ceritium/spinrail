@@ -26,7 +26,7 @@ app/assets/*                 → embedded in the binary
 Endpoints can also be written Hanami-style, mixed freely with controllers:
 
 ```
-get "/stats", to: "stats.show"
+get "/stats", to: Actions::Stats::Show
 
 app/actions/stats/show.rb             class Actions::Stats::Show < Rieles::Action
                                         def handle(request, response)
@@ -36,7 +36,7 @@ app/templates/stats/show.html.erb     reads `count` as a local
 ```
 
 A controller can render the same view with
-`render view: "stats.show", count: ..., latest: ...`. Either way, the build
+`render view: Views::Stats::Show, count: ..., latest: ...`. Either way, the build
 checks that `render` passes exactly the view's exposures.
 
 ## Try it
@@ -58,7 +58,7 @@ when something doesn't compile.
   `find` (404 when missing), `save`, `destroy`; `validates` with `presence`
   and `length`; `errors.any?`, `errors.full_messages`, `errors[:attr]`.
 - Controllers: `params[:x]`, `render :action, status:`, `render plain:`,
-  `render view: "stats.show", exposure: value`,
+  `render view: Views::Stats::Show, exposure: value`,
   `redirect_to path, status:`, implicit render of `controller/action`.
 - Views: layout with `yield`, partials (`render "entry", entry: entry`),
   `<%= %>` escapes, `<%== %>` and `raw` don't, `pluralize`.

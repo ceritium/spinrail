@@ -20,6 +20,17 @@ module Rieles
     end
   end
 
+  # Actions::Stats::Show -> "stats.show", the key that pairs an action
+  # with its view (Views::Stats::Show) and template (stats/show.html.erb).
+  def self.class_key(name, namespace)
+    return nil unless name.start_with?("#{namespace}::")
+    name.delete_prefix("#{namespace}::").split("::").map { |s| Inflector.underscore(s) }.join(".")
+  end
+
+  def self.class_name(key, namespace)
+    "#{namespace}::#{key.split('.').map { |s| Inflector.camelize(s) }.join('::')}"
+  end
+
   # Splits a call's arguments into positional nodes and a {Symbol => node} hash.
   def self.call_args(node)
     args = (node.arguments&.arguments || []).dup

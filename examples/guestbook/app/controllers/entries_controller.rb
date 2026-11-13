@@ -6,7 +6,7 @@ class EntriesController < ApplicationController
 
   # Controllers can render Hanami-style views too.
   def summary
-    render view: "stats.show", count: Entry.count, latest: Entry.order(id: :desc).limit(3)
+    render view: Views::Stats::Show, count: Entry.count, latest: Entry.order(id: :desc).limit(3)
   end
 
   def show

@@ -19,7 +19,7 @@ begin
     exec(tep, "build", source, "-o", output || File.join(app_dir, File.basename(app_dir)))
   when "routes"
     build.routes.routes.each do |r|
-      puts format("%-7s %-22s %s", r.verb.to_s.upcase, r.path, r.controller ? "#{r.controller}##{r.action}" : r.action)
+      puts format("%-7s %-22s %s", r.verb.to_s.upcase, r.path, r.controller ? "#{r.controller}##{r.action}" : Rieles.class_name(r.action, "Actions"))
     end
   else usage
   end

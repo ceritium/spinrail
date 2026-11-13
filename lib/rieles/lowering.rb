@@ -154,9 +154,10 @@ module Rieles
     def lower_template(node, args, kw)
       status = kw[:status] ? status_code(kw[:status]) : 200
       if kw[:view]
-        # render view: "stats.show", count: ... -- a Hanami-style view from a controller.
+        # render view: Views::Stats::Show, count: ... -- a Hanami-style view from a controller.
         exposures = kw.reject { |k, _| %i[view status].include?(k) }
-        view = @ctx.view_for(Rieles.literal(kw[:view]).to_s, exposures.keys, where(node))
+        key = Rieles.class_key(kw[:view].slice, "Views") or fail!(node, "expected view: Views::..., got `#{kw[:view].slice}`")
+        view = @ctx.view_for(key, exposures.keys, where(node))
         @ctx.record_response(nil, where(node))
         @rw.replace(node) do
           values = view.exposures.map { |e| @rw.slice(exposures.fetch(e.to_sym)) }

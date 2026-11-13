@@ -49,7 +49,7 @@ Roughly in priority order within each section.
 
 ## Actions and views
 
-- [x] Hanami-style endpoints alongside controllers (`to: "stats.show"`).
+- [x] Hanami-style endpoints alongside controllers (`to: Actions::Stats::Show`).
 - [ ] View classes with methods and computed exposures (`expose :x do ... end`).
 - [ ] `response.status=`, `request.params` beyond `[:key]`, `halt`.
 

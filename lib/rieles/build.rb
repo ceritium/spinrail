@@ -60,7 +60,7 @@ module Rieles
 
       def view_for(key, keys, where)
         view = @build.action_views[key] or
-          raise CompileError, "#{where}: no app/views/#{key.tr('.', '/')}.rb for view #{key}"
+          raise CompileError, "#{where}: no app/views/#{key.tr('.', '/')}.rb for #{Rieles.class_name(key, "Views")}"
         given = keys.map(&:to_s).sort
         unless given == view.exposures.sort
           raise CompileError, "#{where}: #{view.class_name} exposes #{view.exposures.inspect}, render passes #{given.inspect}"
@@ -199,10 +199,8 @@ module Rieles
     def namespaced_class(file, namespace)
       klass = Rieles.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
       name = klass&.constant_path&.slice.to_s
-      unless name.start_with?("#{namespace}::")
-        raise CompileError, "#{rel(file)}: expected `class #{namespace}::...` (compact form)"
-      end
-      key = name.delete_prefix("#{namespace}::").split("::").map { |s| Inflector.underscore(s) }.join(".")
+      key = Rieles.class_key(name, namespace)
+      raise CompileError, "#{rel(file)}: expected `class #{namespace}::...` (compact form)" unless key
       [klass, name, key]
     end
 
@@ -323,7 +321,7 @@ module Rieles
 
     def action_route_block(route)
       action = @actions[route.action] or
-        raise CompileError, "config/routes.rb: no app/actions/#{route.action.tr('.', '/')}.rb for #{route.path}"
+        raise CompileError, "config/routes.rb: no app/actions/#{route.action.tr('.', '/')}.rb for #{Rieles.class_name(route.action, "Actions")}"
       dispatch(route, action.class_name, "handle(req, res)",
                "c.render_error(500, \"#{action.class_name} didn't respond\") unless c.performed?")
     end
