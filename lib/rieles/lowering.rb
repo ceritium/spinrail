@@ -153,7 +153,16 @@ module Rieles
 
     def lower_template(node, args, kw)
       status = kw[:status] ? status_code(kw[:status]) : 200
-      if kw[:plain]
+      if kw[:view]
+        # render view: "stats.show", count: ... -- a Hanami-style view from a controller.
+        exposures = kw.reject { |k, _| %i[view status].include?(k) }
+        view = @ctx.view_for(Rieles.literal(kw[:view]).to_s, exposures.keys, where(node))
+        @ctx.record_response(nil, where(node))
+        @rw.replace(node) do
+          values = view.exposures.map { |e| @rw.slice(exposures.fetch(e.to_sym)) }
+          "render_view(ApplicationView.new.#{view.method_name}(#{values.join(', ')}), #{status})"
+        end
+      elsif kw[:plain]
         @ctx.record_response(nil, where(node))
         @rw.replace(node) { "render_plain(#{@rw.slice(kw[:plain])}, #{status})" }
       elsif args.first

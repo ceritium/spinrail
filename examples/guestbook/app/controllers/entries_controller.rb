@@ -4,6 +4,11 @@ class EntriesController < ApplicationController
     @entry = Entry.new
   end
 
+  # Controllers can render Hanami-style views too.
+  def summary
+    render view: "stats.show", count: Entry.count, latest: Entry.order(id: :desc).limit(3)
+  end
+
   def show
     @entry = Entry.find(params[:id])
   end

@@ -56,9 +56,11 @@ module Rieles
       def action? = !@action.nil?
       def enter_def(name) = @current = name
 
-      def action_view(keys, where)
-        view = @build.action_views[@action] or
-          raise CompileError, "#{where}: no app/views/#{@action.tr('.', '/')}.rb for action #{@action}"
+      def action_view(keys, where) = view_for(@action, keys, where)
+
+      def view_for(key, keys, where)
+        view = @build.action_views[key] or
+          raise CompileError, "#{where}: no app/views/#{key.tr('.', '/')}.rb for view #{key}"
         given = keys.map(&:to_s).sort
         unless given == view.exposures.sort
           raise CompileError, "#{where}: #{view.class_name} exposes #{view.exposures.inspect}, render passes #{given.inspect}"

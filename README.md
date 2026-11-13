@@ -35,7 +35,9 @@ app/views/stats/show.rb               class Views::Stats::Show < Rieles::View; e
 app/templates/stats/show.html.erb     reads `count` as a local
 ```
 
-The build checks that `render` passes exactly the view's exposures.
+A controller can render the same view with
+`render view: "stats.show", count: ..., latest: ...`. Either way, the build
+checks that `render` passes exactly the view's exposures.
 
 ## Try it
 
@@ -56,6 +58,7 @@ when something doesn't compile.
   `find` (404 when missing), `save`, `destroy`; `validates` with `presence`
   and `length`; `errors.any?`, `errors.full_messages`, `errors[:attr]`.
 - Controllers: `params[:x]`, `render :action, status:`, `render plain:`,
+  `render view: "stats.show", exposure: value`,
   `redirect_to path, status:`, implicit render of `controller/action`.
 - Views: layout with `yield`, partials (`render "entry", entry: entry`),
   `<%= %>` escapes, `<%== %>` and `raw` don't, `pluralize`.
