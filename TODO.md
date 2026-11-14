@@ -179,8 +179,7 @@ Roughly in priority order within each section.
 - [x] Workers (`-w N`): the boot connection is closed before forking; SQLite
       runs in WAL with a busy timeout. `RIELES_SERVER=prefork` builds tep's
       default server.
-- [ ] tep's scheduled server drops some connections under a burst (2/40 with one
-      worker, 5-10/40 with four; prefork serves 40/40). Report upstream.
+- [x] tep's scheduled server dropped connections in bursts (fixed in the fork).
 
 ## Upstream
 

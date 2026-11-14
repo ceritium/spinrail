@@ -32,12 +32,12 @@ is easy to revisit.
 - Fork branches so far: fix/sqlite-per-handle-cursor (threads, text over
   64 KB) and fix/threaded-runtime (a tep app using Thread got 400 on every
   request: non-blocking accepted sockets, and sp_ffi_bin_len is
-  thread-local in Spinel's threaded runtime). Candidates for upstream PRs.
-- tep's scheduled server (our default, for Ctrl+C) drops connections under
-  a burst of 40; the prefork server doesn't. It also makes CI flaky now and
-  then (a request test times out). Draining accept() in a loop was not the
-  fix (it stopped serving at all). Report upstream? Default production
-  builds to prefork?
+  thread-local in Spinel's threaded runtime) and fix/scheduled-burst (the
+  scheduled server left connections unanswered in bursts: each connection
+  fiber closed over the accept loop's shared `client`). Candidates for
+  upstream PRs.
+- Default production builds to the prefork server? The scheduled one no
+  longer drops connections in bursts (fixed in the fork).
 - The gemspec says MIT and lists you as author; the repo has no LICENSE
   yet. Confirm before publishing anything.
 - Jobs take a single argument, passed as a String (perform(id) gets "3").

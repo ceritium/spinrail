@@ -163,16 +163,7 @@ module Rieles
         req.set_form_data(params.transform_keys(&:to_s))
       end
       req["Cookie"] = @cookies.map { |k, v| "#{k}=#{v}" }.join("; ") unless @cookies.empty?
-      # tep's scheduled server sometimes leaves a connection unanswered
-      # (see QUESTIONS.md); a GET is safe to send again.
-      attempts = klass == Net::HTTP::Get ? 2 : 1
-      begin
-        @response = Net::HTTP.start("127.0.0.1", @port, read_timeout: 3) { |http| http.request(req) }
-      rescue Net::ReadTimeout, EOFError, Errno::ECONNRESET
-        attempts -= 1
-        retry if attempts > 0
-        raise
-      end
+      @response = Net::HTTP.start("127.0.0.1", @port, read_timeout: 3) { |http| http.request(req) }
       @response.get_fields("set-cookie")&.each do |line|
         name, value = line.split(";", 2).first.split("=", 2)
         @cookies[name] = value
