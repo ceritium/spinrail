@@ -158,6 +158,19 @@ module Rieles
     def select_sql = "SELECT #{columns.map(&:name).join(', ')} FROM #{@table.name}"
     def relation = "#{@name}Relation"
 
+    def param_assignments
+      writable.map do |c|
+        read = "params.get(#{c.name.inspect})"
+        value = case c.type
+                when :integer then "#{read}.to_i"
+                when :float then "#{read}.to_f"
+                when :boolean then "(#{read} == \"1\" || #{read} == \"true\" || #{read} == \"on\")"
+                else read
+                end
+        "@#{c.name} = #{value} if params.has?(#{c.name.inspect})"
+      end
+    end
+
     def json_fields = columns.map { |c| "#{%("#{c.name}":).inspect} + @#{c.name}.to_json" }.join(%( + "," + ))
 
     def insert_sql
@@ -352,6 +365,39 @@ module Rieles
 
           def update!(#{update_kwargs})
         #{indent(assign, 4)}
+            save!
+          end
+
+          def self.from_params(params)
+            record = #{@name}.new
+            record.assign_params(params)
+            record
+          end
+
+          def self.create_from(params)
+            record = #{@name}.from_params(params)
+            record.save
+            record
+          end
+
+          def self.create_from!(params)
+            record = #{@name}.from_params(params)
+            record.save!
+            record
+          end
+
+          def assign_params(params)
+        #{indent(param_assignments, 4)}
+            self
+          end
+
+          def update_from(params)
+            assign_params(params)
+            save
+          end
+
+          def update_from!(params)
+            assign_params(params)
             save!
           end
 

@@ -93,9 +93,15 @@ module Rieles
       end
 
       def partial_method(key, locals, where) = @build.use_partial(key, locals, where)
+      def path_helper?(name) = @build.routes.helpers.key?(name)
+      def model?(name) = @build.model_names.include?(name)
     end
 
     attr_reader :templates, :action_views
+
+    def model_names
+      @model_names ||= Dir[path("app/models/*.rb")].map { |f| Inflector.camelize(File.basename(f, ".rb")) } - ["ApplicationRecord"]
+    end
 
     def initialize(app_dir)
       @app = File.expand_path(app_dir)
@@ -497,6 +503,9 @@ module Rieles
           rescue Rieles::RecordNotFound => e
             Rieles.log.error(e)
             c.render_error(404, "Not found")
+          rescue Rieles::ParameterMissing => e
+            Rieles.log.error(e)
+            c.render_error(400, e.message)
           rescue Rieles::RecordInvalid => e
             Rieles.log.error(e)
             c.render_error(422, e.message)

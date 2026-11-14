@@ -278,6 +278,54 @@ module Rieles
   end
 
   class RecordInvalid < StandardError; end
+  class ParameterMissing < StandardError; end
+
+  # params.require(:entry).permit(:name): reads "entry[name]" form fields.
+  class Parameters
+    attr_reader :source, :prefix, :permitted, :filtered
+
+    def initialize(source, prefix)
+      @source = source
+      @prefix = prefix
+      @permitted = []
+      @filtered = false
+    end
+
+    def require_key(key)
+      nested = Parameters.new(@source, full(key))
+      raise ParameterMissing, "param is missing or the value is empty: " + key unless nested.any?
+      nested
+    end
+
+    def permit_keys(keys)
+      copy = Parameters.new(@source, @prefix)
+      copy.restrict(keys)
+      copy
+    end
+
+    def restrict(keys)
+      @permitted = keys
+      @filtered = true
+    end
+
+    def any?
+      start = @prefix + "["
+      @source.each { |k, _| return true if k.start_with?(start) }
+      false
+    end
+
+    def has?(key)
+      return false if @filtered && !@permitted.include?(key)
+      @source.key?(full(key))
+    end
+
+    def get(key)
+      return "" unless has?(key)
+      @source[full(key)].dup.force_encoding("UTF-8").scrub("")
+    end
+
+    def full(key) = @prefix.empty? ? key : @prefix + "[" + key + "]"
+  end
   class StatementInvalid < StandardError; end
 
   # One connection per process. Tep::SQLite has a single cursor, which is
@@ -469,6 +517,7 @@ module Rieles
       @performed
     end
 
+    def params = Parameters.new(@req.params, "")
     def request = @req
     def response = @res
 
@@ -527,6 +576,62 @@ module Rieles
     def alert = @controller.flash_get("alert")
     def session_get(key) = @controller.session_get(key)
     def form_authenticity_token = @controller.form_authenticity_token
+
+    def form_open(action, method, attrs)
+      verb = method.downcase
+      html = "<form action=\"" + h(action) + "\" method=\"" + (verb == "get" ? "get" : "post") + "\"" + attrs + ">"
+      unless verb == "get" || verb == "post"
+        html = html + "<input type=\"hidden\" name=\"_method\" value=\"" + h(verb) + "\">"
+      end
+      unless verb == "get"
+        html = html + "<input type=\"hidden\" name=\"authenticity_token\" value=\"" + h(form_authenticity_token) + "\">"
+      end
+      html
+    end
+
+    def field_name(scope, attribute) = scope.empty? ? attribute : scope + "[" + attribute + "]"
+    def field_id(scope, attribute) = scope.empty? ? attribute : scope + "_" + attribute
+
+    def form_label(scope, attribute, text, attrs)
+      "<label for=\"" + field_id(scope, attribute) + "\"" + attrs + ">" + h(text) + "</label>"
+    end
+
+    def form_input(type, scope, attribute, value, attrs)
+      "<input type=\"" + type + "\" name=\"" + field_name(scope, attribute) + "\" id=\"" + field_id(scope, attribute) +
+        "\" value=\"" + h(value) + "\"" + attrs + ">"
+    end
+
+    def form_textarea(scope, attribute, value, attrs)
+      "<textarea name=\"" + field_name(scope, attribute) + "\" id=\"" + field_id(scope, attribute) + "\"" + attrs + ">" +
+        h(value) + "</textarea>"
+    end
+
+    # The hidden "0" makes an unchecked box submit false, as in Rails.
+    def form_check_box(scope, attribute, checked, attrs)
+      "<input type=\"hidden\" name=\"" + field_name(scope, attribute) + "\" value=\"0\">" \
+        "<input type=\"checkbox\" name=\"" + field_name(scope, attribute) + "\" id=\"" + field_id(scope, attribute) +
+        "\" value=\"1\"" + (checked ? " checked" : "") + attrs + ">"
+    end
+
+    def form_select(scope, attribute, value, choices, attrs)
+      html = "<select name=\"" + field_name(scope, attribute) + "\" id=\"" + field_id(scope, attribute) + "\"" + attrs + ">"
+      choices.each do |choice|
+        html = html + "<option value=\"" + h(choice) + "\"" + (choice == value ? " selected" : "") + ">" + h(choice) + "</option>"
+      end
+      html + "</select>"
+    end
+
+    def form_submit(text, attrs)
+      "<input type=\"submit\" name=\"commit\" value=\"" + h(text) + "\"" + attrs + ">"
+    end
+
+    def link_to(text, url, attrs)
+      "<a href=\"" + h(url) + "\"" + attrs + ">" + h(text) + "</a>"
+    end
+
+    def button_to(text, url, method, attrs)
+      form_open(url, method, " class=\"button_to\"") + "<button type=\"submit\"" + attrs + ">" + h(text) + "</button></form>"
+    end
 
     def csrf_meta_tags
       "<meta name=\"csrf-param\" content=\"authenticity_token\">\n" \

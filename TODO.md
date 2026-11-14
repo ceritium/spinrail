@@ -29,8 +29,8 @@ Roughly in priority order within each section.
 
 - [x] `before_action` / `after_action` / `skip_*` with `only:`/`except:`;
       what before filters assign counts for the template check.
-- [ ] Strong params, `params.require(:entry).permit(...)`, and nested form
-      names (`entry[name]`).
+- [x] Strong params (`require`/`permit`/`expect`) over nested form names
+      (`entry[name]`); `Model.new(params)`, `create`, `update`, typed per column.
 - [x] Sessions on tep's signed cookie (`SECRET_KEY_BASE`, a dev secret in
       `tmp/local_secret.txt`).
 - [ ] `cookies[:x]` / `cookies.signed`.
@@ -46,7 +46,9 @@ Roughly in priority order within each section.
 
 ## Views
 
-- [ ] Helpers: `link_to`, `button_to`, `form_with` and field helpers.
+- [x] Helpers: `link_to`, `button_to`, `form_with` and field helpers.
+- [ ] More helpers: `link_to` with a block, `collection_select`, `field_with_errors`,
+      `number_to_currency`, `time_ago_in_words`, `truncate`, `simple_format`.
 - [ ] `html_safe` strings instead of deciding at build time which output is raw.
 - [ ] `content_for` / `yield :title`.
 - [ ] Collection partials (`render @entries`) and partial locals with defaults.

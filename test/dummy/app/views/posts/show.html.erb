@@ -1,0 +1,4 @@
+<% if notice %><p class="notice"><%= notice %></p><% end %>
+<h1><%= @post.title %></h1>
+<p>published=<%= @post.published? %> rating=<%= @post.rating %> status=<%= @post.status %></p>
+<%= link_to "Edit", edit_post_path(@post) %>

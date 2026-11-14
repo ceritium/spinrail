@@ -1,0 +1,12 @@
+<%= form_with model: post, scope: :post, url: (post.persisted? ? post_path(post) : posts_path), class: "post-form" do |f| %>
+  <% post.errors.full_messages.each do |message| %><p class="error"><%= message %></p><% end %>
+  <%= f.hidden_field :author_id %>
+  <%= f.label :title %>
+  <%= f.text_field :title, required: true, maxlength: 50 %>
+  <%= f.label :body, "Text" %>
+  <%= f.text_area :body, rows: 3 %>
+  <%= f.check_box :published %>
+  <%= f.number_field :rating, step: "0.25" %>
+  <%= f.select :status, ["draft", "published"] %>
+  <%= f.submit %>
+<% end %>

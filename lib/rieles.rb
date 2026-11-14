@@ -1,6 +1,7 @@
 require "prism"
 require "fileutils"
 require "json"
+require "cgi"
 
 module Rieles
   class CompileError < StandardError; end

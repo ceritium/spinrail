@@ -8,7 +8,8 @@ module Rieles
     module_function
 
     # Helpers that return markup; their output isn't escaped again.
-    HTML_HELPERS = /\A(csrf_meta_tags|link_to|button_to|hidden_field_tag)\b/
+    HTML_HELPERS = /\A(csrf_meta_tags|link_to|button_to|\w+\.(label|\w+_field|text_?area|check_?box|select|submit))\b/
+    BLOCK = /\bdo\s*(\|[^|]*\|)?\z/
 
     # log_as: template name for the request log; partials pass nil.
     def compile(source, signature, layout: false, log_as: nil)
@@ -63,6 +64,7 @@ module Rieles
       when :raw then "  out << (#{code}).to_s\n"
       when :expr
         if layout && code == "yield" then "  out << content\n"
+        elsif code.match?(BLOCK) then "  #{code}\n"
         elsif code.match?(HTML_HELPERS) then "  out << (#{code}).to_s\n"
         elsif code.match?(/\Araw\b/) then "  out << (#{code.sub(/\Araw\s*/, '')}).to_s\n"
         elsif code.match?(/\Arender\b/) then "  out << (#{code})\n"

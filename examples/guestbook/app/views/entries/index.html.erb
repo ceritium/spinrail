@@ -3,8 +3,7 @@
   <p class="lead">Rails-shaped Ruby, compiled to a native binary.</p>
 </header>
 
-<form method="post" action="<%= entries_path %>">
-  <input type="hidden" name="authenticity_token" value="<%= form_authenticity_token %>">
+<%= form_with model: @entry do |f| %>
   <% if @entry.errors.any? %>
     <ul class="errors">
       <% @entry.errors.full_messages.each do |message| %>
@@ -12,12 +11,12 @@
       <% end %>
     </ul>
   <% end %>
-  <label for="name">Name</label>
-  <input id="name" name="name" maxlength="40" value="<%= @entry.name %>">
-  <label for="body">Message</label>
-  <textarea id="body" name="body" maxlength="500" rows="3"><%= @entry.body %></textarea>
+  <%= f.label :name %>
+  <%= f.text_field :name, maxlength: 40 %>
+  <%= f.label :body, "Message" %>
+  <%= f.text_area :body, maxlength: 500, rows: 3 %>
   <button>Sign</button>
-</form>
+<% end %>
 
 <h2><%= pluralize(@entries.count, "message") %></h2>
 <ul class="entries">

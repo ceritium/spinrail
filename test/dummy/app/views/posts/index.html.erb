@@ -1,0 +1,8 @@
+<% if notice %><p class="notice"><%= notice %></p><% end %>
+<ul>
+  <% @posts.each do |post| %>
+    <li><%= link_to post.title, post_path(post), class: "post", data: { id: post.id } %>
+      <%= button_to "Delete", post_path(post), method: :delete, class: "danger" %></li>
+  <% end %>
+</ul>
+<%= link_to "New post", new_post_path %>
