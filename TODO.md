@@ -138,7 +138,7 @@ Roughly in priority order within each section.
       `SPINRAIL_VENDOR` or `~/.cache/spinrail/vendor` outside a checkout.
 - [ ] Publish the gem (name, license and ownership to decide).
 - [ ] A console, once spinel can compile a line against a program that is already
-      running: see `docs/interactive.md` on the `interactive-spinel` branch of
+      running: see `docs/internals/interactive-design.md` on the `interactive-spinel` branch of
       ceritium/spinel.
 - [ ] Compiled dependencies through spin (spinel's package manager): tep and
       spinel_kit as git deps in a `spin.toml` with `spin.lock`, `spin flags` for the
