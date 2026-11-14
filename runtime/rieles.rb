@@ -547,7 +547,8 @@ module Rieles
 
   def self.db = DB.connection
 
-  def self.now = Time.now.strftime("%Y-%m-%d %H:%M:%S")
+  # Microseconds, as Rails stores them, so two writes in one second differ.
+  def self.now = Time.now.strftime("%Y-%m-%d %H:%M:%S.%6N")
 
   # Cache only SQL fixed at build time; tep keeps 64 cached statements.
   def self.prepare(sql, cached)
@@ -887,15 +888,25 @@ module Rieles
     end
   end
 
-  # Rails.cache: an in-memory store per process (like MemoryStore), so
-  # each worker has its own. expires_in 0 means no expiry.
+  # Rails.cache: in memory per process (like MemoryStore), or a SQLite
+  # table every worker shares with RIELES_CACHE_STORE=sqlite. expires_in 0
+  # means no expiry.
   class Cache
     def initialize
       @values = Tep.str_hash
       @expires = { "" => 0 }
+      @shared = ENV.fetch("RIELES_CACHE_STORE", "memory") == "sqlite"
+      @ready = false
+    end
+
+    def table
+      return if @ready
+      Rieles.db.exec("CREATE TABLE IF NOT EXISTS rieles_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires_at INTEGER NOT NULL)")
+      @ready = true
     end
 
     def read(key)
+      return read_shared(key) if @shared
       expires = @expires.fetch(key, 0)
       if expires > 0 && Time.now.to_i >= expires
         delete(key)
@@ -904,18 +915,53 @@ module Rieles
       @values[key]
     end
 
+    def read_shared(key)
+      table
+      db = Rieles.db
+      db.prepare("SELECT value FROM rieles_cache WHERE key = ? AND (expires_at = 0 OR expires_at > ?)")
+      db.bind_str(1, key)
+      db.bind_int(2, Time.now.to_i)
+      found = db.step == 1
+      value = found ? db.col_str(0) : ""
+      db.finalize
+      found ? value : nil
+    end
+
     def write(key, value, expires_in)
+      if @shared
+        table
+        db = Rieles.db
+        db.prepare("INSERT OR REPLACE INTO rieles_cache (key, value, expires_at) VALUES (?, ?, ?)")
+        db.bind_str(1, key)
+        db.bind_str(2, value)
+        db.bind_int(3, expires_in > 0 ? Time.now.to_i + expires_in : 0)
+        db.step
+        db.finalize
+        return value
+      end
       @values[key] = value
       @expires[key] = expires_in > 0 ? Time.now.to_i + expires_in : 0
       value
     end
 
     def delete(key)
+      if @shared
+        table
+        db = Rieles.db
+        db.prepare("DELETE FROM rieles_cache WHERE key = ?")
+        db.bind_str(1, key)
+        db.step
+        db.finalize
+      end
       @values.delete(key)
       @expires.delete(key)
     end
 
     def clear
+      if @shared
+        table
+        Rieles.db.exec("DELETE FROM rieles_cache")
+      end
       @values = Tep.str_hash
       @expires = { "" => 0 }
     end
@@ -1323,7 +1369,7 @@ module Rieles
       (number.to_f < 0 ? "-" : "") + unit + number_with_delimiter(amount)
     end
 
-    # Timestamps are "YYYY-MM-DD HH:MM:SS" local time (see Rieles.now).
+    # Timestamps are "YYYY-MM-DD HH:MM:SS[.ffffff]" local time (see Rieles.now).
     def time_ago_in_words(timestamp)
       parts = timestamp.split(/[- :T]/).map { |x| x.to_i }
       return "" if parts.length < 6

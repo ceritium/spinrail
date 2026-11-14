@@ -1,5 +1,5 @@
 <p><a href="<%= root_path %>">← All messages</a></p>
 <article>
   <p class="body"><%= @entry.body %></p>
-  <p class="meta"><%= @entry.name %> · <%= @entry.created_at %></p>
+  <p class="meta"><%= @entry.name %> · <%= l(@entry.created_at) %></p>
 </article>

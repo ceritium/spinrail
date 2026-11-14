@@ -117,8 +117,8 @@ Roughly in priority order within each section.
 
 - [x] `Rails.cache.fetch/read/write/delete/clear` with `expires_in` (in memory, per
       process), fragment caching `<% cache @post do %>`, `cache_key`, `5.minutes`.
-- [ ] A shared store (SQLite table) so workers see the same cache.
-- [ ] Sub-second `updated_at`, so two writes in one second get new cache keys.
+- [x] A shared store (`RIELES_CACHE_STORE=sqlite`) so workers see the same cache.
+- [x] Timestamps with microseconds, so two writes in one second get new cache keys.
 
 ## Jobs
 
