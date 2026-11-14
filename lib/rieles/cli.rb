@@ -13,7 +13,7 @@ module Rieles
     COMMANDS = {
       "new" => "Create an app: rieles new PATH",
       "generate" => "model|controller|scaffold NAME [field:type ...] (alias g)",
-      "server" => "Build if needed and start the server (-p PORT, default 3000)",
+      "server" => "Build if needed, start the server and rebuild on change (-p PORT, --no-reload)",
       "build" => "Compile the app into a native binary (-o OUTPUT)",
       "routes" => "List the routes",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
@@ -63,11 +63,63 @@ module Rieles
 
     def server
       port = option("-p") || "3000"
+      reload = !@argv.delete("--no-reload") && ENV.fetch("RIELES_ENV", "development") == "development"
       build(binary) if stale?
       Dir.chdir(@app)
       puts "rieles: http://localhost:#{port} (Ctrl+C to stop)"
       $stdout.flush
-      exec(binary, "-p", port)
+      exec(binary, "-p", port) unless reload
+      watch(port)
+    end
+
+    # Rebuilds into a side file on change and swaps it in once it compiled,
+    # so a broken edit leaves the running server alone.
+    def watch(port)
+      pid = start_server(port)
+      trap("INT") do
+        stop_server(pid)
+        exit
+      end
+      seen = input_mtimes
+      loop do
+        sleep 0.5
+        now = input_mtimes
+        next if now == seen
+        seen = now
+        next_binary = "#{binary}.next"
+        begin
+          next unless compile(next_binary)
+        rescue CompileError => e
+          warn "rieles: #{e.message}"
+          next
+        end
+        stop_server(pid)
+        File.rename(next_binary, binary)
+        pid = start_server(port)
+      end
+    end
+
+    def start_server(port)
+      10.times do
+        pid = Process.spawn(binary, "-p", port)
+        sleep 0.2
+        return pid unless Process.wait(pid, Process::WNOHANG)
+        sleep 0.3 # the old process may still hold the port
+      end
+      abort "rieles: the server didn't start"
+    end
+
+    def stop_server(pid)
+      Process.kill("INT", pid)
+      Process.wait(pid)
+    rescue Errno::ESRCH, Errno::ECHILD
+      nil
+    end
+
+    def input_mtimes
+      inputs = Dir[File.join(@app, "{app,config,db}/**/*")].reject { |f| f.end_with?(".sqlite3") } +
+               Dir[File.join(FRAMEWORK, "{lib,runtime}/**/*.rb")]
+      inputs.select { |f| File.file?(f) }.to_h { |f| [f, File.mtime(f)] }
     end
 
     def routes
@@ -104,6 +156,10 @@ module Rieles
 
     def build(output, force: false)
       return unless force || stale?
+      compile(output) or abort "rieles: build failed (generated source: tmp/rieles/app.rb)"
+    end
+
+    def compile(output)
       setup unless File.executable?(File.join(VENDOR, "spinel/spinel")) && File.exist?(TEP)
       source = Build.new(@app).write(File.join(@app, "tmp/rieles"))
       env = {
@@ -120,17 +176,16 @@ module Rieles
         $stdout.flush
         warn log
         warn source_hints(log, source)
-        abort "rieles: build failed (generated source: #{rel_to_app(source)})"
+        return false
       end
       puts format("done in %.1fs", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
       warnings = log.lines.select { |l| l.match?(/warning|error/i) && KNOWN_WARNINGS.none? { |k| l.include?(k) } }
       warn warnings.join unless warnings.empty?
+      true
     end
 
     # Harmless and not actionable by apps (see the build notes in README).
     KNOWN_WARNINGS = ["Router @routes: Array[Route] stays a boxed array", "ignoring duplicate libraries"].freeze
-
-    def rel_to_app(file) = file.delete_prefix("#{@app}/")
 
     # tep drops comments, so the failing line of its .tep.rb is looked up
     # by text in our app.rb, whose section marks name the app file.
@@ -152,9 +207,7 @@ module Rieles
     def stale?
       return true unless File.exist?(binary)
       built = File.mtime(binary)
-      inputs = Dir[File.join(@app, "{app,config,db}/**/*")].reject { |f| f.end_with?(".sqlite3") } +
-               Dir[File.join(FRAMEWORK, "{lib,runtime}/**/*.rb")]
-      inputs.any? { |f| File.file?(f) && File.mtime(f) > built }
+      input_mtimes.values.any? { |t| t > built }
     end
   end
 end
