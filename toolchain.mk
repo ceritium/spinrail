@@ -5,7 +5,7 @@
 # A matz/spinel commit (or tag); setup moves vendor/spinel to it.
 SPINEL_REF    := 2026.10.25
 TEP_REPO      ?= https://github.com/ceritium/tep
-TEP_REF       ?= fixes-1
+TEP_REF       ?= fixes-2
 SPINELKIT_REF := v0.3.1
 
 # VENDOR defaults to <repo>/vendor; the spinrail CLI passes its own when

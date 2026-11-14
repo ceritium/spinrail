@@ -34,7 +34,9 @@ is easy to revisit.
   linked a helper .o older than its .c), fix/reason-phrases
   (tep#278, cherry-picked), fix/sqlite-null (bind_null, col_null?),
   fix/sqlite-rowid-64 (last_rowid past 2^31) and fix/pg-long-values (PG
-  values cut at 64 KB, binds capped at 256 KB in total). Candidates for
+  values cut at 64 KB, binds capped at 256 KB in total), and keeping
+  `require "securerandom"` (and other packages bundled with spinel), which
+  tep used to drop. Candidates for
   upstream PRs.
 - Default production builds to the prefork server? The scheduled one no
   longer drops connections in bursts (fixed in the fork).
