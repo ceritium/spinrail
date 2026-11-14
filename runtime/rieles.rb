@@ -1268,10 +1268,15 @@ module Rieles
     end
 
     def deliver_later
-      json = "{\"to\":" + @to.to_json + ",\"from\":" + @from.to_json + ",\"subject\":" + @subject.to_json +
-             ",\"text\":" + @text.to_json + ",\"html\":" + @html.to_json + "}"
-      Rieles.enqueue("Rieles::Mail", json)
+      Rieles.enqueue("Rieles::Mail", to_json)
       self
+    end
+
+    def to_json
+      fields = ["\"from\":" + @from.to_json, "\"to\":" + @to.to_json, "\"subject\":" + @subject.to_json]
+      fields << "\"text\":" + @text.to_json unless @text.empty?
+      fields << "\"html\":" + @html.to_json unless @html.empty?
+      "{" + fields.join(",") + "}"
     end
 
     def self.from_json(text)
@@ -1296,10 +1301,22 @@ module Rieles
     end
   end
 
+  class DeliveryFailed < StandardError; end
+
   # RIELES_MAIL_DELIVERY: log (default) prints it; file writes it into
-  # RIELES_MAIL_DIR (default tmp/mails), which tests read back.
+  # RIELES_MAIL_DIR (default tmp/mails), which tests read back; http POSTs
+  # {from, to, subject, text, html} as JSON to RIELES_MAIL_URL with
+  # RIELES_MAIL_TOKEN as a bearer token (the shape Resend's API takes).
   def self.deliver(mail)
-    if ENV.fetch("RIELES_MAIL_DELIVERY", "log") == "file"
+    method = ENV.fetch("RIELES_MAIL_DELIVERY", "log")
+    if method == "http"
+      headers = Tep.str_hash
+      headers["Content-Type"] = "application/json"
+      token = ENV.fetch("RIELES_MAIL_TOKEN", "")
+      headers["Authorization"] = "Bearer " + token unless token.empty?
+      res = Tep::Http.send_req("POST", ENV.fetch("RIELES_MAIL_URL", ""), mail.to_json, headers)
+      raise DeliveryFailed, "mail API answered " + res.status.to_s + ": " + res.body if res.status < 200 || res.status >= 300
+    elsif method == "file"
       path = ENV.fetch("RIELES_MAIL_DIR", "tmp/mails") + "/" + Time.now.strftime("%Y%m%d%H%M%S%6N") + ".eml"
       File.open(path, "w") { |f| f.write(mail.to_s) }
     else

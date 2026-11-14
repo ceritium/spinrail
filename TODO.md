@@ -133,7 +133,8 @@ Roughly in priority order within each section.
 - [x] `app/mailers` with `mail(to:, subject:, from:)`, `default from:`, `.text.erb`
       (unescaped) and `.html.erb` templates, `deliver_now`/`deliver_later`, log or
       file delivery, `deliveries` in request tests, `generate mailer`.
-- [ ] SMTP or HTTP API delivery, attachments, mailer layouts, previews.
+- [x] HTTP API delivery (`RIELES_MAIL_DELIVERY=http`, JSON in the shape Resend takes).
+- [ ] SMTP, attachments, mailer layouts, previews.
 
 ## Caching
 

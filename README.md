@@ -141,7 +141,9 @@ to the server.
 - Static files in `public/` and assets in `app/assets/`.
 - Mailers: `app/mailers` with `mail(to:, subject:)`, `.text.erb`/`.html.erb`
   templates, `deliver_now`/`deliver_later`; delivered to the log, or to files
-  with `RIELES_MAIL_DELIVERY=file` (request tests read them via `deliveries`).
+  with `RIELES_MAIL_DELIVERY=file` (request tests read them via `deliveries`), or
+  to an HTTP API with `RIELES_MAIL_DELIVERY=http`, `RIELES_MAIL_URL` and
+  `RIELES_MAIL_TOKEN` (JSON `{from, to, subject, text, html}`, as Resend takes).
 - Jobs: `app/jobs/*_job.rb` with `perform(arg)`, `perform_later` into a SQLite
   queue drained by `rieles jobs` (3 attempts with backoff); inline in tests.
 - i18n: `config/locales/*.yml`, `t(".title")`, `t("greeting", name: x)`,
