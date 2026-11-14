@@ -70,4 +70,22 @@ class BuildTest < CompilerTest
     assert_includes ruby, "def partial_posts_card(post:, compact: false)"
     assert_includes ruby, %(partial_posts_card(post: "x"))
   end
+
+  def test_n_plus_one_warning
+    files = {
+      "config/routes.rb" => %(Rieles.routes.draw do\n get "/", to: "posts#index"\nend\n),
+      "db/schema.rb" => "Rieles::Schema.define do\n create_table :posts do |t|\n t.string :title\n end\n create_table :comments do |t|\n t.references :post\n end\nend\n",
+      "app/models/post.rb" => "class Post < ApplicationRecord\n has_many :comments\nend\n",
+      "app/models/comment.rb" => "class Comment < ApplicationRecord\n belongs_to :post\nend\n",
+      "app/controllers/posts_controller.rb" => "class PostsController < ApplicationController\n def index\n @posts = Post.all\n end\nend\n"
+    }
+    build = Rieles::Build.new(minimal_app(files.merge("app/views/posts/index.html.erb" => "<% @posts.each do |post| %><%= post.comments.count %><% end %>")))
+    build.send(:generate)
+    assert_equal 1, build.warnings.size
+    assert_match(/post.comments inside a loop/, build.warnings.first)
+
+    build = Rieles::Build.new(minimal_app(files.merge("app/views/posts/index.html.erb" => "<% @posts.includes(:comments).each do |post| %><%= post.comments.count %><% end %>")))
+    build.send(:generate)
+    assert_empty build.warnings
+  end
 end

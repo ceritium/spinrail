@@ -16,6 +16,7 @@ module Rieles
       "server" => "Build if needed, start the server and rebuild on change (-p PORT, -w WORKERS, --no-reload)",
       "build" => "Compile the app into a native binary (-o OUTPUT)",
       "routes" => "List the routes",
+      "check" => "Run the build's static checks without compiling",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
       "db:migrate" => "Apply db/migrate and rewrite db/schema.rb from it",
       "db:seed" => "Run db/seeds.rb against the database",
@@ -39,6 +40,7 @@ module Rieles
       when "server" then server
       when "build" then build(option("-o") || binary, force: true)
       when "routes" then routes
+      when "check" then check
       when "test" then test
       when "clean" then clean
       when "db:migrate" then migrate
@@ -129,6 +131,15 @@ module Rieles
       inputs.select { |f| File.file?(f) }.to_h { |f| [f, File.mtime(f)] }
     end
 
+    def check
+      build = Build.new(@app)
+      source = build.send(:generate)
+      result = Prism.parse(source)
+      abort "rieles: generated code doesn't parse: #{result.errors.first.message}" if result.failure?
+      build.warnings.uniq.each { |w| warn "warning: #{w}" }
+      puts "rieles: ok (#{build.routes.routes.size} routes, #{build.model_names.size} models)"
+    end
+
     def routes
       all = Build.new(@app).routes.routes
       width = all.map { |r| r.path.size }.max.to_i
@@ -195,7 +206,9 @@ module Rieles
 
     def compile(output)
       setup unless File.executable?(File.join(VENDOR, "spinel/spinel")) && File.exist?(TEP)
-      source = Build.new(@app).write(File.join(@app, "tmp/rieles"))
+      build = Build.new(@app)
+      source = build.write(File.join(@app, "tmp/rieles"))
+      build.warnings.uniq.each { |w| warn "warning: #{w}" }
       env = {
         "SPINEL" => File.join(VENDOR, "spinel/spinel"),
         "SPINELKIT_DIR" => File.join(VENDOR, "spinelkit"),

@@ -57,6 +57,7 @@ cd examples/guestbook
 bin/rieles server   # http://localhost:3000; first run builds ../../../vendor (~1 min)
 bin/rieles routes
 bin/rieles test     # test/**/*_test.rb against the compiled binary
+bin/rieles check    # static checks only, no compile (N+1 warnings too)
 bin/rieles          # all commands: server, build, routes, test, clean, setup
 ```
 

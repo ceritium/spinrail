@@ -136,7 +136,7 @@ Roughly in priority order within each section.
       [OriPekelman/tep#278](https://github.com/OriPekelman/tep/pull/278) is released.
 - [x] Compare notes with [rubys/roundhouse](https://github.com/rubys/roundhouse)
       (summary in README). Ideas worth taking:
-- [ ] `rieles check`: run the build's static checks without compiling, for CI and editors.
+- [x] `rieles check`: the build's static checks without compiling.
 - [ ] Differential tests: the same requests against a Rails app and the rieles build.
-- [ ] Static N+1 warnings: an association read inside a loop over a relation
-      without `includes`.
+- [x] N+1 warnings: an association read inside a loop over records without
+      `includes` (the block variable's name picks the model).

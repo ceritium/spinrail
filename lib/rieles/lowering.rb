@@ -75,6 +75,7 @@ module Rieles
     BUILDER = (FIELDS.keys + %i[label text_area textarea check_box checkbox select collection_select submit]).freeze
 
     def visit_call_node(node)
+      check_n_plus_one(node)
       if @ctx.view? && node.name == :form_with && node.receiver.nil? && node.block
         lower_form(node)
         super
@@ -200,6 +201,27 @@ module Rieles
         end
       end
       code
+    end
+
+    # posts.each { |post| post.comments } without includes(:comments)
+    # queries once per post. A heuristic: the block variable's name gives
+    # the model.
+    def check_n_plus_one(node)
+      return unless %i[each map each_with_index].include?(node.name) && node.receiver && node.block
+      var = node.block.parameters&.parameters&.requireds&.first
+      return unless var.respond_to?(:name)
+      assocs = @ctx.associations_of(Inflector.camelize(var.name.to_s))
+      return if assocs.empty?
+      preloaded = node.receiver.slice
+      find = lambda do |n|
+        if n.is_a?(Prism::CallNode) && local?(n.receiver, var.name) && assocs.include?(n.name.to_s) &&
+           !preloaded.match?(/\b(includes|preload|eager_load)\b[^.]*\b#{n.name}\b/)
+          @ctx.warn("#{where(n)}: #{var.name}.#{n.name} inside a loop queries once per #{var.name}; " \
+                    "add includes(:#{n.name}) to the collection")
+        end
+        n.compact_child_nodes.each { |c| find.call(c) }
+      end
+      find.call(node.block)
     end
 
     def params_call?(node)

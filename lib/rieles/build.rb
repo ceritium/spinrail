@@ -113,6 +113,8 @@ module Rieles
       attr_accessor :i18n_scope
 
       def path_helper?(name) = @build.routes.helpers.key?(name)
+      def associations_of(model) = @build ? @build.associations.fetch(model, []) : []
+      def warn(message) = @build&.warnings&.push(message)
       def current_def = @current
       def layout?(name) = @build.templates.key?("layouts/#{name}")
       def model?(name) = @build.model_names.include?(name)
@@ -122,6 +124,25 @@ module Rieles
 
     def model_names
       @model_names ||= Dir[path("app/models/*.rb")].map { |f| Inflector.camelize(File.basename(f, ".rb")) } - ["ApplicationRecord"]
+    end
+
+    # Non-fatal findings (possible N+1 queries), printed by the CLI.
+    def warnings = @warnings ||= []
+
+    # Model name => association names, read from the class bodies.
+    def associations
+      @associations ||= Dir[path("app/models/*.rb")].to_h do |file|
+        names = []
+        visit = lambda do |node|
+          if node.is_a?(Prism::CallNode) && node.receiver.nil? && %i[has_many has_one belongs_to].include?(node.name)
+            arg = node.arguments&.arguments&.first
+            names << arg.unescaped if arg.is_a?(Prism::SymbolNode)
+          end
+          node.compact_child_nodes.each { |c| visit.call(c) }
+        end
+        visit.call(Rieles.parse(File.read(file), rel(file)))
+        [Inflector.camelize(File.basename(file, ".rb")), names]
+      end
     end
 
     def initialize(app_dir)
