@@ -96,7 +96,7 @@ module Rieles
         @rw.replace(node) { "(#{@rw.slice(arg)}).dom_id" }
       elsif @ctx.view? && node.receiver.nil? && %i[link_to button_to].include?(node.name) && node.block.nil?
         lower_link(node)
-      elsif node.name == :params && local?(node.receiver, :request) && node.arguments.nil?
+      elsif node.name == :params && (local?(node.receiver, :request) || bare?(node.receiver, :request)) && node.arguments.nil?
         @rw.replace(node) { "params" }
       elsif params_call?(node)
         lower_params(node)
@@ -572,7 +572,7 @@ module Rieles
       return false unless node.name == :[] && node.arguments&.arguments&.size == 1
       recv = node.receiver
       return false unless recv.is_a?(Prism::CallNode) && recv.name == :params && recv.arguments.nil?
-      recv.receiver.nil? || local?(recv.receiver, :request)
+      recv.receiver.nil? || local?(recv.receiver, :request) || bare?(recv.receiver, :request)
     end
 
     def local?(node, name)
