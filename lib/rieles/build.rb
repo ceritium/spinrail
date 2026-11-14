@@ -239,7 +239,7 @@ module Rieles
       Dir[path("config/locales/*.yml")].sort.each { |f| walk.call("", YAML.safe_load_file(f) || {}) }
       flat = { "" => "" } if flat.empty?
       entries = flat.map { |k, v| "    #{k.inspect} => #{v.inspect}" }.join(",\n")
-      locales = flat.keys.map { |k| k.split(".").first }.reject(&:empty?).uniq
+      locales = flat.keys.map { |k| k.split(".").first.to_s }.reject(&:empty?).uniq
       locales = [""] if locales.empty?
       "module RielesTranslations\n  ALL = {\n#{entries}\n  }.freeze\n  LOCALES = #{locales.inspect}.freeze\nend\n"
     end
