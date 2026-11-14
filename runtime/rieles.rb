@@ -1037,7 +1037,30 @@ module Rieles
     end
   end
 
-  class Controller
+  # What a view can ask of whatever renders it: a controller, or a mailer
+  # (no request, so no flash, session or CSRF token).
+  class ViewContext
+    def flash = Tep.str_hash
+    def flash_get(key) = Tep.str_hash[key]
+
+    def content_for_set(key, html)
+      @content_for = Tep.str_hash if @content_for.nil?
+      @content_for[key] = @content_for.fetch(key, "") + html
+    end
+
+    def content_for_get(key)
+      return "" if @content_for.nil?
+      @content_for.fetch(key, "")
+    end
+
+    def content_for?(key) = !content_for_get(key).empty?
+    def session_get(key) = Tep.str_hash[key]
+    def form_authenticity_token = ""
+    def request_base_url = "http://localhost"
+    def h(value) = Tep.h(value)
+  end
+
+  class Controller < ViewContext
     def initialize(req, res)
       @req = req
       @res = res
@@ -1061,18 +1084,6 @@ module Rieles
 
     def flash = @flash
     def flash_get(key) = @flash[key]
-
-    def content_for_set(key, html)
-      @content_for = Tep.str_hash if @content_for.nil?
-      @content_for[key] = @content_for.fetch(key, "") + html
-    end
-
-    def content_for_get(key)
-      return "" if @content_for.nil?
-      @content_for.fetch(key, "")
-    end
-
-    def content_for?(key) = !content_for_get(key).empty?
 
     def flash_set(key, value)
       @flash[key] = value
@@ -1228,6 +1239,64 @@ module Rieles
 
     def h(value)
       Tep.h(value)
+    end
+  end
+
+  # A rendered email. deliver_later queues it already rendered, as JSON.
+  class Mail
+    attr_reader :to, :from, :subject, :text, :html
+
+    def initialize(to, from, subject, text, html)
+      @to = to
+      @from = from
+      @subject = subject
+      @text = text
+      @html = html
+    end
+
+    def deliver_now
+      Rieles.deliver(self)
+      self
+    end
+
+    def deliver_later
+      json = "{\"to\":" + @to.to_json + ",\"from\":" + @from.to_json + ",\"subject\":" + @subject.to_json +
+             ",\"text\":" + @text.to_json + ",\"html\":" + @html.to_json + "}"
+      Rieles.enqueue("Rieles::Mail", json)
+      self
+    end
+
+    def self.from_json(text)
+      h = Rieles::JsonParams.new(text, Tep.str_hash).parse
+      Mail.new(h.fetch("to", ""), h.fetch("from", ""), h.fetch("subject", ""), h.fetch("text", ""), h.fetch("html", ""))
+    end
+
+    def to_s
+      body = @text.empty? ? @html : @text
+      out = "To: " + @to + "\nFrom: " + @from + "\nSubject: " + @subject + "\n\n" + body
+      out = out + "\n--html--\n" + @html unless @text.empty? || @html.empty?
+      out
+    end
+  end
+
+  # Mailers render templates like controllers, without a request.
+  class Mailer < ViewContext
+    def default_from = "from@example.com"
+
+    def rieles_mail(to, from, subject, text, html)
+      Mail.new(to, from.empty? ? default_from : from, subject, text, html)
+    end
+  end
+
+  # RIELES_MAIL_DELIVERY: log (default) prints it; file writes it into
+  # RIELES_MAIL_DIR (default tmp/mails), which tests read back.
+  def self.deliver(mail)
+    if ENV.fetch("RIELES_MAIL_DELIVERY", "log") == "file"
+      path = ENV.fetch("RIELES_MAIL_DIR", "tmp/mails") + "/" + Time.now.strftime("%Y%m%d%H%M%S%6N") + ".eml"
+      File.open(path, "w") { |f| f.write(mail.to_s) }
+    else
+      puts "", "Delivered mail to " + mail.to, mail.to_s, ""
+      $stdout.flush
     end
   end
 

@@ -78,7 +78,8 @@ module Rieles
       when "controller" then controller(name, args)
       when "scaffold" then scaffold(name, fields(args))
       when "migration" then migration(name, fields(args))
-      else abort "rieles: generate model|controller|scaffold|migration"
+      when "mailer" then mailer(name, args)
+      else abort "rieles: generate model|controller|scaffold|migration|mailer"
       end
     end
 
@@ -127,6 +128,17 @@ module Rieles
       version = Time.now.strftime("%Y%m%d%H%M%S")
       write "db/migrate/#{version}_#{Inflector.underscore(name)}.rb",
             "class #{klass} < Rieles::Migration\n  def change\n#{body.join("\n")}#{body.empty? ? '' : "\n"}  end\nend\n"
+    end
+
+    def mailer(name, actions)
+      klass = "#{Inflector.camelize(name.delete_suffix('Mailer'))}Mailer"
+      dir = Inflector.underscore(klass)
+      write "app/mailers/application_mailer.rb", "class ApplicationMailer < ActionMailer::Base\n  default from: \"from@example.com\"\nend\n"
+      defs = actions.map { |a| "  def #{a}(to)\n    @greeting = \"Hi\"\n    mail(to: to, subject: #{Inflector.humanize(a).inspect})\n  end" }
+      write "app/mailers/#{dir}.rb", "class #{klass} < ApplicationMailer\n#{defs.join("\n\n")}#{defs.empty? ? '' : "\n"}end\n"
+      actions.each do |a|
+        write "app/views/#{dir}/#{a}.text.erb", "<%= @greeting %>,\n\nFind me in app/views/#{dir}/#{a}.text.erb\n"
+      end
     end
 
     def controller(name, actions)

@@ -10,8 +10,11 @@ module Rieles
   # template reads become the template's parameters, checked against the
   # ivars the action assigns.
   class Build
+    # name is "welcome" for welcome.html.erb and "welcome.text" for the
+    # plain-text (unescaped) welcome.text.erb that mailers use.
     Template = Struct.new(:path, :dir, :name, :exposures) do
       def partial? = name.start_with?("_")
+      def text? = name.end_with?(".text")
 
       # Rails 7.1 strict locals: <%# locals: (entry:, compact: false) %>
       def strict_locals = @strict_locals ||= [File.read(path)[/\A<%#\s*locals:\s*\((.*?)\)\s*-?%>/m, 1]]
@@ -29,7 +32,7 @@ module Rieles
 
       def method_name
         return "layout_#{name}" if layout?
-        "#{partial? ? 'partial' : 'view'}_#{dir.tr('/', '_')}_#{name.delete_prefix('_')}"
+        "#{partial? ? 'partial' : 'view'}_#{dir.tr('/', '_')}_#{name.delete_prefix('_').tr('.', '_')}"
       end
 
       # Controller-side method that collects the exposures and renders.
@@ -64,8 +67,9 @@ module Rieles
     class Context
       attr_reader :dir, :exposures, :assigns, :responses
 
-      def initialize(build, dir, view:, ivars: true, action: nil, controller: false, test: false, job: false)
+      def initialize(build, dir, view:, ivars: true, action: nil, controller: false, test: false, job: false, mailer: false)
         @build = build
+        @mailer = mailer
         @job = job
         @controller = controller
         @test = test
@@ -82,6 +86,10 @@ module Rieles
       def view? = @view
       def test? = @test
       def job? = @job
+      def mailer? = @mailer
+      def mailer_names = @build ? @build.mailer_names : []
+      def template(key) = @build&.templates&.[](key)
+      def assigned = @assigns[@current].to_a
       def fixture_tables = @build ? @build.fixture_tables : []
       def controller? = @controller
       def action? = !@action.nil?
@@ -131,6 +139,7 @@ module Rieles
       @model_names ||= Dir[path("app/models/*.rb")].map { |f| Inflector.camelize(File.basename(f, ".rb")) } - ["ApplicationRecord"]
     end
 
+    def mailer_names = Dir[path("app/mailers/*.rb")].map { |f| Inflector.camelize(File.basename(f, ".rb")) }
     def fixture_tables = Dir[path("test/fixtures/*.yml")].map { |f| File.basename(f, ".yml") }
 
     # Non-fatal findings (possible N+1 queries), printed by the CLI.
@@ -200,8 +209,8 @@ module Rieles
 
     def generate
       schema = migrations.any? ? Schema.from_migrations(migrations) : Schema.new(path("db/schema.rb"))
-      @templates = Dir[path("app/views/**/*.html.erb")].to_h do |file|
-        key = rel(file).delete_prefix("app/views/").delete_suffix(".html.erb")
+      @templates = Dir[path("app/views/**/*.{html,text}.erb")].to_h do |file|
+        key = rel(file).delete_prefix("app/views/").delete_suffix(".erb").delete_suffix(".html")
         [key, Template.new(file, File.dirname(key), File.basename(key), [])]
       end
       @action_views = load_action_views
@@ -224,6 +233,7 @@ module Rieles
         *Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }
           .map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Model.new(f, schema).to_ruby}" },
         views,
+        mailers_source,
         jobs_source,
         *controllers.sort_by { |name, _| name == "ApplicationController" ? 0 : 1 }
           .map { |_, c| "#{SOURCE_MARK}#{c[:file]}\n#{c[:source]}" },
@@ -302,10 +312,10 @@ module Rieles
         signature = t.layout? ? "#{t.method_name}(content)" : "#{t.method_name}__SIGNATURE__"
         # A partial's trailing newline would double up inside loops.
         source = t.partial? ? File.read(t.path).chomp : File.read(t.path)
-        ruby = Erb.compile(source, signature, layout: t.layout?, raw: raw,
+        ruby = Erb.compile(source, signature, layout: t.layout?, raw: raw, escape: !t.text?,
                                               log_as: t.partial? ? nil : rel(t.path).delete_prefix("app/views/"))
         ctx = Context.new(self, t.dir, view: true, ivars: t.page?)
-        ctx.i18n_scope = "#{t.dir.tr('/', '.')}.#{t.name.delete_prefix('_')}"
+        ctx.i18n_scope = "#{t.dir.tr('/', '.')}.#{t.name.delete_prefix('_').delete_suffix('.text')}"
         lowered = Lowering.lower(ruby, rel(t.path), ctx)
         t.exposures = ctx.exposures.keys.sort
         [t, lowered]
@@ -691,6 +701,31 @@ module Rieles
 
     # app/jobs: ApplicationJob, each job class, and the dispatcher the
     # worker calls by name (spinel can't look classes up at runtime).
+    # app/mailers: ApplicationMailer (default from:) and mailers whose
+    # actions end in mail(to:, subject:), rendering <mailer>/<action>.text.erb
+    # and/or .html.erb with the action's ivars.
+    def mailers_source
+      files = Dir[path("app/mailers/*.rb")].sort
+      base = files.find { |f| f.end_with?("/application_mailer.rb") }
+      parts = []
+      from = nil
+      if base
+        klass = Rieles.parse(File.read(base), rel(base)).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
+        (klass&.body&.body || []).each do |stmt|
+          next unless stmt.is_a?(Prism::CallNode) && stmt.name == :default
+          _, kw = Rieles.call_args(stmt)
+          from = kw[:from] && Rieles.literal(kw[:from]).to_s
+        end
+      end
+      parts << "class ApplicationMailer < Rieles::Mailer\n#{from ? "  def default_from = #{from.inspect}\n" : ''}end\n"
+      (files - [base]).each do |file|
+        dir = File.basename(file, ".rb")
+        ctx = Context.new(self, dir, view: false, mailer: true)
+        parts << "#{SOURCE_MARK}#{rel(file)}\n" + Lowering.lower(File.read(file), rel(file), ctx)
+      end
+      parts.join("\n")
+    end
+
     def jobs_source
       files = Dir[path("app/jobs/*.rb")].sort
       base = files.find { |f| f.end_with?("/application_job.rb") }
@@ -703,6 +738,7 @@ module Rieles
         klass.constant_path.slice
       end
       branches = names.map { |n| "  return #{n}.new.perform(arg) if name == #{n.inspect}" }
+      branches << '  return Rieles::Mail.from_json(arg).deliver_now.to if name == "Rieles::Mail"' 
       parts << "module RielesJobs\n  def self.dispatch(name, arg)\n#{branches.map { |b| "  #{b}" }.join("\n")}\n" \
                "    raise ArgumentError, \"unknown job \" + name\n  end\nend\n"
       parts.join("\n")

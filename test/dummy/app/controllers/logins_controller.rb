@@ -12,6 +12,11 @@ class LoginsController < ApplicationController
   def signup
     user = User.new(signup_params)
     if user.save
+      if params[:later] == "1"
+        UserMailer.welcome(user).deliver_later
+      else
+        UserMailer.welcome(user).deliver_now
+      end
       render plain: "created " + user.to_json
     else
       render plain: user.errors.full_messages.join(", "), status: :unprocessable_entity

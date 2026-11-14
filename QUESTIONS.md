@@ -34,3 +34,6 @@ is easy to revisit.
   yet. Confirm before publishing anything.
 - Jobs take a single argument, passed as a String (perform(id) gets "3").
   Enough, or encode several typed arguments?
+- Spinel segfaulted (exit 139, in unrelated requests) when a subclass of
+  Rieles::Controller redefined initialize with a different arity; mailers
+  now share a ViewContext base instead. Worth a minimal repro for matz/spinel?

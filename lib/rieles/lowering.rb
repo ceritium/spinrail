@@ -131,6 +131,12 @@ module Rieles
         lower_rails_cache(node)
       elsif @ctx.view? && node.receiver.nil? && node.name == :cache && node.block
         lower_fragment_cache(node)
+      elsif @ctx.mailer? && node.receiver.nil? && node.name == :mail
+        lower_mail(node)
+      elsif @ctx.mailer? && node.receiver.nil? && %i[default layout].include?(node.name)
+        @rw.replace(node) { "" }
+      elsif mailer_call?(node)
+        @rw.replace(node) { "#{node.receiver.slice}.new.#{node.name}#{node.arguments ? "(#{@rw.slice(node.arguments)})" : ''}" }
       elsif job_call?(node)
         arg = node.arguments&.arguments&.first
         value = arg ? "(#{@rw.slice(arg)}).to_s" : '""'
@@ -326,6 +332,32 @@ module Rieles
         body = node.block.body ? @rw.slice(node.block.body) : ""
         "rieles_fragment = Rieles.cache.read(#{key})\nif rieles_fragment.nil?\n  rieles_outer = out\n  out = +\"\"\n" \
           "#{body}\n  rieles_fragment = Rieles.cache.write(#{key}, out, #{ttl})\n  out = rieles_outer\nend\nout << rieles_fragment"
+      end
+    end
+
+    # UserMailer.welcome(user) -> UserMailer.new.welcome(user)
+    def mailer_call?(node)
+      node.receiver.is_a?(Prism::ConstantReadNode) && @ctx.mailer_names.include?(node.receiver.name.to_s) &&
+        !%i[new deliver_now deliver_later].include?(node.name)
+    end
+
+    # mail(to:, subject:, from:) renders <mailer>/<action>.text.erb and
+    # .html.erb with the ivars the action assigned.
+    def lower_mail(node)
+      _, kw = Rieles.call_args(node)
+      fail!(node, "mail needs to:") unless kw[:to]
+      action = @ctx.current_def
+      bodies = %w[text html].map do |format|
+        t = @ctx.template(format == "text" ? "#{@ctx.dir}/#{action}.text" : "#{@ctx.dir}/#{action}")
+        next '""' unless t
+        missing = t.exposures - @ctx.assigned
+        fail!(node, "#{t.key} reads #{missing.map { |m| "@#{m}" }.join(', ')}, which ##{action} doesn't assign") if missing.any?
+        "ApplicationView.new(self).#{t.method_name}#{t.exposures.empty? ? '' : "(#{t.exposures.map { |e| "@#{e}" }.join(', ')})"}"
+      end
+      fail!(node, "no app/views/#{@ctx.dir}/#{action}.text.erb or .html.erb") if bodies.all? { |b| b == '""' }
+      @rw.replace(node) do
+        s = ->(k) { kw[k] ? "(#{@rw.slice(kw[k])}).to_s" : '""' }
+        "rieles_mail(#{s.(:to)}, #{s.(:from)}, #{s.(:subject)}, #{bodies[0]}, #{bodies[1]})"
       end
     end
 

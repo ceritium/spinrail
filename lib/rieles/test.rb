@@ -41,6 +41,9 @@ module Rieles
       log.flush
       env = { "DATABASE_PATH" => database_path, "RIELES_LOG_FORMAT" => "dev",
               "RIELES_ENV" => "test", "RIELES_FORGERY_PROTECTION" => self.class.forgery_protection? ? "1" : "0" }
+      FileUtils.mkdir_p(mail_dir)
+      env["RIELES_MAIL_DELIVERY"] = "file"
+      env["RIELES_MAIL_DIR"] = mail_dir
       env.merge!(self.class.server_env)
       fixtures_sql = Fixtures.load(ENV.fetch("RIELES_APP"), self.class.fixture_tables)
       unless fixtures_sql.empty?
@@ -57,6 +60,19 @@ module Rieles
 
     def cookies = @cookies
     def database_path = File.join(@db_dir, "test.sqlite3")
+    def mail_dir = File.join(@db_dir, "mails")
+
+    Delivery = Struct.new(:to, :from, :subject, :body, :html)
+
+    # Mails the server delivered during this test, oldest first.
+    def deliveries
+      Dir[File.join(mail_dir, "*.eml")].sort.map do |file|
+        head, body = File.read(file).split("\n\n", 2)
+        headers = head.lines.to_h { |l| l.chomp.split(": ", 2) }
+        text, html = body.to_s.split("\n--html--\n", 2)
+        Delivery.new(headers["To"], headers["From"], headers["Subject"], text, html)
+      end
+    end
 
     def teardown
       stop_server if @pid

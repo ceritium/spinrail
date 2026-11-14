@@ -113,6 +113,13 @@ Roughly in priority order within each section.
       `RIELES_VENDOR` or `~/.cache/rieles/vendor` outside a checkout.
 - [ ] Publish the gem (name, license and ownership to decide).
 
+## Mailers
+
+- [x] `app/mailers` with `mail(to:, subject:, from:)`, `default from:`, `.text.erb`
+      (unescaped) and `.html.erb` templates, `deliver_now`/`deliver_later`, log or
+      file delivery, `deliveries` in request tests, `generate mailer`.
+- [ ] SMTP or HTTP API delivery, attachments, mailer layouts, previews.
+
 ## Caching
 
 - [x] `Rails.cache.fetch/read/write/delete/clear` with `expires_in` (in memory, per

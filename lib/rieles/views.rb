@@ -13,11 +13,13 @@ module Rieles
 
     # log_as: template name for the request log; partials pass nil.
     # raw: helper names whose output is html_safe.
-    def compile(source, signature, layout: false, log_as: nil, raw: [])
+    # escape: false for .text.erb templates.
+    def compile(source, signature, layout: false, log_as: nil, raw: [], escape: true)
       tokens = tokenize(source)
       trim_code_lines(tokens)
       raw_call = raw.empty? ? nil : /\A(#{raw.map { |r| Regexp.escape(r) }.join('|')})\b/
       body = tokens.map { |kind, text, line| tag_line(emit(kind, text, layout, raw_call), kind, line) }.join
+      body = body.gsub(/^  out << h\(\((.*)\)\.to_s\)( # L\d+)?$/) { "  out << (#{$1}).to_s#{$2}" } unless escape
       return "def #{signature}\n  out = +\"\"\n#{body}  out\nend\n" unless log_as
       "def #{signature}\n  rieles_t0 = Rieles.log.render_start\n  out = +\"\"\n#{body}" \
         "  Rieles.log.render_end(#{log_as.inspect}, rieles_t0)\n  out\nend\n"
