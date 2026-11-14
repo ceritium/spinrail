@@ -41,5 +41,9 @@ class FeaturesTest < Rieles::IntegrationTest
     assert_includes body, "<p>one<br>two</p>\n<p>&lt;b&gt;three&lt;/b&gt;</p>"
     assert_includes body, "1,234,567 -1,234.5"
     assert_includes body, 'id="post_1"'
+    assert_includes body, '<span class="badge">&lt;new&gt;</span>'
+    assert_includes body, "<p>$1,234.50 -€5</p>"
+    assert_includes body, "<p>less than a minute</p>"
+    assert_includes body, '<a href="/posts/1" class="card"><strong>First</strong></a>'
   end
 end

@@ -72,7 +72,7 @@ module Rieles
       hidden_field: "hidden", date_field: "date", url_field: "url", search_field: "search",
       telephone_field: "tel", color_field: "color"
     }.freeze
-    BUILDER = (FIELDS.keys + %i[label text_area textarea check_box checkbox select submit]).freeze
+    BUILDER = (FIELDS.keys + %i[label text_area textarea check_box checkbox select collection_select submit]).freeze
 
     def visit_call_node(node)
       if @ctx.view? && node.name == :form_with && node.receiver.nil? && node.block
@@ -87,6 +87,8 @@ module Rieles
         lower_content_for(node)
       elsif @forms.any? && local?(node.receiver, @forms.last[:var]) && BUILDER.include?(node.name)
         lower_field(node)
+      elsif @ctx.view? && node.receiver.nil? && node.name == :link_to && node.block
+        lower_link_block(node)
       elsif @ctx.view? && node.receiver.nil? && node.name == :dom_id && node.arguments&.arguments&.size == 1
         arg = node.arguments.arguments.first
         @rw.replace(node) { "(#{@rw.slice(arg)}).dom_id" }
@@ -277,33 +279,52 @@ module Rieles
 
     def lower_field(node)
       form = @forms.last
+      model = form[:model]
+      attr_node = node.arguments&.arguments&.first
+      if model && attr_node.is_a?(Prism::SymbolNode) && node.name != :submit
+        return lower_field_html(node, form, ->(html) { "field_errors_wrap((#{@rw.slice(model)}).errors[#{attr_node.unescaped.inspect}].empty?, #{html})" })
+      end
+      lower_field_html(node, form, ->(html) { html })
+    end
+
+    def lower_field_html(node, form, wrap)
       args, kw = Rieles.call_args(node)
       attr = args.first && (args.first.is_a?(Prism::SymbolNode) || args.first.is_a?(Prism::StringNode)) ? args.first.unescaped : nil
       model = form[:model]
       @rw.replace(node) do
-        m = model && @rw.slice(model)
-        value = ->(cast) { m && attr ? "(#{m}.#{attr})#{cast}" : (cast == "" ? "false" : '""') }
-        attrs = html_attrs(kw)
-        scope = form[:scope].inspect
-        case node.name
-        when :label
-          text = args[1] ? @rw.slice(args[1]) : Inflector.humanize(attr.to_s).inspect
-          "form_label(#{scope}, #{attr.inspect}, #{text}, #{attrs})"
-        when :text_area, :textarea then "form_textarea(#{scope}, #{attr.inspect}, #{value.(".to_s")}, #{attrs})"
-        when :check_box, :checkbox then "form_check_box(#{scope}, #{attr.inspect}, #{value.("")}, #{attrs})"
-        when :select
-          fail!(node, "f.select(:attr, choices)") unless args[1]
-          "form_select(#{scope}, #{attr.inspect}, #{value.(".to_s")}, #{@rw.slice(args[1])}, #{attrs})"
-        when :submit
-          text = if args.first then @rw.slice(args.first)
-                 elsif m then "(#{m}.persisted? ? \"Update #{Inflector.humanize(form[:scope])}\" : \"Create #{Inflector.humanize(form[:scope])}\")"
-                 else '"Submit"'
-                 end
-          "form_submit(#{text}, #{attrs})"
-        else
-          v = node.name == :password_field ? '""' : value.(".to_s")
-          "form_input(#{FIELDS.fetch(node.name).inspect}, #{scope}, #{attr.inspect}, #{v}, #{attrs})"
-        end
+        wrap.call(field_html(node, form, args, kw, attr, model))
+      end
+    end
+
+    def field_html(node, form, args, kw, attr, model)
+      m = model && @rw.slice(model)
+      value = ->(cast) { m && attr ? "(#{m}.#{attr})#{cast}" : (cast == "" ? "false" : '""') }
+      attrs = html_attrs(kw)
+      scope = form[:scope].inspect
+      case node.name
+      when :label
+        text = args[1] ? @rw.slice(args[1]) : Inflector.humanize(attr.to_s).inspect
+        "form_label(#{scope}, #{attr.inspect}, #{text}, #{attrs})"
+      when :text_area, :textarea then "form_textarea(#{scope}, #{attr.inspect}, #{value.(".to_s")}, #{attrs})"
+      when :check_box, :checkbox then "form_check_box(#{scope}, #{attr.inspect}, #{value.("")}, #{attrs})"
+      when :select
+        fail!(node, "f.select(:attr, choices)") unless args[1]
+        "form_select(#{scope}, #{attr.inspect}, #{value.(".to_s")}, #{@rw.slice(args[1])}, #{attrs})"
+      when :collection_select
+        fail!(node, "f.collection_select(:attr, records, :value_method, :text_method)") unless args.size == 4
+        coll = "(#{@rw.slice(args[1])}).to_a"
+        v, t = Rieles.literal(args[2]), Rieles.literal(args[3])
+        "form_select_pairs(#{scope}, #{attr.inspect}, #{value.(".to_s")}, #{coll}.map { |r| r.#{v}.to_s }, " \
+          "#{coll}.map { |r| r.#{t}.to_s }, #{attrs})"
+      when :submit
+        text = if args.first then @rw.slice(args.first)
+               elsif m then "(#{m}.persisted? ? \"Update #{Inflector.humanize(form[:scope])}\" : \"Create #{Inflector.humanize(form[:scope])}\")"
+               else '"Submit"'
+               end
+        "form_submit(#{text}, #{attrs})"
+      else
+        v = node.name == :password_field ? '""' : value.(".to_s")
+        "form_input(#{FIELDS.fetch(node.name).inspect}, #{scope}, #{attr.inspect}, #{v}, #{attrs})"
       end
     end
 
@@ -342,6 +363,17 @@ module Rieles
         else
           "content_for_get(#{key}).to_s"
         end
+      end
+    end
+
+    # <%= link_to path, class: "x" do %>...<% end %>, inlined like form_with.
+    def lower_link_block(node)
+      args, kw = Rieles.call_args(node)
+      fail!(node, "link_to with a block takes the url") unless args.size == 1
+      @rw.replace(node) do
+        open = "\"<a href=\\\"\" + h((#{@rw.slice(args[0])}).to_s) + \"\\\"\" + #{html_attrs(kw)} + \">\""
+        body = node.block.body ? @rw.slice(node.block.body) : ""
+        "out << #{open}\n#{body}\nout << \"</a>\""
       end
     end
 

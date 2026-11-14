@@ -52,9 +52,9 @@ Roughly in priority order within each section.
 
 - [x] Helpers: `link_to`, `button_to`, `form_with` and field helpers.
 - [x] `truncate`, `simple_format`, `number_with_delimiter`, `dom_id`.
-- [ ] More helpers: `link_to` with a block, `collection_select`, `field_with_errors`,
+- [x] `link_to` with a block, `collection_select`, `field_with_errors`,
       `number_to_currency`, `time_ago_in_words`.
-- [ ] `html_safe` strings instead of deciding at build time which output is raw.
+- [x] Helpers returning `.html_safe` are emitted raw (decided at build time).
 - [x] `content_for` (value or block), `content_for?`, `yield :title`.
 - [x] Collection partials (`render @entries`, `render partial:, collection:, as:`).
 - [ ] Partial locals with defaults, `local_assigns`.

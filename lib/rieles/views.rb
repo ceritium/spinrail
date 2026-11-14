@@ -8,14 +8,16 @@ module Rieles
     module_function
 
     # Helpers that return markup; their output isn't escaped again.
-    HTML_HELPERS = /\A(csrf_meta_tags|content_for|simple_format|link_to|button_to|\w+\.(label|\w+_field|text_?area|check_?box|select|submit))\b/
+    HTML_HELPERS = /\A(csrf_meta_tags|content_for|simple_format|link_to|button_to|\w+\.(label|\w+_field|text_?area|check_?box|select|collection_select|submit))\b/
     BLOCK = /\bdo\s*(\|[^|]*\|)?\z/
 
     # log_as: template name for the request log; partials pass nil.
-    def compile(source, signature, layout: false, log_as: nil)
+    # raw: helper names whose output is html_safe.
+    def compile(source, signature, layout: false, log_as: nil, raw: [])
       tokens = tokenize(source)
       trim_code_lines(tokens)
-      body = tokens.map { |kind, text| emit(kind, text, layout) }.join
+      raw_call = raw.empty? ? nil : /\A(#{raw.map { |r| Regexp.escape(r) }.join('|')})\b/
+      body = tokens.map { |kind, text| emit(kind, text, layout, raw_call) }.join
       return "def #{signature}\n  out = +\"\"\n#{body}  out\nend\n" unless log_as
       "def #{signature}\n  rieles_t0 = Rieles.log.render_start\n  out = +\"\"\n#{body}" \
         "  Rieles.log.render_end(#{log_as.inspect}, rieles_t0)\n  out\nend\n"
@@ -55,7 +57,7 @@ module Rieles
       end
     end
 
-    def emit(kind, text, layout)
+    def emit(kind, text, layout, raw_call = nil)
       code = text.strip
       case kind
       when :text then text.empty? ? "" : "  out << #{text.inspect}\n"
@@ -66,7 +68,7 @@ module Rieles
         if layout && code == "yield" then "  out << content\n"
         elsif (name = code[/\Ayield[\s(]+:(\w+)\)?\z/, 1]) then "  out << content_for_get(#{name.inspect}).to_s\n"
         elsif code.match?(BLOCK) then "  #{code}\n"
-        elsif code.match?(HTML_HELPERS) then "  out << (#{code}).to_s\n"
+        elsif code.match?(HTML_HELPERS) || (raw_call && code.match?(raw_call)) then "  out << (#{code}).to_s\n"
         elsif code.match?(/\Araw\b/) then "  out << (#{code.sub(/\Araw\s*/, '')}).to_s\n"
         elsif code.match?(/\Arender\b/) then "  out << (#{code})\n"
         else "  out << h((#{code}).to_s)\n"

@@ -205,13 +205,28 @@ module Rieles
       end.join("\n\n")
     end
 
+    # Helper and view-class methods that return html_safe strings.
+    def raw_helpers
+      sources = Dir[path("app/helpers/*.rb")].map { |f| File.read(f) } + Dir[path("app/views/**/*.rb")].map { |f| File.read(f) }
+      sources.flat_map do |source|
+        found = []
+        visit = lambda do |node|
+          found << node.name.to_s if node.is_a?(Prism::DefNode) && node.slice.include?(".html_safe")
+          node.compact_child_nodes.each { |c| visit.call(c) }
+        end
+        visit.call(Rieles.parse(source, "helpers"))
+        found
+      end.uniq
+    end
+
     def compile_views
+      raw = raw_helpers
       methods = @templates.values.map do |t|
         signature = t.layout? ? "#{t.method_name}(content)" : "#{t.method_name}__SIGNATURE__"
         # A partial's trailing newline would double up inside loops.
         source = t.partial? ? File.read(t.path).chomp : File.read(t.path)
-        ruby = Erb.compile(source, signature, layout: t.layout?,
-                                                         log_as: t.partial? ? nil : rel(t.path).delete_prefix("app/views/"))
+        ruby = Erb.compile(source, signature, layout: t.layout?, raw: raw,
+                                              log_as: t.partial? ? nil : rel(t.path).delete_prefix("app/views/"))
         ctx = Context.new(self, t.dir, view: true, ivars: t.page?)
         lowered = Lowering.lower(ruby, rel(t.path), ctx)
         t.exposures = ctx.exposures.keys.sort
@@ -223,7 +238,7 @@ module Rieles
       end
       defs += @action_views.values.map do |v|
         signature = "#{v.method_name}(#{v.exposures.join(', ')})"
-        ruby = Erb.compile(File.read(v.template_path), signature, log_as: rel(v.template_path).delete_prefix("app/"))
+        ruby = Erb.compile(File.read(v.template_path), signature, raw: raw, log_as: rel(v.template_path).delete_prefix("app/"))
         derived = v.computed.map { |n, body| "  #{n} = begin\n#{body.gsub(/^\s*/, '    ')}\n  end\n" }.join
         ruby = ruby.sub(/\A(def [^\n]*\n)/) { "#{$1}#{derived}" }
         ctx = Context.new(self, File.dirname(v.key.tr('.', '/')), view: true, ivars: false)

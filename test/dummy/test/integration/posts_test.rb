@@ -11,6 +11,7 @@ class PostsTest < Rieles::IntegrationTest
     assert_body_includes '<label for="post_body">Text</label>'
     assert_body_includes 'value="Create Post"'
     assert_body_includes '<option value="draft" selected>'
+    assert_select "select#post_author_id option[value='1'][selected]", "Ana"
   end
 
   def test_create_with_strong_params
@@ -26,6 +27,7 @@ class PostsTest < Rieles::IntegrationTest
     post "/posts", params: { "post[title]" => "x", "post[author_id]" => "1" }
     assert_response :unprocessable_entity
     assert_body_includes "Title is too short"
+    assert_select "div.field_with_errors input#post_title"
     assert_body_includes 'value="x"'
   end
 

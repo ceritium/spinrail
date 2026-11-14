@@ -44,6 +44,8 @@ end
 class String
   def to_json = Tep::Json.quote(self)
   def to_param = self
+  # Helpers that end in html_safe are emitted raw; the build decides.
+  def html_safe = self
 end
 
 class Integer
@@ -785,6 +787,41 @@ module Rieles
       end
       groups.unshift(whole)
       sign + groups.join(",") + rest
+    end
+
+    def field_errors_wrap(valid, html)
+      valid ? html : "<div class=\"field_with_errors\">" + html + "</div>"
+    end
+
+    def form_select_pairs(scope, attribute, value, values, labels, attrs)
+      html = "<select name=\"" + field_name(scope, attribute) + "\" id=\"" + field_id(scope, attribute) + "\"" + attrs + ">"
+      i = 0
+      while i < values.length
+        html = html + "<option value=\"" + h(values[i]) + "\"" + (values[i] == value ? " selected" : "") + ">" + h(labels[i]) + "</option>"
+        i += 1
+      end
+      html + "</select>"
+    end
+
+    def number_to_currency(number, unit: "$", precision: 2)
+      amount = format("%." + precision.to_s + "f", number.to_f.abs)
+      (number.to_f < 0 ? "-" : "") + unit + number_with_delimiter(amount)
+    end
+
+    # Timestamps are "YYYY-MM-DD HH:MM:SS" local time (see Rieles.now).
+    def time_ago_in_words(timestamp)
+      parts = timestamp.split(/[- :T]/).map { |x| x.to_i }
+      return "" if parts.length < 6
+      seconds = Time.now.to_i - Time.new(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]).to_i
+      minutes = seconds / 60
+      return "less than a minute" if minutes < 1
+      return pluralize(minutes, "minute") if minutes < 45
+      return "about " + pluralize((minutes + 30) / 60, "hour") if minutes < 1440
+      days = (minutes + 720) / 1440
+      return pluralize(days, "day") if days < 30
+      months = (days + 15) / 30
+      return pluralize(months, "month") if months < 12
+      "about " + pluralize((months + 6) / 12, "year")
     end
 
     def pluralize(count, singular)
