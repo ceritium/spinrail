@@ -277,6 +277,12 @@ module Spinrail
     # has_secure_password: password and password_confirmation aren't columns.
     def virtual = (@secure_password ? %w[password password_confirmation] : []) + @extra_virtual
 
+    def inspect_fields
+      columns.map do |c|
+        c.name == "password_digest" ? %("#{c.name}: [FILTERED]") : %("#{c.name}: " + @#{c.name}.inspect)
+      end.join(%( + ", " + ))
+    end
+
     def json_fields = columns.reject { |c| c.name == "password_digest" }.map { |c| "#{%("#{c.name}":).inspect} + @#{c.name}.to_json" }.join(%( + "," + ))
 
     def insert_sql
@@ -570,6 +576,10 @@ module Spinrail
 
           def to_json
             "{" + #{json_fields} + "}"
+          end
+
+          def inspect
+            "#<#{@name} " + #{inspect_fields} + ">"
           end
 
           def reload
@@ -1071,6 +1081,7 @@ module Spinrail
           end
 
           def to_json = to_a.to_json
+          def inspect = to_a.inspect
           def size = count
           def length = to_a.length
           def empty? = !exists?

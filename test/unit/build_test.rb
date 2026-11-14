@@ -12,6 +12,12 @@ class BuildTest < CompilerTest
     refute_includes off, "can't be blank"
   end
 
+  def test_records_inspect_like_rails
+    schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :name\n t.string :password_digest\n end\nend\n"
+    ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n")
+    assert_includes ruby, %("#<User " + "id: " + @id.inspect + ", " + "name: " + @name.inspect + ", " + "password_digest: [FILTERED]" + ">")
+  end
+
   def test_template_reading_an_unassigned_ivar
     error = assert_raises(Spinrail::CompileError) do
       build(

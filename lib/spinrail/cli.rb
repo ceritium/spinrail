@@ -25,6 +25,7 @@ module Spinrail
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
       "jobs" => "Work background jobs (app/jobs) until Ctrl+C (-c THREADS)",
       "runner" => "Compile and run a script against the app: runner FILE or runner -e CODE",
+      "console" => "Compile and run each line you type against the app (alias c)",
       "db:migrate" => "Apply db/migrate and rewrite db/schema.rb from it",
       "db:rollback" => "Undo the latest applied migration",
       "db:seed" => "Run db/seeds.rb against the database",
@@ -32,7 +33,7 @@ module Spinrail
       "clean" => "Remove the binary, tmp/, log/ and the development database",
       "setup" => "Clone and build spinel + tep into vendor/ (build and server do it on demand)"
     }.freeze
-    ALIASES = { "s" => "server", "b" => "build", "r" => "routes", "t" => "test", "g" => "generate" }.freeze
+    ALIASES = { "s" => "server", "b" => "build", "r" => "routes", "t" => "test", "g" => "generate", "c" => "console" }.freeze
 
     def initialize(argv, app_dir = Dir.pwd)
       @argv = argv.dup
@@ -56,6 +57,7 @@ module Spinrail
       when "clean" then clean
       when "jobs" then jobs
       when "runner" then runner
+      when "console" then console
       when "db:migrate" then migrate
       when "db:rollback" then rollback
       when "db:seed" then seed
@@ -229,6 +231,30 @@ module Spinrail
       exec({ "SPINRAIL_LOG_LEVEL" => ENV.fetch("SPINRAIL_LOG_LEVEL", "error") }, output)
     end
 
+    # Each line is compiled into a one-off binary, as runner -e: there is no
+    # interpreter in the binary. The database carries over, locals don't.
+    def console
+      require "reline"
+      output = File.join(@app, "tmp", "#{File.basename(@app)}-console")
+      history = File.join(@app, "tmp", "console_history")
+      FileUtils.mkdir_p(File.dirname(history))
+      Reline::HISTORY.push(*File.readlines(history, chomp: true).last(500)) if File.exist?(history)
+      puts "Each line compiles (a few seconds). The database carries over between lines, " \
+           "local variables don't: chain with ; on one line. exit or Ctrl-D quits."
+      loop do
+        line = Reline.readline("#{File.basename(@app)}> ", true) or break
+        code = line.strip
+        next if code.empty?
+        break if %w[exit quit].include?(code)
+        File.open(history, "a") { |f| f.puts(code) }
+        script = "console_result = (#{code})\nputs \"=> \" + console_result.inspect\n"
+        next unless compile(output, script: script)
+        system({ "SPINRAIL_LOG_LEVEL" => ENV.fetch("SPINRAIL_LOG_LEVEL", "error") }, output, chdir: @app)
+      rescue Interrupt
+        puts
+      end
+    end
+
     # -c N > 1 works N jobs at once on spinel threads, in a binary of its
     # own so the server keeps the single-threaded runtime.
     def jobs
@@ -307,7 +333,10 @@ module Spinrail
       env = {
         "SPINEL" => File.join(VENDOR, "spinel/spinel"),
         "SPINELKIT_DIR" => File.join(VENDOR, "spinelkit"),
-        "TEP_SKIP_SPINEL_FRESH" => "1"
+        "TEP_SKIP_SPINEL_FRESH" => "1",
+        # Build#write empties the directory anyway. tep's own unlink of its
+        # .tep.rb hit ENOENT on every other build in a row.
+        "TEP_KEEP_TMP" => "1"
       }
       env.merge!(postgres_env) if ENV.fetch("SPINRAIL_DATABASE", "sqlite") == "postgres"
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)

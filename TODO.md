@@ -137,6 +137,10 @@ Roughly in priority order within each section.
 - [x] Package as a gem (`gem build spinrail.gemspec`); the toolchain goes to
       `SPINRAIL_VENDOR` or `~/.cache/spinrail/vendor` outside a checkout.
 - [ ] Publish the gem (name, license and ownership to decide).
+- [x] `spinrail console`: each line compiled and run, as `runner -e`.
+- [ ] A faster console: the lowered models in IRB on CRuby, with a CRuby shim of
+      what they use from tep (SQLite, `Tep::Password`); the compiled one stays for
+      checking a result against spinel.
 - [ ] Compiled dependencies through spin (spinel's package manager): tep and
       spinel_kit as git deps in a `spin.toml` with `spin.lock`, `spin flags` for the
       `-I`/`--link` list instead of cloning them into `vendor/`; spinel itself stays
