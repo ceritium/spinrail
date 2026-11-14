@@ -173,6 +173,8 @@ Roughly in priority order within each section.
       (summary in README). Ideas worth taking:
 - [x] `rieles check`: the build's static checks without compiling.
 - [x] `rieles runner FILE` / `runner -e CODE`: compiled into a one-off binary.
+- [x] `rieles generate authentication` (Rails 8 style) and `<%= password_digest("x") %>`
+      in ERB fixtures.
 - [ ] Differential tests: the same requests against a Rails app and the rieles build.
 - [x] N+1 warnings: an association read inside a loop over records without
       `includes` (the block variable's name picks the model).

@@ -72,14 +72,15 @@ module Rieles
     end
 
     def generate(kind, name, args)
-      abort "rieles: generate #{kind} NAME ..." unless name
+      abort "rieles: generate #{kind} NAME ..." unless name || kind == "authentication"
       case kind
       when "model" then model(name, fields(args))
       when "controller" then controller(name, args)
       when "scaffold" then scaffold(name, fields(args))
       when "migration" then migration(name, fields(args))
       when "mailer" then mailer(name, args)
-      else abort "rieles: generate model|controller|scaffold|migration|mailer"
+      when "authentication" then authentication
+      else abort "rieles: generate model|controller|scaffold|migration|mailer|authentication"
       end
     end
 
@@ -128,6 +129,92 @@ module Rieles
       version = Time.now.strftime("%Y%m%d%H%M%S")
       write "db/migrate/#{version}_#{Inflector.underscore(name)}.rb",
             "class #{klass} < Rieles::Migration\n  def change\n#{body.join("\n")}#{body.empty? ? '' : "\n"}  end\nend\n"
+    end
+
+    # Rails 8's generator, in rieles terms: User with has_secure_password,
+    # a SessionsController, and require_authentication everywhere else.
+    def authentication
+      model("user", fields(%w[email_address:string password_digest:string]))
+      user = File.join(@app, "app/models/user.rb")
+      File.write(user, "class User < ApplicationRecord\n  has_secure_password\n  validates :email_address, presence: true, uniqueness: true\nend\n")
+      add_route("resource :session, only: [:new, :create, :destroy]")
+      write "app/controllers/sessions_controller.rb", <<~RUBY
+        class SessionsController < ApplicationController
+          skip_before_action :require_authentication, only: [:new, :create]
+
+          def new
+          end
+
+          def create
+            user = User.find_by(email_address: params[:email_address])
+            if user && user.authenticate(params[:password])
+              reset_session
+              session[:user_id] = user.id
+              redirect_to "/", notice: "Signed in."
+            else
+              redirect_to new_session_path, alert: "Try another email address or password."
+            end
+          end
+
+          def destroy
+            reset_session
+            redirect_to new_session_path, notice: "Signed out.", status: :see_other
+          end
+        end
+      RUBY
+      write "app/views/sessions/new.html.erb", <<~ERB
+        <h1>Sign in</h1>
+        <%= form_with url: session_path do |f| %>
+          <%= f.label :email_address %>
+          <%= f.email_field :email_address, required: true, autofocus: true %>
+          <%= f.label :password %>
+          <%= f.password_field :password, required: true %>
+          <%= f.submit "Sign in" %>
+        <% end %>
+      ERB
+      controller = File.join(@app, "app/controllers/application_controller.rb")
+      source = File.read(controller)
+      unless source.include?("require_authentication")
+        source = source.sub(/^class ApplicationController < Rieles::Controller\n/) do |line|
+          "#{line}  before_action :require_authentication\n"
+        end
+        source = source.sub(/^end\s*\z/, <<~RUBY)
+
+            private
+
+            def require_authentication
+              redirect_to new_session_path unless session[:user_id]
+            end
+          end
+        RUBY
+        File.write(controller, source)
+        @out.puts "     update  app/controllers/application_controller.rb"
+      end
+      write "test/fixtures/users.yml", "one:\n  email_address: one@example.com\n  password_digest: <%= password_digest(\"password\") %>\n"
+      write "test/integration/sessions_test.rb", <<~RUBY
+        class SessionsTest < Rieles::IntegrationTest
+          fixtures :users
+
+          def test_requires_sign_in
+            get "/"
+            assert_redirected_to "/session/new"
+          end
+
+          def test_sign_in_and_out
+            post "/session", params: { email_address: "one@example.com", password: "password" }
+            assert_redirected_to "/"
+            follow_redirect!
+            assert_response :success
+            delete "/session"
+            assert_redirected_to "/session/new"
+          end
+
+          def test_wrong_password
+            post "/session", params: { email_address: "one@example.com", password: "nope" }
+            assert_redirected_to "/session/new"
+          end
+        end
+      RUBY
     end
 
     def mailer(name, actions)

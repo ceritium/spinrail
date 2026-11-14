@@ -1,3 +1,6 @@
+require "base64"
+require "erb"
+require "openssl"
 require "yaml"
 require "zlib"
 
@@ -17,6 +20,14 @@ module Rieles
 
     def identify(label) = Zlib.crc32(label.to_s) % (2**30 - 1)
 
+    # For <%= password_digest("secret") %> in fixtures: Tep::Password's
+    # format, with few iterations to keep tests fast (verify reads them).
+    def password_digest(plain, iterations: 1000)
+      salt = Base64.urlsafe_encode64(OpenSSL::Random.random_bytes(16), padding: false)
+      derived = OpenSSL::KDF.pbkdf2_hmac(plain, salt: salt, iterations: iterations, length: 32, hash: "sha256")
+      "pbkdf2-sha256$#{iterations}$#{salt}$#{Base64.urlsafe_encode64(derived, padding: false)}"
+    end
+
     def rows(app)
       @rows ||= {}
       @rows[app] ||= begin
@@ -25,7 +36,7 @@ module Rieles
         Dir[File.join(app, "test/fixtures/*.yml")].sort.to_h do |file|
           table_name = File.basename(file, ".yml")
           table = schema.table(table_name) or raise "test/fixtures/#{table_name}.yml: no such table"
-          data = YAML.safe_load_file(file) || {}
+          data = YAML.safe_load(ERB.new(File.read(file)).result(binding)) || {}
           [table_name, data.to_h { |label, attrs| [label.to_s, Row.new(row(table, label, attrs || {}))] }]
         end
       end
