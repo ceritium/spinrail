@@ -59,10 +59,12 @@ module Rieles
     def match?(node, step)
       tag = step[/\A[a-zA-Z][\w-]*/]
       return false if tag && node.tag != tag.downcase
-      return false unless step.scan(/\.([\w-]+)/).flatten.all? { |c| node.classes.include?(c) }
-      id = step[/#([\w-]+)/, 1]
+      plain = step.gsub(/\[[^\]]*(?:\][^\[]*)?\]/, "")
+      return false unless plain.scan(/\.([\w-]+)/).flatten.all? { |c| node.classes.include?(c) }
+      id = plain[/#([\w-]+)/, 1]
       return false if id && node.attrs["id"] != id
-      step.scan(/\[([\w:-]+)(?:=["']?([^"'\]]*)["']?)?\]/).all? do |name, value|
+      step.scan(/\[([\w:-]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\]]*)))?\]/).all? do |name, dq, sq, bare|
+        value = dq || sq || bare
         node.attrs.key?(name) && (value.nil? || node.attrs[name] == value)
       end
     end
