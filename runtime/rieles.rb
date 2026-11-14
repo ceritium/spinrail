@@ -426,6 +426,26 @@ module Rieles
     end
   end
 
+  # Columns added to db/schema.rb after the table was created. Every
+  # column has a default, so ADD COLUMN works on existing rows.
+  def self.add_missing_columns(table, names, statements)
+    db = Rieles.db
+    existing = []
+    db.prepare("PRAGMA table_info(" + table + ")")
+    while db.step == 1
+      existing << db.col_str(1)
+    end
+    db.finalize
+    i = 0
+    while i < names.length
+      unless existing.include?(names[i])
+        db.exec(statements[i])
+        puts "rieles: added column " + table + "." + names[i]
+      end
+      i += 1
+    end
+  end
+
   def self.humanize(attribute)
     attribute.sub(/_id\z/, "").tr("_", " ").capitalize
   end

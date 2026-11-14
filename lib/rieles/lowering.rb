@@ -164,6 +164,7 @@ module Rieles
       when :pluck then args.size == 1 && args.first.is_a?(Prism::SymbolNode)
       when :order then args.size == 1 && args.first.is_a?(Prism::StringNode)
       when :exists? then args.size == 1
+      when :includes, :preload, :eager_load then !node.receiver.nil?
       else false
       end
     end
@@ -199,14 +200,29 @@ module Rieles
     def mass_assignment?(node)
       return false unless MASS.key?(node.name) && node.receiver && node.block.nil?
       args = node.arguments&.arguments || []
+      return true if relation_build?(node)
       return false unless args.size == 1 && !args.first.is_a?(Prism::KeywordHashNode) && !args.first.is_a?(Prism::HashNode)
-      return @ctx.model?(node.receiver.slice) if %i[new create create!].include?(node.name)
+      return @ctx.model?(node.receiver.slice) || association?(node.receiver) if %i[new create create!].include?(node.name)
       true
     end
 
+    # post.comments.new(...) is a relation building a scoped record.
+    def association?(recv) = recv.is_a?(Prism::CallNode) && recv.receiver && recv.arguments.nil?
+
+    def relation_build?(node)
+      node.name == :new && association?(node.receiver) &&
+        (node.arguments.nil? || node.arguments.arguments.last.is_a?(Prism::KeywordHashNode))
+    end
+
     def lower_mass_assignment(node)
+      if relation_build?(node)
+        @rw.replace(node) { "#{@rw.slice(node.receiver)}.build#{node.arguments ? "(#{@rw.slice(node.arguments)})" : ''}" }
+        return
+      end
       arg = node.arguments.arguments.first
-      @rw.replace(node) { "#{@rw.slice(node.receiver)}.#{MASS[node.name]}(#{@rw.slice(arg)})" }
+      method = MASS[node.name]
+      method = "build_from" if node.name == :new && association?(node.receiver)
+      @rw.replace(node) { "#{@rw.slice(node.receiver)}.#{method}(#{@rw.slice(arg)})" }
     end
 
     # form_with(model: @entry) do |f| ... end, inlined: the block body
@@ -374,6 +390,8 @@ module Rieles
         when :pluck then "#{prefix.call}pluck_#{arg.unescaped}"
         when :order then "#{prefix.call}order_sql(#{@rw.slice(arg)})"
         when :exists? then "#{prefix.call}where(#{@rw.slice(arg)}).exists?"
+        # Accepted for compatibility; associations load lazily (N+1).
+        when :includes, :preload, :eager_load then @rw.slice(recv)
         end
       end
     end

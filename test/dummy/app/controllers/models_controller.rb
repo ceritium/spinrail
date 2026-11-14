@@ -72,6 +72,24 @@ class ModelsController < ApplicationController
     render plain: "cid=" + Author.where(name: "Cid").count.to_s
   end
 
+  def scoped
+    post = Post.find_by(title: "First")
+    built = post.comments.create(body: "a very long comment")
+    unsaved = post.comments.new(body: "draft")
+    lines = []
+    lines << "built=" + built.post_id.to_s + " " + built.persisted?.to_s + " " + built.body
+    lines << "unsaved=" + unsaved.post_id.to_s + " " + unsaved.persisted?.to_s
+    lines << "count=" + post.comments.count.to_s + " includes=" + Post.includes(:comments).count.to_s
+    blank = Post.new(author_id: post.author_id, title: "Blank", body: "", rating: 1.0, published: true)
+    hidden = Post.new(author_id: post.author_id, title: "Blank", body: "", rating: 1.0, published: false)
+    lines << "guard=" + blank.valid?.to_s + "," + hidden.valid?.to_s
+    render plain: lines.join("\n")
+  end
+
+  def authors
+    render plain: Author.order(id: :asc).pluck(:name).join(",")
+  end
+
   def bang
     Author.create!(name: "", email: "x")
     render plain: "unreachable"

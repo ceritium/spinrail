@@ -43,6 +43,8 @@ module Rieles
   Table = Struct.new(:name, :columns) do
     def column(name) = columns.find { |c| c.name == name }
 
+    def add_column_sql(column) = "ALTER TABLE #{name} ADD COLUMN #{column.name} #{column.sql_type}"
+
     def create_sql
       defs = columns.map { |c| c.name == "id" ? "id INTEGER PRIMARY KEY" : "#{c.name} #{c.sql_type}" }
       "CREATE TABLE IF NOT EXISTS #{name} (#{defs.join(', ')})"

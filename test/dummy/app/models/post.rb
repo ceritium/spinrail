@@ -6,6 +6,7 @@ class Post < ApplicationRecord
   validates :rating, numericality: { greater_than_or_equal_to: 0, less_than_or_equal_to: 5 }
   validates :status, inclusion: { in: %w[draft published] }
   validate :body_not_shouting
+  validates :body, presence: true, if: :published?
 
   after_create :log_creation
 

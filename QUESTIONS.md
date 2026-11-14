@@ -17,3 +17,7 @@ is easy to revisit.
   Rails' cookie store keeps JSON types.
 - CSRF is on by default outside tests, so plain `curl -d` POSTs get 422;
   APIs need `skip_forgery_protection`.
+- `includes` compiles but doesn't eager-load: is silent N+1 acceptable, or
+  should it be a compile error until real preloading exists?
+- Schema changes are applied at boot (only added columns). Real migrations
+  or keep db/schema.rb as the only source of truth?

@@ -170,6 +170,7 @@ module Rieles
         application_controller_support,
         *controllers.map { |name, c| render_methods(name, c) }.compact,
         *@actions.values.map { |a| "#{SOURCE_MARK}#{a.file}\n#{a.source}" },
+        seeds_class,
         schema_setup(schema),
         method_override,
         *routes.routes.map { |r| route_block(r, controllers) },
@@ -487,8 +488,20 @@ module Rieles
       RUBY
     end
 
+    def seeds_class
+      file = path("db/seeds.rb")
+      return "" unless File.exist?(file)
+      body = Lowering.lower(File.read(file), rel(file), Context.new(self, "", view: false))
+      "#{SOURCE_MARK}db/seeds.rb\nclass RielesSeeds\n  def self.run\n#{body.gsub(/^(?=.)/, '    ')}\n  end\nend\n"
+    end
+
     def schema_setup(schema)
-      statements = schema.tables.values.map { |t| "  db.exec(#{t.create_sql.inspect})" }
+      statements = schema.tables.values.flat_map do |t|
+        cols = t.columns.reject { |c| c.name == "id" }
+        ["  db.exec(#{t.create_sql.inspect})",
+         "  Rieles.add_missing_columns(#{t.name.inspect}, #{cols.map(&:name).inspect}, #{cols.map { |c| t.add_column_sql(c) }.inspect})"]
+      end
+      seeds = File.exist?(path("db/seeds.rb"))
       <<~RUBY
         on_start do
           if Rieles.env == "production" && ENV.fetch("SECRET_KEY_BASE", "").empty?
@@ -497,6 +510,7 @@ module Rieles
           end
           db = Rieles.db
         #{statements.join("\n")}
+        #{seeds ? "  if ENV.fetch(\"RIELES_SEED\", \"\") == \"1\"\n    RielesSeeds.run\n    puts \"rieles: seeded\"\n    exit(0)\n  end" : ""}
         end
       RUBY
     end

@@ -51,9 +51,9 @@ module Rieles
       if call == :validates
         validates(stmt)
       elsif call == :validate
-        @custom_validations.concat(symbols(stmt))
+        @custom_validations.concat(guarded_calls(stmt))
       elsif CALLBACKS.include?(call)
-        @callbacks[call].concat(symbols(stmt))
+        @callbacks[call].concat(guarded_calls(stmt))
       elsif %i[has_many has_one belongs_to].include?(call)
         association(stmt)
       else
@@ -61,10 +61,29 @@ module Rieles
       end
     end
 
-    def symbols(node)
+    # before_save :x, if: :y -> "x if y"
+    def guarded_calls(node)
       args, kw = Rieles.call_args(node)
-      fail!(node, "#{node.name} takes method names, not options") unless kw.empty?
-      args.map { |a| Rieles.literal(a).to_s }
+      guard = guard(node, kw)
+      args.map { |a| guard ? "#{Rieles.literal(a)} if #{guard}" : Rieles.literal(a).to_s }
+    end
+
+    # if:/unless: take method names; on: :create or :update.
+    def guard(node, kw)
+      unknown = kw.keys - %i[if unless on]
+      fail!(node, "unsupported option #{unknown.first}") if unknown.any?
+      parts = []
+      { if: "", unless: "!" }.each do |key, neg|
+        next unless kw[key]
+        fail!(node, "#{key}: takes a method name") unless kw[key].is_a?(Prism::SymbolNode)
+        parts << "#{neg}#{kw[key].unescaped}"
+      end
+      if kw[:on]
+        on = Rieles.literal(kw[:on])
+        fail!(node, "on: takes :create or :update") unless %i[create update].include?(on)
+        parts << (on == :create ? "!persisted?" : "persisted?")
+      end
+      parts.empty? ? nil : parts.join(" && ")
     end
 
     def association(node)
@@ -88,25 +107,30 @@ module Rieles
 
     def validates(node)
       args, kw = Rieles.call_args(node)
+      @guard = guard(node, kw.slice(:if, :unless, :on))
+      kw = kw.reject { |k, _| %i[if unless on].include?(k) }
       args.each do |arg|
         attr = Rieles.literal(arg).to_s
         assoc = @associations.find { |a| a.kind == :belongs_to && a.name == attr }
         if assoc
           kw.each_key { |k| fail!(node, "only presence is supported on #{attr}") unless k == :presence }
-          @validations << [attr, "!#{assoc.class_name}.where(id: @#{assoc.foreign_key}).exists?", "must exist"]
+          @validations << [attr, guarded("!#{assoc.class_name}.where(id: @#{assoc.foreign_key}).exists?"), "must exist"]
           next
         end
         column = @table.column(attr) or fail!(node, "unknown attribute #{attr}")
         kw.each { |kind, value_node| validation(node, column, kind, value_node) }
       end
+      @guard = nil
     end
+
+    def guarded(cond) = @guard ? "(#{@guard}) && (#{cond})" : cond
 
     def validation(node, column, kind, value_node)
       attr = column.name
       ivar = "@#{attr}"
       value = value_node.is_a?(Prism::HashNode) ? value_node.elements.to_h { |a| [Rieles.literal(a.key), a.value] } : {}
       message = value[:message] && Rieles.literal(value[:message])
-      add = ->(cond, msg) { @validations << [attr, cond, message || msg] }
+      add = ->(cond, msg) { @validations << [attr, guarded(cond), message || msg] }
       case kind
       when :presence
         fail!(node, "presence only applies to string columns (#{attr} is #{column.type})") unless column.string?
@@ -274,8 +298,6 @@ module Rieles
 
     def model_class
       kwargs = columns.map { |c| "#{c.name}: #{c.default_literal}" }.join(", ")
-      new_args = assignable.map { |c| "#{c.name}: #{c.name}" }.join(", ")
-      create_kwargs = assignable.map { |c| "#{c.name}: #{c.default_literal}" }.join(", ")
       update_kwargs = assignable.map { |c| "#{c.name}: @#{c.name}" }.join(", ")
       assign = assignable.map { |c| "@#{c.name} = #{c.name}" }
       from_row = columns.each_with_index.map { |c, i| "#{c.name}: #{c.read(i)}" }
@@ -421,6 +443,21 @@ module Rieles
       RUBY
     end
 
+    def create_kwargs = assignable.map { |c| "#{c.name}: #{c.default_literal}" }.join(", ")
+    def new_args = assignable.map { |c| "#{c.name}: #{c.name}" }.join(", ")
+
+    def scope_assignments
+      assignable.map do |c|
+        value = case c.type
+                when :integer then "value.to_i"
+                when :float then "value.to_f"
+                when :boolean then 'value == "1"'
+                else "value"
+                end
+        "record.#{c.name} = #{value} if name == #{c.name.inspect}"
+      end
+    end
+
     def relation_class
       booleans = columns.select(&:boolean?).map(&:name)
       bool_value = if booleans.empty?
@@ -448,11 +485,13 @@ module Rieles
       end
       <<~RUBY
         class #{relation}
-          attr_reader :wheres, :binds, :ordering, :raw_order, :limit_value, :offset_value
+          attr_reader :wheres, :binds, :ordering, :raw_order, :limit_value, :offset_value, :scope_columns, :scope_values
 
           def initialize
             @wheres = []
             @binds = []
+            @scope_columns = []
+            @scope_values = []
             @ordering = []
             @raw_order = ""
             @limit_value = -1
@@ -464,6 +503,8 @@ module Rieles
           def restore(other)
             @wheres = other.wheres.dup
             @binds = other.binds.dup
+            @scope_columns = other.scope_columns.dup
+            @scope_values = other.scope_values.dup
             @ordering = other.ordering.dup
             @raw_order = other.raw_order
             @limit_value = other.limit_value
@@ -489,7 +530,55 @@ module Rieles
             raise ArgumentError, "unknown column " + name unless #{@name}::COLUMNS.include?(name)
             @wheres << name + " " + op + " ?"
             @binds << sql_value(name, value)
+            if op == "="
+              @scope_columns << name
+              @scope_values << value
+            end
           end
+
+          # post.comments.build/create: the relation's equality conditions
+          # become the new record's attributes.
+          def apply_scope(record)
+            i = 0
+            while i < @scope_columns.length
+              name = @scope_columns[i]
+              value = @scope_values[i]
+        #{indent(scope_assignments, 6)}
+              i += 1
+            end
+            record
+          end
+
+          def build(#{create_kwargs})
+            apply_scope(#{@name}.new(#{new_args}))
+          end
+
+          def create(#{create_kwargs})
+            record = build(#{new_args})
+            record.save
+            record
+          end
+
+          def create!(#{create_kwargs})
+            record = build(#{new_args})
+            record.save!
+            record
+          end
+
+          def build_from(params) = apply_scope(#{@name}.from_params(params))
+
+          def create_from(params)
+            record = build_from(params)
+            record.save
+            record
+          end
+
+          def create_from!(params)
+            record = build_from(params)
+            record.save!
+            record
+          end
+
 
           def sql_value(name, value)
         #{indent(bool_value, 4)}

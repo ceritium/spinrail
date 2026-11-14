@@ -29,7 +29,7 @@ module Rieles
       log = File.open(File.join(ENV.fetch("RIELES_APP"), "log/test.log"), "a")
       log.puts "", "== #{self.class.name}##{name}"
       log.flush
-      env = { "DATABASE_PATH" => File.join(@db_dir, "test.sqlite3"), "RIELES_LOG_FORMAT" => "dev",
+      env = { "DATABASE_PATH" => database_path, "RIELES_LOG_FORMAT" => "dev",
               "RIELES_ENV" => "test", "RIELES_FORGERY_PROTECTION" => self.class.forgery_protection? ? "1" : "0" }
       env.merge!(self.class.server_env)
       @pid = Process.spawn(env, ENV.fetch("RIELES_BINARY"), "-p", @port.to_s,
@@ -41,6 +41,7 @@ module Rieles
     end
 
     def cookies = @cookies
+    def database_path = File.join(@db_dir, "test.sqlite3")
 
     def teardown
       stop_server if @pid

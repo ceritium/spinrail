@@ -15,14 +15,16 @@ Roughly in priority order within each section.
       `uniqueness`, `length: { is: }`, custom `validate :method`, `message:`.
 - [x] Callbacks: `before/after_validation|save|create|update|destroy`.
 - [x] Column types: boolean (`published?`), float/decimal, `default:`.
-- [ ] Building through associations: `post.comments.create(...)`, `post.comments.new`.
-- [ ] `includes`/eager loading (N+1 today), `joins`, `group`, `update_all`, scopes.
-- [ ] `if:`/`unless:`/`on:` on validations and callbacks; halting with `throw :abort`.
+- [x] Building through associations: `post.comments.create(...)`, `.new`, `.build`.
+- [ ] Eager loading (`includes` is accepted but loads lazily), `joins`, `group`,
+      `update_all`, `scope :name, -> { }`.
+- [x] `if:`/`unless:`/`on:` on validations and callbacks.
+- [ ] Halting callbacks with `throw :abort`.
 - [ ] Nullable columns. Today every column is `NOT NULL` with a default,
       because spinel can't hold nil where a String is expected.
-- [ ] Migrations in `db/migrate` with a schema version, instead of
-      `CREATE TABLE IF NOT EXISTS` at boot.
-- [ ] `db/seeds.rb`.
+- [x] Columns added to `db/schema.rb` are added to existing tables at boot.
+- [ ] Migrations in `db/migrate` (renames, drops, data changes) with a schema version.
+- [x] `db/seeds.rb` (`rieles db:seed`, `rieles db:reset`).
 - [ ] PostgreSQL (tep ships an opt-in `PG` battery).
 
 ## Controllers

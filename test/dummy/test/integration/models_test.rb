@@ -70,3 +70,30 @@ class ModelsTest < Rieles::IntegrationTest
     assert_body_includes "Validation failed: Name can&#39;t be blank, Email is invalid"
   end
 end
+
+class ModelsScopedTest < Rieles::IntegrationTest
+  def setup
+    super
+    get "/models/seed"
+  end
+
+  def test_building_through_associations_and_guards
+    get "/models/scoped"
+    expected = <<~TEXT.chomp
+      built=1 true a very lon
+      unsaved=1 false
+      count=1 includes=3
+      guard=false,true
+    TEXT
+    assert_equal expected, response.body
+  end
+end
+
+class SeedsTest < Rieles::IntegrationTest
+  def test_seeds_run_against_the_database
+    assert system({ "RIELES_SEED" => "1", "DATABASE_PATH" => database_path, "RIELES_LOG_LEVEL" => "error" },
+                  ENV.fetch("RIELES_BINARY"), out: File::NULL)
+    get "/models/authors"
+    assert_equal "Seeded", response.body
+  end
+end

@@ -22,6 +22,8 @@ Rieles.routes.draw do
   get "/models/associations", to: "models#associations"
   get "/models/transaction", to: "models#transaction"
   get "/models/bang", to: "models#bang"
+  get "/models/scoped", to: "models#scoped"
+  get "/models/authors", to: "models#authors"
 
   get "/widgets", to: "widgets#index"
   get "/widgets/:id", to: "widgets#show"

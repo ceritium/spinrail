@@ -17,6 +17,8 @@ module Rieles
       "build" => "Compile the app into a native binary (-o OUTPUT)",
       "routes" => "List the routes",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
+      "db:seed" => "Run db/seeds.rb against the database",
+      "db:reset" => "Delete the development database and seed it again",
       "clean" => "Remove the binary, tmp/, log/ and the development database",
       "setup" => "Clone and build spinel + tep into vendor/ (build and server do it on demand)"
     }.freeze
@@ -38,6 +40,8 @@ module Rieles
       when "routes" then routes
       when "test" then test
       when "clean" then clean
+      when "db:seed" then seed
+      when "db:reset" then reset_db
       when "setup" then setup
       else help(command)
       end
@@ -146,6 +150,20 @@ module Rieles
       exec(env, RbConfig.ruby, "-I", File.join(FRAMEWORK, "lib"), "-r", "rieles/test", "-e", loader, *files, *options)
     end
 
+    def seed
+      abort "rieles: no db/seeds.rb" unless File.exist?(File.join(@app, "db/seeds.rb"))
+      build(binary) if stale?
+      Dir.chdir(@app)
+      system({ "RIELES_SEED" => "1" }, binary) or abort "rieles: seeding failed"
+    end
+
+    def reset_db
+      database = ENV.fetch("DATABASE_PATH", File.join(@app, "db/development.sqlite3"))
+      FileUtils.rm_f(database)
+      puts "rieles: deleted #{database.delete_prefix("#{@app}/")}"
+      seed if File.exist?(File.join(@app, "db/seeds.rb"))
+    end
+
     def clean
       FileUtils.rm_rf([binary, File.join(@app, "tmp"), File.join(@app, "log"), *Dir[File.join(@app, "db/*.sqlite3")]])
     end
@@ -185,7 +203,7 @@ module Rieles
     end
 
     # Harmless and not actionable by apps (see the build notes in README).
-    KNOWN_WARNINGS = ["Router @routes: Array[Route] stays a boxed array", "ignoring duplicate libraries"].freeze
+    KNOWN_WARNINGS = ["Router @routes: Array[Route] stays a boxed array", "ignoring duplicate libraries", "linker' input unused"].freeze
 
     # tep drops comments, so the failing line of its .tep.rb is looked up
     # by text in our app.rb, whose section marks name the app file.
