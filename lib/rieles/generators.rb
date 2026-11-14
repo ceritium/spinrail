@@ -49,7 +49,7 @@ module Rieles
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <%= csrf_meta_tags %>
           <title><%= content_for?(:title) ? yield(:title) : #{Inflector.camelize(name).inspect} %></title>
-          <link rel="stylesheet" href="/style.css">
+          <%= stylesheet_link_tag "style" %>
         </head>
         <body>
           <% if notice %><p class="notice"><%= notice %></p><% end %>

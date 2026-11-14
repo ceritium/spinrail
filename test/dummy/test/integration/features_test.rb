@@ -66,7 +66,12 @@ class FeaturesTest < Rieles::IntegrationTest
     assert_includes body, "<p>$1,234.50 -€5</p>"
     assert_includes body, "<p>less than a minute</p>"
     assert_includes body, '<a href="/posts/1" class="card"><strong>First</strong></a>'
-    assert_includes body, '<link rel="stylesheet" href="/style.css" media="all">'
+    href = body[%r{<link rel="stylesheet" href="(/style-\h{12}\.css)" media="all">}, 1]
+    assert href, body
+    get href
+    assert_equal "body { color: #333; }\n", response.body
+    get "/style.css"
+    assert_response :success
     assert_includes body, '<script src="https://cdn.example.com/x.js" defer></script>'
     assert_includes body, '<img src="/logo.png" alt="Logo">'
   end

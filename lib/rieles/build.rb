@@ -176,7 +176,10 @@ module Rieles
       FileUtils.rm_rf(out_dir)
       FileUtils.mkdir_p(out_dir)
       assets = path("app/assets")
-      FileUtils.cp_r(assets, File.join(out_dir, "assets")) if Dir.exist?(assets)
+      if Dir.exist?(assets)
+        FileUtils.cp_r(assets, File.join(out_dir, "assets"))
+        asset_digests.each { |name, digested| FileUtils.cp(File.join(assets, name), File.join(out_dir, "assets", digested.delete_prefix("/"))) }
+      end
       out = File.join(out_dir, "app.rb")
       File.write(out, generate)
       out
@@ -229,6 +232,7 @@ module Rieles
         *(Dir.exist?(path("public")) ? ["set :public_dir, \"public\""] : []),
         File.read(RUNTIME),
         translations,
+        assets_source,
         application_record,
         *Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }
           .map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Model.new(f, schema).to_ruby}" },
@@ -248,6 +252,22 @@ module Rieles
         *routes.routes.map { |r| route_block(r, controllers) },
         not_found_block
       ].join("\n")
+    end
+
+    # style.css -> /style-<sha256 prefix>.css: a new name whenever the
+    # content changes, so browsers can cache assets for good.
+    def asset_digests
+      @asset_digests ||= Dir[path("app/assets/**/*")].select { |f| File.file?(f) }.sort.to_h do |file|
+        name = file.delete_prefix("#{path('app/assets')}/")
+        ext = File.extname(name)
+        [name, "/#{name.delete_suffix(ext)}-#{Digest::SHA256.file(file).hexdigest[0, 12]}#{ext}"]
+      end
+    end
+
+    def assets_source
+      entries = asset_digests.map { |k, v| "    #{k.inspect} => #{v.inspect}" }
+      entries = ['    "" => ""'] if entries.empty?
+      "module RielesAssets\n  DIGESTS = {\n#{entries.join(",\n")}\n  }.freeze\nend\n"
     end
 
     # config/locales/*.yml flattened to "es.posts.index.title" => "...".

@@ -1389,9 +1389,11 @@ module Rieles
     end
 
     # "style" -> /style.css; absolute paths and URLs are kept.
+    # The digested name when app/assets has the file.
     def asset_path(source, extension)
       return source if source.start_with?("/") || source.include?("://")
-      "/" + (source.include?(".") ? source : source + extension)
+      name = source.include?(".") ? source : source + extension
+      RielesAssets::DIGESTS.fetch(name, "/" + name)
     end
 
     def stylesheet_link_tag(source, attrs)
