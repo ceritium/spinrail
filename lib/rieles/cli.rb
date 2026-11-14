@@ -117,7 +117,9 @@ module Rieles
       log, status = Open3.capture2e(env, TEP, "build", source, "-o", output)
       unless status.success?
         puts "failed"
+        $stdout.flush
         warn log
+        warn source_hints(log, source)
         abort "rieles: build failed (generated source: #{rel_to_app(source)})"
       end
       puts format("done in %.1fs", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
@@ -129,6 +131,23 @@ module Rieles
     KNOWN_WARNINGS = ["Router @routes: Array[Route] stays a boxed array", "ignoring duplicate libraries"].freeze
 
     def rel_to_app(file) = file.delete_prefix("#{@app}/")
+
+    # tep drops comments, so the failing line of its .tep.rb is looked up
+    # by text in our app.rb, whose section marks name the app file.
+    def source_hints(log, source)
+      ours = File.readlines(source)
+      hints = log.scan(/(\S+\.tep\.rb):(\d+)/).uniq.filter_map do |file, line|
+        next unless File.exist?(file)
+        text = File.readlines(file)[line.to_i - 1]&.strip
+        next if text.nil? || text.empty?
+        n = ours.index { |l| l.strip == text } or next
+        mark = n.downto(0).find { |i| ours[i].start_with?(Build::SOURCE_MARK) } or next
+        origin = ours[mark].delete_prefix(Build::SOURCE_MARK).strip
+        next "  in code generated from #{origin.delete_prefix('generated ')}: #{text}" if origin.start_with?("generated ")
+        "  #{origin}:#{n - mark}: #{text}"
+      end
+      hints.empty? ? "" : "rieles: the error is near\n#{hints.uniq.join("\n")}"
+    end
 
     def stale?
       return true unless File.exist?(binary)

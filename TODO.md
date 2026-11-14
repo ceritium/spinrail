@@ -76,7 +76,9 @@ Roughly in priority order within each section.
 - [x] `rieles new` (app skeleton) and `rieles generate model|controller|scaffold`.
 - [x] `rieles server` rebuilds when sources changed.
 - [ ] `rieles server` watching files and restarting on change.
-- [ ] Map compile errors in `tmp/rieles/app.rb` back to the source `.rb`/`.erb` line.
+- [x] Point spinel/C errors at the app file and line (controllers, actions, helpers;
+      generated code names its source file).
+- [ ] Line mapping for templates and models.
 - [x] Unit tests for the compiler (`rake unit`; `rake` also runs both apps).
 - [x] Framework request tests in `test/dummy` (`bin/rieles test` there).
 - [ ] Tests: model tests without HTTP, fixtures, `assert_select` on HTML,

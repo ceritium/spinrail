@@ -35,7 +35,11 @@ module Rieles
 
     # Hanami-style action: Actions::Stats::Show, lowered to a flat class
     # that inherits ApplicationController's response helpers.
-    ActionClass = Struct.new(:key, :class_name, :source)
+    ActionClass = Struct.new(:key, :class_name, :source, :file)
+
+    # Precedes each section of the generated source so a spinel error can be
+    # pointed back at the app file; lowering keeps controller lines in place.
+    SOURCE_MARK = "# rieles:source ".freeze
 
     Filter = Struct.new(:kind, :name, :only, :except) do
       def applies?(action) = (only.nil? || only.include?(action)) && !except&.include?(action)
@@ -158,13 +162,14 @@ module Rieles
         *(Dir.exist?(path("public")) ? ["set :public_dir, \"public\""] : []),
         File.read(RUNTIME),
         application_record,
-        *Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }.map { |f| Model.new(f, schema).to_ruby },
+        *Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }
+          .map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Model.new(f, schema).to_ruby}" },
         views,
-        controllers.fetch("ApplicationController")[:source],
-        *controllers.reject { |name, _| name == "ApplicationController" }.values.map { |c| c[:source] },
+        *controllers.sort_by { |name, _| name == "ApplicationController" ? 0 : 1 }
+          .map { |_, c| "#{SOURCE_MARK}#{c[:file]}\n#{c[:source]}" },
         application_controller_support,
         *controllers.map { |name, c| render_methods(name, c) }.compact,
-        *@actions.values.map(&:source),
+        *@actions.values.map { |a| "#{SOURCE_MARK}#{a.file}\n#{a.source}" },
         schema_setup(schema),
         method_override,
         *routes.routes.map { |r| route_block(r, controllers) },
@@ -219,6 +224,7 @@ module Rieles
         Lowering.lower(ruby, rel(v.template_path), ctx)
       end
       <<~RUBY
+        #{SOURCE_MARK}generated app/views
         class ApplicationView < Rieles::View
         end
 
@@ -276,7 +282,7 @@ module Rieles
         header = "class #{name}#{klass.superclass ? " < #{klass.superclass.slice}" : ''}"
         source = File.read(file).sub(header, "class #{flat} < ApplicationController")
         lowered = Lowering.lower(source, rel(file), Context.new(self, nil, view: false, action: key))
-        [key, ActionClass.new(key, flat, lowered)]
+        [key, ActionClass.new(key, flat, lowered, rel(file))]
       end
     end
 
