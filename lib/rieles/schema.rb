@@ -45,7 +45,7 @@ module Rieles
       when :integer then "db.col_int(#{i})"
       when :boolean then "db.col_int(#{i}) == 1"
       when :float then "db.col_str(#{i}).to_f"
-      else "Rieles.column_text(db.col_str(#{i}))"
+      else "db.col_str(#{i})"
       end
     end
 

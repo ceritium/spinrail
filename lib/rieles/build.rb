@@ -163,11 +163,13 @@ module Rieles
 
     # tests: compile test/models/*_test.rb in (the test binary).
     # script: Ruby source to run instead of serving (rieles runner).
-    def initialize(app_dir, tests: false, script: nil)
+    # threads: work jobs on spinel threads (rieles jobs -c N).
+    def initialize(app_dir, tests: false, script: nil, threads: false)
       @app = File.expand_path(app_dir)
       @partial_locals = {}
       @tests = tests
       @script = script
+      @threads = threads
     end
 
     def routes = @routes ||= Routes.new(path("config/routes.rb"))
@@ -265,11 +267,19 @@ module Rieles
 
     def runtime_source
       source = File.read(RUNTIME)
+      source = threaded(source) if @threads
       return source unless postgres?
       source.sub("@conn = Tep::SQLite.new", "@conn = Rieles::PgConnection.new")
             .sub('raise StatementInvalid, "failed: " + sql if rc < 0', 'raise StatementInvalid, "failed: " + sql + ": " + db.last_error if rc < 0')
             .sub('ENV.fetch("DATABASE_PATH", "./db/development.sqlite3")', 'ENV.fetch("DATABASE_URL", "postgres:///rieles_development")') +
         "\n" + File.read(File.join(File.dirname(RUNTIME), "postgres.rb"))
+    end
+
+    def threaded(source)
+      source.sub("def self.db = DB.connection", "def self.db = DBS[Rieles.db_slot].connection")
+            .sub("  def self.synchronize\n    yield\n  end",
+                 "  def self.synchronize\n    LOCK.lock\n    begin\n      yield\n    ensure\n      LOCK.unlock\n    end\n  end") +
+        "\n" + File.read(File.join(File.dirname(RUNTIME), "threads.rb"))
     end
 
     # style.css -> /style-<sha256 prefix>.css: a new name whenever the
@@ -882,7 +892,7 @@ module Rieles
           Rieles.run_sql_file(boot_sql) unless boot_sql.empty?
         #{seeds ? "  if ENV.fetch(\"RIELES_SEED\", \"\") == \"1\"\n    RielesSeeds.run\n    puts \"rieles: seeded\"\n    exit(0)\n  end" : ""}
         #{@tests ? test_runner : ''}
-          Rieles.work_jobs if ENV.fetch("RIELES_JOBS", "") == "1"
+          #{@threads ? 'Rieles.work_jobs_threaded(ENV.fetch("RIELES_JOB_THREADS", "2").to_i)' : 'Rieles.work_jobs if ENV.fetch("RIELES_JOBS", "") == "1"'}
         #{@script ? "  RielesRunner.run\n    exit(0)" : ''}
           Rieles::DB.close
         end

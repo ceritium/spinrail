@@ -23,7 +23,7 @@ module Rieles
       "routes" => "List the routes",
       "check" => "Run the build's static checks without compiling",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
-      "jobs" => "Work background jobs (app/jobs) until Ctrl+C",
+      "jobs" => "Work background jobs (app/jobs) until Ctrl+C (-c THREADS)",
       "runner" => "Compile and run a script against the app: runner FILE or runner -e CODE",
       "db:migrate" => "Apply db/migrate and rewrite db/schema.rb from it",
       "db:rollback" => "Undo the latest applied migration",
@@ -225,7 +225,17 @@ module Rieles
       exec({ "RIELES_LOG_LEVEL" => ENV.fetch("RIELES_LOG_LEVEL", "error") }, output)
     end
 
+    # -c N > 1 works N jobs at once on spinel threads, in a binary of its
+    # own so the server keeps the single-threaded runtime.
     def jobs
+      threads = option("-c").to_i
+      if threads > 1
+        output = File.join(@app, "tmp", "#{File.basename(@app)}-jobs")
+        compile(output, threads: true) or abort "rieles: build failed" if !File.exist?(output) || input_mtimes.values.max > File.mtime(output)
+        Dir.chdir(@app)
+        $stdout.flush
+        exec({ "RIELES_JOB_THREADS" => threads.to_s }, output)
+      end
       build(binary) if stale?
       Dir.chdir(@app)
       $stdout.flush
@@ -280,10 +290,15 @@ module Rieles
       compile(output) or abort "rieles: build failed (generated source: tmp/rieles/app.rb)"
     end
 
-    def compile(output, tests: false, script: nil)
+    def compile(output, tests: false, script: nil, threads: false)
       setup unless File.executable?(File.join(VENDOR, "spinel/spinel")) && File.exist?(TEP)
-      build = Build.new(@app, tests: tests, script: script)
-      source = build.write(File.join(@app, tests ? "tmp/rieles-test" : (script ? "tmp/rieles-runner" : "tmp/rieles")))
+      build = Build.new(@app, tests: tests, script: script, threads: threads)
+      dir = if tests then "tmp/rieles-test"
+            elsif script then "tmp/rieles-runner"
+            elsif threads then "tmp/rieles-jobs"
+            else "tmp/rieles"
+            end
+      source = build.write(File.join(@app, dir))
       build.warnings.uniq.each { |w| warn "warning: #{w}" }
       env = {
         "SPINEL" => File.join(VENDOR, "spinel/spinel"),

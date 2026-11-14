@@ -146,6 +146,8 @@ to the server.
   `RIELES_MAIL_TOKEN` (JSON `{from, to, subject, text, html}`, as Resend takes).
 - Jobs: `app/jobs/*_job.rb` with `perform(arg)`, `perform_later` into a SQLite
   queue drained by `rieles jobs` (3 attempts with backoff); inline in tests.
+  `rieles jobs -c N` works N at once on spinel threads, each with its own
+  connection.
 - i18n: `config/locales/*.yml`, `t(".title")`, `t("greeting", name: x)`,
   `I18n.locale = params[:locale]`, translated validation messages.
 

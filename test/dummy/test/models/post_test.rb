@@ -9,6 +9,11 @@ class PostTest < Rieles::ModelTest
     assert_includes post.errors.full_messages, "Rating must be less than or equal to 5"
   end
 
+  def test_long_text_round_trips
+    post = Post.create(author_id: @author.id, title: "Long", body: "x" * 200000, rating: 1.0)
+    assert_equal 200000, Post.find(post.id).body.length
+  end
+
   def test_find_raises_for_missing_records
     assert_raises(Rieles::RecordNotFound) do
       Post.find(12345)

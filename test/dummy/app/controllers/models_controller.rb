@@ -178,6 +178,7 @@ class ModelsController < ApplicationController
   def shout
     ShoutJob.perform_later(Author.find_by(name: "Ana").id)
     BrokenJob.perform_later("x") if params[:broken] == "1"
+    params[:slow].to_i.times { SlowJob.perform_later("0.5") }
     render plain: "queued"
   end
 

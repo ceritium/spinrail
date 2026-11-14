@@ -100,10 +100,11 @@ class SeedsTest < Rieles::IntegrationTest
 end
 
 class BigTextTest < Rieles::IntegrationTest
-  def test_reading_a_value_over_64_kb_fails_loudly
+  def test_text_over_64_kb_comes_back_whole
     get "/models/seed"
     get "/models/big"
-    assert_response 500
+    assert_response 200
+    assert_equal "70000", response.body
   end
 end
 

@@ -192,10 +192,12 @@ module Rieles
     def on_finish(status, elapsed); end
 
     def emit(line)
-      if @file.empty?
-        puts line
-      else
-        File.open(@file, "a") { |f| f.puts(line) }
+      Rieles.synchronize do
+        if @file.empty?
+          puts line
+        else
+          File.open(@file, "a") { |f| f.puts(line) }
+        end
       end
     end
 
@@ -346,12 +348,6 @@ module Rieles
   # Bound in place of nil; the SQL wraps nullable placeholders in NULLIF.
   NULL_STR = 1.chr
   NULL_INT = -9007199254740991
-
-  # Tep::SQLite copies text into 64 KB buffers; a full one was cut.
-  def self.column_text(value)
-    raise StatementInvalid, "text value longer than 64 KB was truncated by Tep::SQLite" if value.bytesize >= 65535
-    value
-  end
 
   class RecordInvalid < StandardError; end
   class ParameterMissing < StandardError; end
@@ -826,7 +822,8 @@ module Rieles
   # take the same row. Returns "id|attempts|job|arg" or "".
   def self.claim_job
     db = Rieles.db
-    db.exec("BEGIN IMMEDIATE")
+    # Busy past busy_timeout: claim nothing rather than race outside a transaction.
+    return "" unless db.exec("BEGIN IMMEDIATE")
     db.prepare("SELECT id, attempts, job, arg FROM rieles_jobs WHERE status = 'queued' AND run_at <= ? ORDER BY id LIMIT 1")
     db.bind_int(1, Time.now.to_i)
     claimed = ""
@@ -862,30 +859,42 @@ module Rieles
   def self.work_jobs
     Rieles.jobs_schema
     puts "rieles: working jobs (Ctrl+C to stop)"
-    loop do
-      claimed = Rieles.claim_job
-      if claimed.empty?
-        sleep 1
-        next
-      end
-      parts = claimed.split("|", 4)
-      id = parts[0].to_i
-      attempts = parts[1].to_i + 1
-      t0 = Rieles.clock
-      begin
-        RielesJobs.dispatch(parts[2], parts[3])
-        Rieles.finish_job(id, "done", attempts, Time.now.to_i, "")
-        puts "Performed " + parts[2] + " #" + id.to_s + " in " + format("%.1f", (Rieles.clock - t0) * 1000.0) + "ms"
-        $stdout.flush
-      rescue StandardError => e
-        retry_job = attempts < JOB_ATTEMPTS
-        wait = 2
-        (attempts - 1).times { wait *= 2 }
-        Rieles.finish_job(id, retry_job ? "queued" : "failed", attempts, Time.now.to_i + wait, e.class.name + ": " + e.message)
-        puts "Failed " + parts[2] + " #" + id.to_s + ": " + e.message + (retry_job ? " (retrying in " + wait.to_s + "s)" : "")
-        $stdout.flush
-      end
+    $stdout.flush
+    loop { sleep 1 unless Rieles.work_job }
+  end
+
+  # Claims and performs one job; false when none was due.
+  def self.work_job
+    claimed = Rieles.claim_job
+    return false if claimed.empty?
+    parts = claimed.split("|", 4)
+    id = parts[0].to_i
+    attempts = parts[1].to_i + 1
+    t0 = Rieles.clock
+    begin
+      RielesJobs.dispatch(parts[2], parts[3])
+      Rieles.finish_job(id, "done", attempts, Time.now.to_i, "")
+      Rieles.say("Performed " + parts[2] + " #" + id.to_s + " in " + format("%.1f", (Rieles.clock - t0) * 1000.0) + "ms")
+    rescue StandardError => e
+      retry_job = attempts < JOB_ATTEMPTS
+      wait = 2
+      (attempts - 1).times { wait *= 2 }
+      Rieles.finish_job(id, retry_job ? "queued" : "failed", attempts, Time.now.to_i + wait, e.class.name + ": " + e.message)
+      Rieles.say("Failed " + parts[2] + " #" + id.to_s + ": " + e.message + (retry_job ? " (retrying in " + wait.to_s + "s)" : ""))
     end
+    true
+  end
+
+  def self.say(line)
+    Rieles.synchronize do
+      puts line
+      $stdout.flush
+    end
+  end
+
+  # A no-op unless the binary runs jobs on threads (runtime/threads.rb).
+  def self.synchronize
+    yield
   end
 
   # Rails.cache: in memory per process (like MemoryStore), or a SQLite
@@ -907,12 +916,17 @@ module Rieles
 
     def read(key)
       return read_shared(key) if @shared
-      expires = @expires.fetch(key, 0)
-      if expires > 0 && Time.now.to_i >= expires
-        delete(key)
-        return nil
+      value = nil
+      Rieles.synchronize do
+        expires = @expires.fetch(key, 0)
+        if expires > 0 && Time.now.to_i >= expires
+          @values.delete(key)
+          @expires.delete(key)
+        else
+          value = @values[key]
+        end
       end
-      @values[key]
+      value
     end
 
     def read_shared(key)
@@ -939,8 +953,10 @@ module Rieles
         db.finalize
         return value
       end
-      @values[key] = value
-      @expires[key] = expires_in > 0 ? Time.now.to_i + expires_in : 0
+      Rieles.synchronize do
+        @values[key] = value
+        @expires[key] = expires_in > 0 ? Time.now.to_i + expires_in : 0
+      end
       value
     end
 
@@ -953,8 +969,10 @@ module Rieles
         db.step
         db.finalize
       end
-      @values.delete(key)
-      @expires.delete(key)
+      Rieles.synchronize do
+        @values.delete(key)
+        @expires.delete(key)
+      end
     end
 
     def clear
@@ -962,8 +980,10 @@ module Rieles
         table
         Rieles.db.exec("DELETE FROM rieles_cache")
       end
-      @values = Tep.str_hash
-      @expires = { "" => 0 }
+      Rieles.synchronize do
+        @values = Tep.str_hash
+        @expires = { "" => 0 }
+      end
     end
   end
 

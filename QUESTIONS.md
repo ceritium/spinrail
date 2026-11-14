@@ -25,8 +25,14 @@ is easy to revisit.
   migrations present they win. Keep both modes?
 - SQL bind values are logged at debug level without filtering (the
   binds don't carry column names yet). Fine for development?
-- Tep::SQLite cuts text values at 64 KB (fixed C buffer). Open an issue/PR
-  upstream? Rieles raises on such reads meanwhile.
+- tep fixes live in a private fork, ceritium/tep: a branch per fix
+  off v0.12.0, merged into `rieles` and tagged `rieles-N` (toolchain.mk's
+  TEP_REF). Nothing proposed upstream yet. CI can't clone it until a
+  TEP_TOKEN secret (read access to the fork) exists.
+- A tep server binary that uses Thread anywhere breaks: the first request
+  gets 400 and later ones a reset, before any thread starts. Spinel's
+  threaded runtime vs tep's request parsing; not investigated further.
+  `rieles jobs -c N` builds its own binary, so the server is unaffected.
 - tep's scheduled server (our default, for Ctrl+C) drops connections under
   a burst of 40; the prefork server doesn't. It also makes CI flaky now and
   then (a request test times out). Draining accept() in a loop was not the

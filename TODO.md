@@ -24,8 +24,7 @@ Roughly in priority order within each section.
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
 - [x] Halting before_* callbacks with `throw :abort`.
 - [x] Nullable columns with `null: true` (nil in Ruby, `where(x: nil)` is `IS NULL`).
-- [ ] Text values over 64 KB: tep's C bridge copies each into a fixed buffer.
-      Reading one now raises instead of returning it cut; fix upstream.
+- [x] Text values of any length (fixed in the tep fork).
 - [x] Columns added to `db/schema.rb` are added to existing tables at boot.
 - [x] Migrations in `db/migrate` (`create_table`, `add/remove/rename_column`,
       `add_reference`, `rename/drop_table`, `add/remove_index`, `execute`), applied
@@ -152,6 +151,10 @@ Roughly in priority order within each section.
 
 - [x] `app/jobs` with `perform_later`/`perform_now`, a SQLite queue claimed under
       `BEGIN IMMEDIATE`, retries with backoff, `rieles jobs`; inline in tests.
+- [x] `rieles jobs -c N`: N threads in a binary of its own (the server keeps
+      the single-threaded runtime), a connection each.
+- [ ] Threaded jobs on PostgreSQL (the PG battery's state hasn't been checked
+      for threads).
 - [ ] Several arguments and typed arguments (one String argument today);
       `set(wait:)`, scheduled jobs.
 
