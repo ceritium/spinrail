@@ -621,11 +621,28 @@ module Rieles
 
     def migrations = @migrations ||= Migrations.new(path("db/migrate"))
 
+    # RIELES_ROLLBACK=1 undoes the latest applied migration and exits.
+    def rollback_code
+      branches = migrations.migrations.reverse.map do |m|
+        action = m.down ? "Rieles.unapply(#{m.version.inspect}, #{m.name.inspect}, #{m.down.inspect})" : "Rieles.irreversible(#{m.version.inspect}, #{m.name.inspect})"
+        "elsif latest == #{m.version.inspect}\n      #{action}"
+      end
+      ['  if ENV.fetch("RIELES_ROLLBACK", "") == "1"',
+       "    latest = Rieles.latest_migration",
+       '    if latest.empty?',
+       '      puts "rieles: nothing to roll back"',
+       *branches.map { |b| "    #{b}" },
+       "    end",
+       "    exit(0)",
+       "  end"]
+    end
+
     # With db/migrate, pending migrations run at boot; without it, tables
     # and added columns come from db/schema.rb.
     def schema_setup(schema)
       statements = if migrations.any?
                      ['  db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)")'] +
+                       rollback_code +
                        migrations.migrations.map { |m| "  Rieles.migrate(#{m.version.inspect}, #{m.name.inspect}, #{m.statements.inspect})" } +
                        ['  exit(0) if ENV.fetch("RIELES_MIGRATE", "") == "1"']
                    else

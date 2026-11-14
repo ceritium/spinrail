@@ -4,7 +4,9 @@ module Rieles
   # boot. Replaying them in order also gives the schema, which
   # `rieles db:migrate` writes to db/schema.rb.
   class Migrations
-    Migration = Struct.new(:version, :name, :statements)
+    # down is nil when the migration can't be reversed (execute, or a drop
+    # of something the earlier migrations didn't create).
+    Migration = Struct.new(:version, :name, :statements, :down)
 
     attr_reader :migrations, :tables, :indexes
 
@@ -39,59 +41,79 @@ module Rieles
       raise CompileError, "#{file}: expected <version>_<name>.rb" unless version.match?(/\A\d+\z/) && name
       root = Rieles.parse(File.read(file), file)
       klass = root.statements.body.find { |n| n.is_a?(Prism::ClassNode) } or raise CompileError, "#{file}: expected a class"
-      change = (klass.body&.body || []).find { |n| n.is_a?(Prism::DefNode) && n.name == :change } or
-        raise CompileError, "#{file}: migrations define `change`"
+      defs = (klass.body&.body || []).grep(Prism::DefNode).to_h { |d| [d.name, d] }
       @file = file
-      statements = (change.body&.body || []).flat_map { |stmt| operation(stmt) }
-      Migration.new(version, name, statements)
+      if defs[:change]
+        steps = body(defs[:change]).map { |stmt| operation(stmt) }
+        down = steps.map(&:last)
+        Migration.new(version, name, steps.flat_map(&:first), down.include?(nil) ? nil : down.reverse.flatten)
+      elsif defs[:up]
+        up = body(defs[:up]).flat_map { |stmt| operation(stmt).first }
+        down = defs[:down] && without_state { body(defs[:down]).flat_map { |stmt| operation(stmt).first } }
+        Migration.new(version, name, up, down)
+      else
+        raise CompileError, "#{file}: migrations define `change`, or `up` and `down`"
+      end
     end
 
+    def body(definition) = definition.body&.body || []
+
+    # down runs against a throwaway copy of the replayed schema.
+    def without_state
+      saved = Marshal.load(Marshal.dump([@tables, @indexes]))
+      yield
+    ensure
+      @tables, @indexes = saved
+    end
+
+    # [up statements, down statements or nil when it can't be reversed]
     def operation(node)
       fail!(node, "unsupported migration statement") unless node.is_a?(Prism::CallNode) && node.receiver.nil?
       args, kw = Rieles.call_args(node)
       lit = ->(n) { Rieles.literal(n) }
       case node.name
-      when :create_table then create_table(node)
+      when :create_table
+        up = create_table(node)
+        [up, ["DROP TABLE #{lit.(args[0])}"]]
       when :drop_table
         name = lit.(args[0]).to_s
-        @tables.delete(name)
-        ["DROP TABLE #{name}"]
-      when :add_column
+        table = @tables.delete(name)
+        [["DROP TABLE #{name}"], table && [table.create_sql.sub("CREATE TABLE IF NOT EXISTS", "CREATE TABLE")]]
+      when :add_column, :add_reference, :add_belongs_to
         table = table!(node, lit.(args[0]))
-        column = column(lit.(args[1]).to_s, lit.(args[2]), kw)
+        column = if node.name == :add_column then column(lit.(args[1]).to_s, lit.(args[2]), kw)
+                 else column("#{lit.(args[1])}_id", :references, kw)
+                 end
         table.columns << column
-        [table.add_column_sql(column)]
-      when :add_reference, :add_belongs_to
-        table = table!(node, lit.(args[0]))
-        column = column("#{lit.(args[1])}_id", :references, kw)
-        table.columns << column
-        [table.add_column_sql(column)]
+        [[table.add_column_sql(column)], ["ALTER TABLE #{table.name} DROP COLUMN #{column.name}"]]
       when :remove_column
         table = table!(node, lit.(args[0]))
         name = lit.(args[1]).to_s
+        removed = table.column(name)
         table.columns.reject! { |c| c.name == name }
-        ["ALTER TABLE #{table.name} DROP COLUMN #{name}"]
+        [["ALTER TABLE #{table.name} DROP COLUMN #{name}"], removed && [table.add_column_sql(removed)]]
       when :rename_column
         table = table!(node, lit.(args[0]))
         from, to = lit.(args[1]).to_s, lit.(args[2]).to_s
         table.column(from)&.name = to
-        ["ALTER TABLE #{table.name} RENAME COLUMN #{from} TO #{to}"]
+        [["ALTER TABLE #{table.name} RENAME COLUMN #{from} TO #{to}"], ["ALTER TABLE #{table.name} RENAME COLUMN #{to} TO #{from}"]]
       when :rename_table
         from, to = lit.(args[0]).to_s, lit.(args[1]).to_s
         table = @tables.delete(from) or fail!(node, "no table #{from}")
         table.name = to
         @tables[to] = table
-        ["ALTER TABLE #{from} RENAME TO #{to}"]
+        [["ALTER TABLE #{from} RENAME TO #{to}"], ["ALTER TABLE #{to} RENAME TO #{from}"]]
       when :add_index
         index = { table: lit.(args[0]).to_s, columns: Array(lit.(args[1])).map(&:to_s), unique: kw[:unique] && lit.(kw[:unique]) }
         @indexes << index
-        [Schema.index_sql(index)]
+        [[Schema.index_sql(index)], ["DROP INDEX IF EXISTS #{Schema.index_name(index[:table], index[:columns])}"]]
       when :remove_index
         table = lit.(args[0]).to_s
         cols = Array(kw[:column] ? lit.(kw[:column]) : lit.(args[1])).map(&:to_s)
-        @indexes.reject! { |i| i[:table] == table && i[:columns] == cols }
-        ["DROP INDEX IF EXISTS #{Schema.index_name(table, cols)}"]
-      when :execute then [lit.(args[0]).to_s]
+        removed = @indexes.find { |i| i[:table] == table && i[:columns] == cols }
+        @indexes.delete(removed)
+        [["DROP INDEX IF EXISTS #{Schema.index_name(table, cols)}"], removed && [Schema.index_sql(removed)]]
+      when :execute then [[lit.(args[0]).to_s], nil]
       else fail!(node, "unsupported migration method #{node.name}")
       end
     end

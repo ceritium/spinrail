@@ -34,7 +34,7 @@ module Rieles
 
         Rieles::CLI.new(ARGV, File.expand_path("..", __dir__)).run
       RUBY
-      write ".gitignore", "/#{name}\n/*.next\n/tmp/\n/log/\n/db/*.sqlite3\n"
+      write ".gitignore", "/#{name}\n/*.next\n/tmp/\n/log/\n/db/*.sqlite3*\n"
       write "config/routes.rb", "Rieles.routes.draw do\n  root \"home#index\"\nend\n"
       write "db/schema.rb", "Rieles::Schema.define do\nend\n"
       write "app/models/application_record.rb", "class ApplicationRecord < Rieles::Record\nend\n"

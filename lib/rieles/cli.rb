@@ -19,6 +19,7 @@ module Rieles
       "check" => "Run the build's static checks without compiling",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
       "db:migrate" => "Apply db/migrate and rewrite db/schema.rb from it",
+      "db:rollback" => "Undo the latest applied migration",
       "db:seed" => "Run db/seeds.rb against the database",
       "db:reset" => "Delete the development database and seed it again",
       "clean" => "Remove the binary, tmp/, log/ and the development database",
@@ -44,6 +45,7 @@ module Rieles
       when "test" then test
       when "clean" then clean
       when "db:migrate" then migrate
+      when "db:rollback" then rollback
       when "db:seed" then seed
       when "db:reset" then reset_db
       when "setup" then setup
@@ -126,7 +128,7 @@ module Rieles
     end
 
     def input_mtimes
-      inputs = Dir[File.join(@app, "{app,config,db}/**/*")].reject { |f| f.end_with?(".sqlite3") } +
+      inputs = Dir[File.join(@app, "{app,config,db}/**/*")].reject { |f| f.match?(/\.sqlite3(-wal|-shm|-journal)?\z/) } +
                Dir[File.join(FRAMEWORK, "{lib,runtime}/**/*.rb")]
       inputs.select { |f| File.file?(f) }.to_h { |f| [f, File.mtime(f)] }
     end
@@ -177,6 +179,13 @@ module Rieles
       system({ "RIELES_MIGRATE" => "1" }, binary) or abort "rieles: migrating failed"
     end
 
+    def rollback
+      abort "rieles: no migrations in db/migrate" unless Migrations.new(File.join(@app, "db/migrate")).any?
+      build(binary) if stale?
+      Dir.chdir(@app)
+      system({ "RIELES_ROLLBACK" => "1" }, binary) or abort "rieles: rollback failed"
+    end
+
     def seed
       abort "rieles: no db/seeds.rb" unless File.exist?(File.join(@app, "db/seeds.rb"))
       build(binary) if stale?
@@ -186,13 +195,13 @@ module Rieles
 
     def reset_db
       database = ENV.fetch("DATABASE_PATH", File.join(@app, "db/development.sqlite3"))
-      FileUtils.rm_f(database)
+      FileUtils.rm_f([database, "#{database}-wal", "#{database}-shm"])
       puts "rieles: deleted #{database.delete_prefix("#{@app}/")}"
       seed if File.exist?(File.join(@app, "db/seeds.rb"))
     end
 
     def clean
-      FileUtils.rm_rf([binary, File.join(@app, "tmp"), File.join(@app, "log"), *Dir[File.join(@app, "db/*.sqlite3")]])
+      FileUtils.rm_rf([binary, File.join(@app, "tmp"), File.join(@app, "log"), *Dir[File.join(@app, "db/*.sqlite3*")]])
     end
 
     def setup

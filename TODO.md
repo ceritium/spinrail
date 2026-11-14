@@ -30,7 +30,8 @@ Roughly in priority order within each section.
       `add_reference`, `rename/drop_table`, `add/remove_index`, `execute`), applied
       at boot through `schema_migrations`; `rieles db:migrate` dumps db/schema.rb;
       `generate migration`. Indexes in db/schema.rb too.
-- [ ] Reversible `up`/`down`, `change_column`, `rieles db:rollback`.
+- [x] Reversible `change` (or `up`/`down`), `rieles db:rollback`.
+- [ ] `change_column` (SQLite needs a table rebuild).
 - [x] `db/seeds.rb` (`rieles db:seed`, `rieles db:reset`).
 - [ ] PostgreSQL (tep ships an opt-in `PG` battery).
 

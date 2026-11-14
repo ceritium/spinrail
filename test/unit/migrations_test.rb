@@ -38,6 +38,20 @@ class MigrationsTest < CompilerTest
     assert_equal %w[id headline views created_at updated_at], reread.table("posts").columns.map(&:name)
   end
 
+  def test_down_statements
+    dir = app(
+      "db/migrate/20260101000000_create_posts.rb" => "class A < Rieles::Migration\n def change\n create_table :posts do |t|\n t.string :title\n end\n add_index :posts, :title\n end\nend\n",
+      "db/migrate/20260102000000_tweak.rb" => "class B < Rieles::Migration\n def change\n add_column :posts, :views, :integer\n remove_column :posts, :title\n end\nend\n",
+      "db/migrate/20260103000000_data.rb" => "class C < Rieles::Migration\n def change\n execute \"UPDATE posts SET views = 1\"\n end\nend\n",
+      "db/migrate/20260104000000_manual.rb" => "class D < Rieles::Migration\n def up\n drop_table :posts\n end\n\n def down\n create_table :posts do |t|\n t.string :x\n end\n end\nend\n"
+    )
+    m = Rieles::Migrations.new(File.join(dir, "db/migrate")).migrations
+    assert_equal ["DROP INDEX IF EXISTS index_posts_on_title", "DROP TABLE posts"], m[0].down
+    assert_equal ["ALTER TABLE posts ADD COLUMN title TEXT NOT NULL DEFAULT ''", "ALTER TABLE posts DROP COLUMN views"], m[1].down
+    assert_nil m[2].down
+    assert_equal ["CREATE TABLE posts (id INTEGER PRIMARY KEY, x TEXT NOT NULL DEFAULT '')"], m[3].down
+  end
+
   def test_unknown_table
     dir = app("db/migrate/20260101000000_x.rb" => "class X < Rieles::Migration\n def change\n add_column :nope, :a, :string\n end\nend\n")
     assert_raises(Rieles::CompileError) { Rieles::Migrations.new(File.join(dir, "db/migrate")) }

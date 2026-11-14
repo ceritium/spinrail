@@ -582,6 +582,36 @@ module Rieles
     puts "rieles: migrated " + version + " " + name
   end
 
+  def self.latest_migration
+    db = Rieles.db
+    db.prepare("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1")
+    latest = db.step == 1 ? db.col_str(0) : ""
+    db.finalize
+    latest
+  end
+
+  def self.unapply(version, name, statements)
+    db = Rieles.db
+    db.exec("BEGIN")
+    statements.each do |statement|
+      next if db.exec(statement)
+      db.exec("ROLLBACK")
+      $stderr.puts "rieles: rolling back " + version + " " + name + " failed at: " + statement
+      exit(1)
+    end
+    db.prepare("DELETE FROM schema_migrations WHERE version = ?")
+    db.bind_str(1, version)
+    db.step
+    db.finalize
+    db.exec("COMMIT")
+    puts "rieles: rolled back " + version + " " + name
+  end
+
+  def self.irreversible(version, name)
+    $stderr.puts "rieles: " + version + " " + name + " can't be rolled back; define up and down"
+    exit(1)
+  end
+
   def self.humanize(attribute)
     attribute.sub(/_id\z/, "").tr("_", " ").capitalize
   end
