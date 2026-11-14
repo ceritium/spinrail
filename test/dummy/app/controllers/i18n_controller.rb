@@ -6,11 +6,12 @@ class I18nController < ApplicationController
     post.valid?
     @errors = post.errors.full_messages.first(2).join(" / ")
     @flash_text = t(".saved")
+    @money = 1234567.5
   end
 
   private
 
   def set_locale
-    I18n.locale = params[:locale]
+    I18n.locale = params[:locale].empty? ? locale_from_accept_language : params[:locale]
   end
 end

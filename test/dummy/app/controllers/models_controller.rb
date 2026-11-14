@@ -169,6 +169,7 @@ class ModelsController < ApplicationController
     lines << "by_author=" + Post.joins(:author).where(authors: { name: "Ana" }).order(id: :asc).pluck(:title).join(",")
     lines << "mixed=" + Post.joins(:author).where(published: true, authors: { name: "Ana" }).count.to_s
     lines << "with_comments=" + Post.joins(:comments).count.to_s
+    lines << "left=" + Post.left_joins(:comments).distinct.count.to_s + " distinct=" + Post.joins(:comments).distinct.count.to_s
     counts = Post.group(:status).count
     lines << "groups=" + counts.keys.sort.map { |k| k + ":" + counts[k].to_s }.join(",")
     render plain: lines.join("\n")

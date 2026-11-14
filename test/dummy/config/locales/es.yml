@@ -12,3 +12,10 @@ es:
     attributes:
       post:
         title: "Título"
+  number:
+    format:
+      delimiter: "."
+      separator: ","
+    currency:
+      format:
+        unit: "€"

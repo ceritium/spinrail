@@ -336,11 +336,13 @@ module Rieles
       end
     end
 
+    # name, or "left:name" for left_joins.
     def join_sql_method
-      branches = @associations.map do |a|
+      branches = @associations.flat_map do |a|
         target = Inflector.tableize(a.class_name)
         on = a.kind == :belongs_to ? "#{target}.id = #{@table.name}.#{a.foreign_key}" : "#{target}.#{a.foreign_key} = #{@table.name}.id"
-        "return #{"INNER JOIN #{target} ON #{on}".inspect} if name == #{a.name.inspect}"
+        ["return #{"INNER JOIN #{target} ON #{on}".inspect} if name == #{a.name.inspect}",
+         "return #{"LEFT OUTER JOIN #{target} ON #{on}".inspect} if name == #{"left:#{a.name}".inspect}"]
       end
       "def self.join_sql(name)\n#{indent(branches, 2)}\n  raise ArgumentError, #{"#{@name} has no association ".inspect} + name\nend"
     end
@@ -423,6 +425,7 @@ module Rieles
           def self.update_all(changes) = all.update_all(changes)
           def self.with_includes(names) = all.with_includes(names)
           def self.with_joins(names) = all.with_joins(names)
+          def self.distinct = all.distinct
           def self.where_qualified(column, value) = all.where_qualified(column, value)
           def self.group_count(name) = all.group_count(name)
         #{indent(join_sql_method, 2)}
@@ -599,6 +602,7 @@ module Rieles
             @scope_values = []
             @include_names = []
             @join_names = []
+            @distinct = false
             @ordering = []
             @raw_order = ""
             @limit_value = -1
@@ -614,6 +618,7 @@ module Rieles
             @scope_values = other.scope_values.dup
             @include_names = other.include_names.dup
             @join_names = other.join_names.dup
+            @distinct = other.distinct?
             @ordering = other.ordering.dup
             @raw_order = other.raw_order
             @limit_value = other.limit_value
@@ -623,6 +628,7 @@ module Rieles
 
           def spawn = #{relation}.new.restore(self)
           def all = spawn
+          def distinct? = @distinct
 
           def where(conditions)
             relation = spawn
@@ -806,6 +812,16 @@ module Rieles
             @join_names << name
           end
 
+          def distinct
+            relation = spawn
+            relation.set_distinct
+            relation
+          end
+
+          def set_distinct
+            @distinct = true
+          end
+
           # where(authors: { name: "Ana" }) after joins(:author).
           def where_qualified(column, value)
             relation = spawn
@@ -839,7 +855,7 @@ module Rieles
           end
 
           def sql(select)
-            statement = "SELECT " + select + " FROM #{@table.name}" + joins_clause + where_clause + " ORDER BY " + order_clause
+            statement = "SELECT " + (@distinct ? "DISTINCT " : "") + select + " FROM #{@table.name}" + joins_clause + where_clause + " ORDER BY " + order_clause
             if @limit_value >= 0 || @offset_value >= 0
               statement = statement + " LIMIT " + @limit_value.to_s
               statement = statement + " OFFSET " + @offset_value.to_s if @offset_value >= 0
@@ -893,7 +909,7 @@ module Rieles
             return @records.length if @loaded
             return to_a.length if @limit_value >= 0 || @offset_value >= 0
             t0 = Rieles.clock
-            statement = "SELECT COUNT(*) FROM #{@table.name}" + joins_clause + where_clause
+            statement = "SELECT COUNT(" + (@distinct ? "DISTINCT #{@table.name}.id" : "*") + ") FROM #{@table.name}" + joins_clause + where_clause
             db = Rieles.prepare(statement, false)
             bind_all(db)
             n = db.step == 1 ? db.col_int(0) : 0

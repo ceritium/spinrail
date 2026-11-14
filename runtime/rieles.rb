@@ -502,6 +502,16 @@ module Rieles
     LOCALE.current = locale.empty? ? Rieles.default_locale : locale
   end
 
+  # First language in Accept-Language the app has translations for.
+  def self.locale_from_header(header)
+    return "" if header.nil?
+    header.split(",").each do |part|
+      code = part.split(";").first.strip.split("-").first.to_s.downcase
+      return code if !code.empty? && RielesTranslations::LOCALES.include?(code)
+    end
+    ""
+  end
+
   def self.translate(key) = RielesTranslations::ALL[Rieles.locale + "." + key]
 
   def self.t(key)
@@ -731,6 +741,9 @@ module Rieles
       @res.set_cookie(key, "", opts)
     end
 
+    # The best Accept-Language match among config/locales, or "".
+    def locale_from_accept_language = Rieles.locale_from_header(@req.req_headers["accept-language"])
+
     def wants_json?
       return Tep.param(@req, "format") == "json" unless Tep.param(@req, "format").empty?
       accept = @req.req_headers["accept"]
@@ -917,7 +930,16 @@ module Rieles
       blocks.map { |b| "<p>" + b.strip.gsub("\n", "<br>") + "</p>" }.join("\n")
     end
 
+    # number.format.delimiter / separator from the locale, else "," and ".".
     def number_with_delimiter(number)
+      delimiter = Rieles.translate("number.format.delimiter")
+      separator = Rieles.translate("number.format.separator")
+      plain = number_with_commas(number)
+      return plain if delimiter.nil? && separator.nil?
+      plain.gsub(",", "\u0000").gsub(".", separator.nil? ? "." : separator).gsub("\u0000", delimiter.nil? ? "," : delimiter)
+    end
+
+    def number_with_commas(number)
       digits = number.to_s
       sign = digits.start_with?("-") ? "-" : ""
       digits = digits.delete_prefix("-")
@@ -948,6 +970,7 @@ module Rieles
 
     def number_to_currency(number, unit: "$", precision: 2)
       amount = format("%." + precision.to_s + "f", number.to_f.abs)
+      unit = Rieles.translate("number.currency.format.unit") || unit if unit == "$"
       (number.to_f < 0 ? "-" : "") + unit + number_with_delimiter(amount)
     end
 

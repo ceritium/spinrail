@@ -5,3 +5,4 @@
 <p class="locale"><%= I18n.locale %></p>
 <p class="plural"><%= t("comments", count: 0) %> | <%= t("comments", count: 1) %> | <%= t("comments", count: 5) %></p>
 <p class="date"><%= l("2026-03-04 05:06:07", format: :short) %> <%= l("2026-03-04 05:06:07") %></p>
+<p class="money"><%= number_to_currency(@money) %></p>

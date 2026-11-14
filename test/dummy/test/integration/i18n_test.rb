@@ -18,6 +18,14 @@ class I18nTest < Rieles::IntegrationTest
     assert_select "p.saved", "Guardado"
   end
 
+  def test_accept_language_and_number_formats
+    get "/i18n", headers: { "Accept-Language" => "fr-FR, es;q=0.8, en;q=0.5" }
+    assert_select "p.locale", "es"
+    assert_select "p.money", "€1.234.567,50"
+    get "/i18n"
+    assert_select "p.money", "$1,234,567.50"
+  end
+
   def test_locale_resets_between_requests
     get "/i18n?locale=es"
     get "/i18n"

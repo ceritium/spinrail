@@ -182,7 +182,7 @@ module Rieles
       when :order then args.size == 1 && args.first.is_a?(Prism::StringNode)
       when :exists? then args.size == 1
       when :includes, :preload, :eager_load then !node.receiver.nil?
-      when :joins then args.any? && args.all? { |a| a.is_a?(Prism::SymbolNode) }
+      when :joins, :left_joins, :left_outer_joins then args.any? && args.all? { |a| a.is_a?(Prism::SymbolNode) }
       when :where then args.size == 1 && args.first.is_a?(Prism::KeywordHashNode) && args.first.elements.any? { |e| e.value.is_a?(Prism::HashNode) }
       when :count then node.receiver.is_a?(Prism::CallNode) && node.receiver.name == :group && args.empty?
       else false
@@ -576,6 +576,8 @@ module Rieles
           "#{prefix.call}with_includes(#{names.inspect})"
         when :joins
           "#{prefix.call}with_joins(#{node.arguments.arguments.map { |a| a.unescaped }.inspect})"
+        when :left_joins, :left_outer_joins
+          "#{prefix.call}with_joins(#{node.arguments.arguments.map { |a| "left:#{a.unescaped}" }.inspect})"
         when :where then lower_nested_where(prefix.call, arg)
         when :count
           group = node.receiver

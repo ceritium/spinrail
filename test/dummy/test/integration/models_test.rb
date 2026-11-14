@@ -130,6 +130,7 @@ class JoinsTest < Rieles::IntegrationTest
       by_author=First,Second
       mixed=1
       with_comments=2
+      left=3 distinct=1
       groups=draft:3
     TEXT
     assert_equal expected, response.body
