@@ -138,7 +138,8 @@ module Rieles
 
     def input_mtimes
       inputs = Dir[File.join(@app, "{app,config,db}/**/*")].reject { |f| f.match?(/\.sqlite3(-wal|-shm|-journal)?\z/) } +
-               Dir[File.join(FRAMEWORK, "{lib,runtime}/**/*.rb")]
+               Dir[File.join(FRAMEWORK, "{lib,runtime}/**/*.rb")] +
+               Dir[File.join(VENDOR, "tep/{tep.rb,tep/**/*.{rb,c},native/**/*.c}")]
       inputs.select { |f| File.file?(f) }.to_h { |f| [f, File.mtime(f)] }
     end
 

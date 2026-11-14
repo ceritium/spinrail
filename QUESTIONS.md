@@ -29,10 +29,10 @@ is easy to revisit.
   off v0.12.0, merged into `rieles` and tagged `rieles-N` (toolchain.mk's
   TEP_REF). Nothing proposed upstream yet. CI can't clone it until a
   TEP_TOKEN secret (read access to the fork) exists.
-- A tep server binary that uses Thread anywhere breaks: the first request
-  gets 400 and later ones a reset, before any thread starts. Spinel's
-  threaded runtime vs tep's request parsing; not investigated further.
-  `rieles jobs -c N` builds its own binary, so the server is unaffected.
+- Fork branches so far: fix/sqlite-per-handle-cursor (threads, text over
+  64 KB) and fix/threaded-runtime (a tep app using Thread got 400 on every
+  request: non-blocking accepted sockets, and sp_ffi_bin_len is
+  thread-local in Spinel's threaded runtime). Candidates for upstream PRs.
 - tep's scheduled server (our default, for Ctrl+C) drops connections under
   a burst of 40; the prefork server doesn't. It also makes CI flaky now and
   then (a request test times out). Draining accept() in a loop was not the
