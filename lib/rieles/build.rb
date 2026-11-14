@@ -12,6 +12,17 @@ module Rieles
   class Build
     Template = Struct.new(:path, :dir, :name, :exposures) do
       def partial? = name.start_with?("_")
+
+      # Rails 7.1 strict locals: <%# locals: (entry:, compact: false) %>
+      def strict_locals = @strict_locals ||= [File.read(path)[/\A<%#\s*locals:\s*\((.*?)\)\s*-?%>/m, 1]]
+      def strict = strict_locals.first
+
+      def strict_names
+        params = Prism.parse("def x(#{strict}); end").value.statements.body.first.parameters
+        required = params&.keywords&.select { |k| k.is_a?(Prism::RequiredKeywordParameterNode) }&.map { |k| k.name } || []
+        optional = params&.keywords&.select { |k| k.is_a?(Prism::OptionalKeywordParameterNode) }&.map { |k| k.name } || []
+        [required, optional]
+      end
       def layout? = dir == "layouts"
       def page? = !partial? && !layout?
       def key = "#{dir}/#{name}"
@@ -130,15 +141,24 @@ module Rieles
       out
     end
 
+    # Returns [method name, keywords?]: strict partials take keyword locals.
     def use_partial(key, locals, where)
       template = @templates[key]
       raise CompileError, "#{where}: missing partial app/views/#{key}.html.erb" unless template&.partial?
+      if template.strict
+        required, optional = template.strict_names
+        unknown = locals - required - optional
+        raise CompileError, "#{where}: #{key} doesn't declare local #{unknown.first}" if unknown.any?
+        missing = required - locals
+        raise CompileError, "#{where}: #{key} needs local #{missing.first}" if missing.any?
+        return [template.method_name, true]
+      end
       known = @partial_locals[key]
       if known && known != locals
         raise CompileError, "#{where}: #{key} is rendered with locals #{locals.inspect} here and #{known.inspect} elsewhere"
       end
       @partial_locals[key] = locals
-      template.method_name
+      [template.method_name, false]
     end
 
     private
@@ -254,7 +274,10 @@ module Rieles
         [t, lowered]
       end
       defs = methods.map do |t, ruby|
-        params = t.partial? ? @partial_locals.fetch(t.key, []) : t.exposures.map { |n| "iv_#{n}" }
+        params = if t.partial? && t.strict then [t.strict]
+                 elsif t.partial? then @partial_locals.fetch(t.key, [])
+                 else t.exposures.map { |n| "iv_#{n}" }
+                 end
         ruby.sub("__SIGNATURE__", params.empty? ? "" : "(#{params.join(', ')})")
       end
       defs += @action_views.values.map do |v|

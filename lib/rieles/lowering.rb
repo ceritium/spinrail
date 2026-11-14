@@ -666,8 +666,11 @@ module Rieles
       fail!(node, "render in views takes a partial name: render \"name\", local: value") unless args.size == 1
       name = Rieles.literal(args.first).to_s
       dir, base = name.include?("/") ? [File.dirname(name), File.basename(name)] : [@ctx.dir, name]
-      method = @ctx.partial_method("#{dir}/_#{base}", kw.keys, "#{@file}:#{node.location.start_line}")
-      @rw.replace(node) { "#{method}(#{kw.values.map { |v| @rw.slice(v) }.join(', ')})" }
+      method, keywords = @ctx.partial_method("#{dir}/_#{base}", kw.keys, "#{@file}:#{node.location.start_line}")
+      @rw.replace(node) do
+        args = kw.map { |k, v| keywords ? "#{k}: #{@rw.slice(v)}" : @rw.slice(v) }
+        "#{method}(#{args.join(', ')})"
+      end
     end
 
     # render @entries / render entry: the partial is named after the
@@ -677,8 +680,8 @@ module Rieles
       fail!(node, "render @records needs a variable, got `#{value.slice}`") unless name.match?(/\A[a-z_]\w*\z/)
       single = Inflector.singularize(name)
       if single == name
-        method = @ctx.partial_method("#{Inflector.pluralize(name)}/_#{name}", [name.to_sym], where(node))
-        @rw.replace(node) { "#{method}(#{@rw.slice(value)})" }
+        method, keywords = @ctx.partial_method("#{Inflector.pluralize(name)}/_#{name}", [name.to_sym], where(node))
+        @rw.replace(node) { "#{method}(#{keywords ? "#{name}: " : ''}#{@rw.slice(value)})" }
       else
         lower_collection(node, "#{name}/#{single}", value, single)
       end
@@ -686,8 +689,8 @@ module Rieles
 
     def lower_collection(node, name, collection, local)
       dir, base = name.include?("/") ? [File.dirname(name), File.basename(name)] : [@ctx.dir, name]
-      method = @ctx.partial_method("#{dir}/_#{base}", [local.to_sym], where(node))
-      @rw.replace(node) { "(#{@rw.slice(collection)}).to_a.map { |#{local}| #{method}(#{local}) }.join" }
+      method, keywords = @ctx.partial_method("#{dir}/_#{base}", [local.to_sym], where(node))
+      @rw.replace(node) { "(#{@rw.slice(collection)}).to_a.map { |#{local}| #{method}(#{keywords ? "#{local}: " : ''}#{local}) }.join" }
     end
 
     def status_code(node)

@@ -17,6 +17,12 @@ class ViewsTest < Rieles::IntegrationTest
     assert_body_includes '<ol><li class="item">First</li><li class="item">Second</li><li class="item">Third</li></ol>'
   end
 
+  def test_strict_locals_with_defaults
+    get "/home"
+    assert_select "div.card", "Post: First"
+    assert_select "div.card.compact", "Top: First"
+  end
+
   def test_default_title
     get "/posts"
     assert_body_includes "<title>test</title>"

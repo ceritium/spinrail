@@ -55,4 +55,19 @@ class BuildTest < CompilerTest
       )
     end
   end
+
+  def test_strict_locals_are_checked
+    files = {
+      "config/routes.rb" => %(Rieles.routes.draw do\n get "/", to: "posts#index"\nend\n),
+      "app/controllers/posts_controller.rb" => "class PostsController < ApplicationController\n def index\n end\nend\n",
+      "app/views/posts/_card.html.erb" => "<%# locals: (post:, compact: false) %>\n<%= post %>"
+    }
+    error = assert_raises(Rieles::CompileError) do
+      build(files.merge("app/views/posts/index.html.erb" => %(<%= render "card", compact: true %>)))
+    end
+    assert_match(/needs local post/, error.message)
+    ruby = build(files.merge("app/views/posts/index.html.erb" => %(<%= render "card", post: "x" %>)))
+    assert_includes ruby, "def partial_posts_card(post:, compact: false)"
+    assert_includes ruby, %(partial_posts_card(post: "x"))
+  end
 end

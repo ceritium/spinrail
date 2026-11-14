@@ -7,3 +7,5 @@
 </ul>
 <ol><%= render partial: "posts/post", collection: @posts, as: :post %></ol>
 <%= render @post %>
+<%= render "posts/card", post: @post %>
+<%= render "posts/card", post: @post, compact: true, label: "Top" %>

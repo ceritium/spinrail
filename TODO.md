@@ -58,7 +58,7 @@ Roughly in priority order within each section.
 - [x] Helpers returning `.html_safe` are emitted raw (decided at build time).
 - [x] `content_for` (value or block), `content_for?`, `yield :title`.
 - [x] Collection partials (`render @entries`, `render partial:, collection:, as:`).
-- [ ] Partial locals with defaults, `local_assigns`.
+- [x] Strict partial locals with defaults (`<%# locals: (post:, compact: false) %>`).
 - [x] `app/helpers` modules, available in every view.
 - [x] Layout per controller (`layout "x"`, `layout false`, layouts/<controller>).
 - [x] `layout:` option on `render`.
