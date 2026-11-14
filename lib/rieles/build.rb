@@ -395,8 +395,52 @@ module Rieles
         flat = "#{name.delete_prefix('Actions::').delete(':')}Action"
         header = "class #{name}#{klass.superclass ? " < #{klass.superclass.slice}" : ''}"
         source = File.read(file).sub(header, "class #{flat} < ApplicationController")
+        schema = (klass.body&.body || []).find { |n| n.is_a?(Prism::CallNode) && n.name == :params && n.block }
+        source = source.sub(/\nend\s*\z/, "\n#{params_validation(schema, rel(file))}end\n") if schema
         lowered = Lowering.lower(source, rel(file), Context.new(self, nil, view: false, action: key))
         [key, ActionClass.new(key, flat, lowered, rel(file))]
+      end
+    end
+
+    # Hanami-style `params do required(:x).filled(:string) end`, one level of
+    # `required(:book).hash do ... end` nesting: generates params_valid? and
+    # params_errors on the action.
+    def params_validation(node, file)
+      checks = params_rules(node.block, "", file)
+      "  def params_valid?\n    @params_errors = Rieles::Errors.new(\"\")\n#{checks.map { |c| "    #{c}" }.join("\n")}\n" \
+        "    @params_errors.empty?\n  end\n\n  def params_errors\n    params_valid? if @params_errors.nil?\n    @params_errors\n  end\n"
+    end
+
+    PARAM_TYPES = {
+      string: nil,
+      integer: ['/\A[+-]?\d+\z/', "must be an integer"],
+      float: ['/\A[+-]?\d+(\.\d+)?\z/', "must be a float"],
+      bool: ['/\A(true|false|1|0)\z/', "must be boolean"]
+    }.freeze
+
+    def params_rules(block, prefix, file)
+      (block.body&.body || []).flat_map do |rule|
+        # required(:x).filled(:type) / optional(:x).maybe(:type) / required(:x).hash do ... end
+        unless rule.is_a?(Prism::CallNode) && rule.receiver.is_a?(Prism::CallNode) && %i[required optional].include?(rule.receiver.name)
+          raise CompileError, "#{file}:#{rule.location.start_line}: expected required(:key).filled(:type) or optional(:key).maybe(:type)"
+        end
+        key = Rieles.literal(rule.receiver.arguments.arguments.first).to_s
+        full = prefix.empty? ? key : "#{prefix}[#{key}]"
+        label = key.inspect
+        required = rule.receiver.name == :required
+        if rule.name == :hash && rule.block
+          nested = params_rules(rule.block, full, file).map { |l| "#{l} if params.prefixed?(#{full.inspect})" }
+          next ["@params_errors.add(#{label}, \"is missing\") unless params.prefixed?(#{full.inspect})"] + nested if required
+          next nested
+        end
+        type = rule.arguments ? Rieles.literal(rule.arguments.arguments.first) : :string
+        pattern, message = PARAM_TYPES.fetch(type) { raise CompileError, "#{file}:#{rule.location.start_line}: unsupported type :#{type}" }
+        value = "params.raw(#{full.inspect})"
+        lines = []
+        lines << "@params_errors.add(#{label}, \"is missing\") unless params.raw?(#{full.inspect})" if required
+        lines << "@params_errors.add(#{label}, \"must be filled\") if params.raw?(#{full.inspect}) && #{value}.strip.empty?" if rule.name == :filled
+        lines << "@params_errors.add(#{label}, #{message.inspect}) if !#{value}.strip.empty? && !#{value}.strip.match?(#{pattern})" if pattern
+        lines
       end
     end
 

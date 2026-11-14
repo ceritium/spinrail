@@ -392,6 +392,16 @@ module Rieles
     end
 
     def full(key) = @prefix.empty? ? key : @prefix + "[" + key + "]"
+
+    # Unfiltered access by full name, for params validation.
+    def raw?(name) = @source.key?(name)
+    def raw(name) = @source.key?(name) ? @source[name].dup.force_encoding("UTF-8").scrub("") : ""
+
+    def prefixed?(name)
+      start = name + "["
+      @source.each { |k, _| return true if k.start_with?(start) }
+      false
+    end
   end
   class StatementInvalid < StandardError; end
 

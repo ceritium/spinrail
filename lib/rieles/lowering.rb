@@ -101,6 +101,10 @@ module Rieles
         @rw.replace(node) { "(#{@rw.slice(arg)}).dom_id" }
       elsif @ctx.view? && node.receiver.nil? && %i[link_to button_to].include?(node.name) && node.block.nil?
         lower_link(node)
+      elsif @ctx.action? && node.receiver.nil? && node.name == :params && node.block
+        @rw.replace(node) { "" }
+      elsif %i[valid? errors].include?(node.name) && request_params?(node.receiver)
+        @rw.replace(node) { node.name == :valid? ? "params_valid?" : "params_errors" }
       elsif node.name == :params && (local?(node.receiver, :request) || bare?(node.receiver, :request)) && node.arguments.nil?
         @rw.replace(node) { "params" }
       elsif params_call?(node)
@@ -276,6 +280,11 @@ module Rieles
         end
       end
       true
+    end
+
+    def request_params?(node)
+      node.is_a?(Prism::CallNode) && node.name == :params && node.arguments.nil? &&
+        (local?(node.receiver, :request) || bare?(node.receiver, :request))
     end
 
     def params_call?(node)

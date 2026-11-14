@@ -16,6 +16,7 @@ Rieles.routes.draw do
   get "/home", to: "pages#home"
   get "/i18n", to: "i18n#show"
   get "/report", to: Actions::Reports::Show
+  post "/signups", to: Actions::Signups::Create
   get "/bare", to: "bare#show"
   get "/plain", to: "plain#show"
   get "/models/seed", to: "models#seed"

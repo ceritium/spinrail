@@ -24,4 +24,14 @@ class ActionsTest < Rieles::IntegrationTest
     get "/report?key=later"
     assert_response 202
   end
+
+  def test_params_validation
+    post "/signups", params: { "user[name]" => "Ana", "user[age]" => "30", "newsletter" => "true" }
+    assert_response 201
+    post "/signups", params: { "user[name]" => "", "user[age]" => "x", "newsletter" => "maybe" }
+    assert_response 422
+    assert_equal "Name must be filled, Age must be an integer, Newsletter must be boolean", response.body
+    post "/signups", params: {}
+    assert_equal "User is missing", response.body
+  end
 end
