@@ -24,6 +24,7 @@ module Rieles
       "check" => "Run the build's static checks without compiling",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
       "jobs" => "Work background jobs (app/jobs) until Ctrl+C",
+      "runner" => "Compile and run a script against the app: runner FILE or runner -e CODE",
       "db:migrate" => "Apply db/migrate and rewrite db/schema.rb from it",
       "db:rollback" => "Undo the latest applied migration",
       "db:seed" => "Run db/seeds.rb against the database",
@@ -51,6 +52,7 @@ module Rieles
       when "test" then test
       when "clean" then clean
       when "jobs" then jobs
+      when "runner" then runner
       when "db:migrate" then migrate
       when "db:rollback" then rollback
       when "db:seed" then seed
@@ -203,9 +205,23 @@ module Rieles
       end
     end
 
+    def runner
+      code = option("-e")
+      file = @argv.shift unless code
+      abort "rieles: runner FILE or runner -e 'puts Post.count'" unless code || file
+      code ||= File.read(file)
+      output = File.join(@app, "tmp", "#{File.basename(@app)}-runner")
+      setup unless File.executable?(File.join(VENDOR, "spinel/spinel")) && File.exist?(TEP)
+      compile(output, script: code) or abort "rieles: build failed"
+      Dir.chdir(@app)
+      $stdout.flush
+      exec({ "RIELES_LOG_LEVEL" => ENV.fetch("RIELES_LOG_LEVEL", "error") }, output)
+    end
+
     def jobs
       build(binary) if stale?
       Dir.chdir(@app)
+      $stdout.flush
       exec({ "RIELES_JOBS" => "1" }, binary)
     end
 
@@ -257,10 +273,10 @@ module Rieles
       compile(output) or abort "rieles: build failed (generated source: tmp/rieles/app.rb)"
     end
 
-    def compile(output, tests: false)
+    def compile(output, tests: false, script: nil)
       setup unless File.executable?(File.join(VENDOR, "spinel/spinel")) && File.exist?(TEP)
-      build = Build.new(@app, tests: tests)
-      source = build.write(File.join(@app, tests ? "tmp/rieles-test" : "tmp/rieles"))
+      build = Build.new(@app, tests: tests, script: script)
+      source = build.write(File.join(@app, tests ? "tmp/rieles-test" : (script ? "tmp/rieles-runner" : "tmp/rieles")))
       build.warnings.uniq.each { |w| warn "warning: #{w}" }
       env = {
         "SPINEL" => File.join(VENDOR, "spinel/spinel"),

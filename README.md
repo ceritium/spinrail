@@ -68,6 +68,7 @@ bin/rieles server   # http://localhost:3000; first run builds ../../../vendor (~
 bin/rieles routes
 bin/rieles test     # test/**/*_test.rb against the compiled binary
 bin/rieles check    # static checks only, no compile (N+1 warnings too)
+bin/rieles runner -e 'puts Entry.count'   # a script against the app's models
 bin/rieles          # all commands: server, build, routes, test, clean, setup
 ```
 

@@ -153,10 +153,12 @@ module Rieles
     end
 
     # tests: compile test/models/*_test.rb in (the test binary).
-    def initialize(app_dir, tests: false)
+    # script: Ruby source to run instead of serving (rieles runner).
+    def initialize(app_dir, tests: false, script: nil)
       @app = File.expand_path(app_dir)
       @partial_locals = {}
       @tests = tests
+      @script = script
     end
 
     def routes = @routes ||= Routes.new(path("config/routes.rb"))
@@ -230,6 +232,7 @@ module Rieles
         *@actions.values.map { |a| "#{SOURCE_MARK}#{a.file}\n#{a.source}" },
         *(@tests ? model_tests.map { |t| "#{SOURCE_MARK}#{t[:file]}\n#{t[:source]}" } : []),
         seeds_class,
+        runner_class,
         schema_setup(schema),
         method_override,
         *routes.routes.map { |r| route_block(r, controllers) },
@@ -671,6 +674,12 @@ module Rieles
       RUBY
     end
 
+    def runner_class
+      return "" unless @script
+      body = Lowering.lower(@script, "runner", Context.new(self, "", view: false))
+      "#{SOURCE_MARK}runner\nclass RielesRunner\n  def self.run\n#{body.gsub(/^(?=.)/, '    ')}\n  end\nend\n"
+    end
+
     def seeds_class
       file = path("db/seeds.rb")
       return "" unless File.exist?(file)
@@ -772,6 +781,7 @@ module Rieles
         #{seeds ? "  if ENV.fetch(\"RIELES_SEED\", \"\") == \"1\"\n    RielesSeeds.run\n    puts \"rieles: seeded\"\n    exit(0)\n  end" : ""}
         #{@tests ? test_runner : ''}
           Rieles.work_jobs if ENV.fetch("RIELES_JOBS", "") == "1"
+        #{@script ? "  RielesRunner.run\n    exit(0)" : ''}
           Rieles::DB.close
         end
       RUBY
