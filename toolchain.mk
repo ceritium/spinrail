@@ -1,10 +1,10 @@
 # Shared spinel + tep toolchain, cloned and built into <repo>/vendor.
-# tep is a private fork (tep v0.12.0 plus fixes not yet proposed upstream),
-# built and tested against spinel 2026.10.25. Bump TEP_REF to a new
-# rieles-N tag to pick up fork changes; setup moves vendor/tep to it.
+# tep is a fork (upstream main plus fixes not yet proposed upstream), built
+# and tested against spinel 2026.10.25. Bump TEP_REF to a new fixes-N tag
+# to pick up fork changes; setup moves vendor/tep to it.
 SPINEL_REF    := 2026.10.25
 TEP_REPO      ?= https://github.com/ceritium/tep
-TEP_REF       ?= rieles-8
+TEP_REF       ?= fixes-1
 SPINELKIT_REF := v0.3.1
 
 # VENDOR defaults to <repo>/vendor; the spinrail CLI passes its own when

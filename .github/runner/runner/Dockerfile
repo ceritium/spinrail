@@ -2,8 +2,7 @@
 #
 # Ruby and master's spinel and spinelkit (per toolchain.mk) are baked
 # into /opt/vendor, so a job only fetches the tep fork and compiles. The
-# runner managers  build it, supplying deps/
-# from master per image.conf.
+# runner managers build it, supplying deps/ from master per image.conf.
 FROM ghcr.io/actions/actions-runner:latest
 
 USER root
@@ -42,7 +41,7 @@ COPY entrypoint.sh /entrypoint.sh
 COPY fence-network /usr/local/sbin/fence-network
 RUN chmod 755 /entrypoint.sh /usr/local/sbin/fence-network
 
-# spinel and spinelkit only: tep comes from a private fork the job fetches.
+# spinel and spinelkit only: the job fetches tep at toolchain.mk's TEP_REF.
 COPY deps/toolchain.mk /tmp/toolchain.mk
 RUN set -eu; \
     mkdir -p /opt/vendor; \

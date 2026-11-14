@@ -21,19 +21,18 @@ is easy to revisit.
   migrations present they win. Keep both modes?
 - SQL bind values are logged at debug level without filtering (the
   binds don't carry column names yet). Fine for development?
-- tep fixes live in a private fork, ceritium/tep: a branch per fix
-  off v0.12.0, merged into `rieles` and tagged `rieles-N` (toolchain.mk's
-  TEP_REF). Nothing proposed upstream yet. CI reads it with a deploy key
-  (TEP_DEPLOY_KEY).
-- Fork branches so far: fix/sqlite-per-handle-cursor (threads, text over
+- tep fixes live in a fork, ceritium/tep: the `fixes` branch on top of
+  upstream main, tagged `fixes-N` (toolchain.mk's TEP_REF). Nothing
+  proposed upstream yet.
+- Fixes so far: fix/sqlite-per-handle-cursor (threads, text over
   64 KB) and fix/threaded-runtime (a tep app using Thread got 400 on every
   request: non-blocking accepted sockets, and sp_ffi_bin_len is
   thread-local in Spinel's threaded runtime) and fix/scheduled-burst (the
   scheduled server left connections unanswered in bursts: each connection
   fiber closed over the accept loop's shared `client`),
   fix/prefork-idle-keepalive (tep#277), fix/stale-prebuilt-objects (bin/tep
-  linked a helper .o older than its .c), fix/reason-phrases (your
-  tep#278, cherry-picked), fix/sqlite-null (bind_null, col_null?),
+  linked a helper .o older than its .c), fix/reason-phrases
+  (tep#278, cherry-picked), fix/sqlite-null (bind_null, col_null?),
   fix/sqlite-rowid-64 (last_rowid past 2^31) and fix/pg-long-values (PG
   values cut at 64 KB, binds capped at 256 KB in total). Candidates for
   upstream PRs.
