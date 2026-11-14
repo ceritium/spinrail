@@ -1,4 +1,5 @@
 <!doctype html>
-<title>test</title>
+<title><%= content_for?(:title) ? yield(:title) : "test" %></title>
 <%= csrf_meta_tags %>
 <%= yield %>
+<footer><%= yield :footer %></footer>

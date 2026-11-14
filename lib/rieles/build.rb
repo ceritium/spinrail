@@ -195,7 +195,9 @@ module Rieles
     def compile_views
       methods = @templates.values.map do |t|
         signature = t.layout? ? "#{t.method_name}(content)" : "#{t.method_name}__SIGNATURE__"
-        ruby = Erb.compile(File.read(t.path), signature, layout: t.layout?,
+        # A partial's trailing newline would double up inside loops.
+        source = t.partial? ? File.read(t.path).chomp : File.read(t.path)
+        ruby = Erb.compile(source, signature, layout: t.layout?,
                                                          log_as: t.partial? ? nil : rel(t.path).delete_prefix("app/views/"))
         ctx = Context.new(self, t.dir, view: true, ivars: t.page?)
         lowered = Lowering.lower(ruby, rel(t.path), ctx)
@@ -219,8 +221,21 @@ module Rieles
         class ApplicationView
         #{path_helpers}
 
+        #{view_helpers.gsub(/^(?=.)/, '  ')}
+
         #{defs.join("\n").gsub(/^(?=.)/, '  ')}end
       RUBY
+    end
+
+    # app/helpers modules are pasted into ApplicationView: every view sees
+    # every helper, as in Rails.
+    def view_helpers
+      Dir[path("app/helpers/*.rb")].sort.map do |file|
+        mod = Rieles.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ModuleNode) }
+        raise CompileError, "#{rel(file)}: expected a module" unless mod
+        body = (mod.body&.body || []).map { |stmt| stmt.slice.gsub(/^ {#{stmt.location.start_column}}/, "") }.join("\n\n")
+        Lowering.lower(body, rel(file), Context.new(self, "application", view: true, ivars: false))
+      end.join("\n\n")
     end
 
     # Actions::Stats::Show / Views::Stats::Show -> "stats.show"
@@ -316,6 +331,9 @@ module Rieles
           kind = stmt.name.to_s.delete_prefix("skip_")
           list = stmt.name.to_s.start_with?("skip_") ? decl[:skips] : decl[:filters]
           args.each { |a| list << Filter.new(kind, Rieles.literal(a).to_s, only, except) }
+        when :layout
+          decl[:layout] = Rieles.literal(args.first)
+          decl[:layout] = decl[:layout].to_s if decl[:layout]
         when :skip_forgery_protection then decl[:forgery] = false
         when :protect_from_forgery then decl[:forgery] = true
         when :rescue_from
@@ -393,10 +411,24 @@ module Rieles
                           "which ##{action} doesn't assign"
     end
 
+    # `layout "x"`, `layout false`, or layouts/<controller>.html.erb.
+    def layout_override(name, controller)
+      return nil if name == "ApplicationController"
+      declared = controller.fetch(:layout, :none)
+      layout = if declared == false then false
+               elsif declared != :none then @templates["layouts/#{declared}"] || raise(CompileError, "#{controller[:file]}: no app/views/layouts/#{declared}.html.erb")
+               else @templates["layouts/#{controller[:dir]}"]
+               end
+      return nil if layout.nil?
+      html = layout ? "ApplicationView.new(self).#{layout.method_name}(html)" : "html"
+      "  def render_view(html, status)\n    render_html(#{html}, status)\n  end"
+    end
+
     def render_methods(name, controller)
       used = controller[:ctx].responses.values.flatten.map(&:template).compact
       used += controller[:actions].filter_map { |a| implicit_template(controller, a)&.key }
-      return nil if used.empty?
+      override = layout_override(name, controller)
+      return override && "class #{name}\n#{override}\nend\n" if used.empty?
       defs = used.uniq.map do |key|
         t = @templates[key]
         args = t.exposures.map { |n| "@#{n}" }.join(", ")
@@ -404,7 +436,7 @@ module Rieles
           "    render_view(ApplicationView.new(self).#{t.method_name}#{args.empty? ? '' : "(#{args})"}, status)\n" \
           "  end"
       end
-      "class #{name}\n#{defs.join("\n\n")}\nend\n"
+      "class #{name}\n#{[*defs, override].compact.join("\n\n")}\nend\n"
     end
 
     def application_controller_support

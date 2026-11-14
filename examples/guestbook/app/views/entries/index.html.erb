@@ -20,7 +20,5 @@
 
 <h2><%= pluralize(@entries.count, "message") %></h2>
 <ul class="entries">
-  <% @entries.each do |entry| %>
-    <%= render "entry", entry: entry %>
-  <% end %>
+  <%= render @entries %>
 </ul>

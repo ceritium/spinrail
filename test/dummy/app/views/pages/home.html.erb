@@ -1,0 +1,9 @@
+<% content_for :title, "Home" %>
+<% content_for :footer do %>
+  <a href="/about">About <%= shout("us") %></a>
+<% end %>
+<ul>
+<%= render @posts %>
+</ul>
+<ol><%= render partial: "posts/post", collection: @posts, as: :post %></ol>
+<%= render @post %>

@@ -50,11 +50,13 @@ Roughly in priority order within each section.
 - [ ] More helpers: `link_to` with a block, `collection_select`, `field_with_errors`,
       `number_to_currency`, `time_ago_in_words`, `truncate`, `simple_format`.
 - [ ] `html_safe` strings instead of deciding at build time which output is raw.
-- [ ] `content_for` / `yield :title`.
-- [ ] Collection partials (`render @entries`) and partial locals with defaults.
-- [ ] `app/helpers` modules.
-- [ ] Layout per controller and `layout` option on `render`.
-- [ ] Trim the blank line left after `<%= render ... %>` in loops.
+- [x] `content_for` (value or block), `content_for?`, `yield :title`.
+- [x] Collection partials (`render @entries`, `render partial:, collection:, as:`).
+- [ ] Partial locals with defaults, `local_assigns`.
+- [x] `app/helpers` modules, available in every view.
+- [x] Layout per controller (`layout "x"`, `layout false`, layouts/<controller>).
+- [ ] `layout:` option on `render`.
+- [x] Partials drop their trailing newline.
 
 ## Actions and views
 

@@ -51,7 +51,7 @@ module Rieles
     # Class-level controller declarations; the build reads them, the
     # generated class doesn't need them.
     CONTROLLER_DSL = %i[before_action after_action skip_before_action skip_after_action
-                        rescue_from protect_from_forgery skip_forgery_protection].freeze
+                        rescue_from protect_from_forgery skip_forgery_protection layout].freeze
 
     def self.lower(source, file, context)
       root = Rieles.parse(source, file)
@@ -81,7 +81,9 @@ module Rieles
         @forms.pop
         return
       end
-      if @forms.any? && local?(node.receiver, @forms.last[:var]) && BUILDER.include?(node.name)
+      if @ctx.view? && node.receiver.nil? && %i[content_for provide content_for?].include?(node.name)
+        lower_content_for(node)
+      elsif @forms.any? && local?(node.receiver, @forms.last[:var]) && BUILDER.include?(node.name)
         lower_field(node)
       elsif @ctx.view? && node.receiver.nil? && %i[link_to button_to].include?(node.name) && node.block.nil?
         lower_link(node)
@@ -108,6 +110,14 @@ module Rieles
         when :redirect_to then lower_redirect(node)
         when :head then lower_head(node)
         end
+      end
+      super
+    end
+
+    def visit_yield_node(node)
+      args = node.arguments&.arguments || []
+      if @ctx.view? && args.size == 1 && args.first.is_a?(Prism::SymbolNode)
+        @rw.replace(node) { "content_for_get(#{args.first.unescaped.inspect})" }
       end
       super
     end
@@ -267,6 +277,25 @@ module Rieles
         else
           v = node.name == :password_field ? '""' : value.(".to_s")
           "form_input(#{FIELDS.fetch(node.name).inspect}, #{scope}, #{attr.inspect}, #{v}, #{attrs})"
+        end
+      end
+    end
+
+    # Stored on the controller: the page and its layout are rendered by
+    # different view instances. The block form captures what it writes.
+    def lower_content_for(node)
+      args, = Rieles.call_args(node)
+      key = Rieles.literal(args.first).to_s.inspect
+      @rw.replace(node) do
+        if node.name == :content_for?
+          "content_for?(#{key})"
+        elsif node.block
+          body = node.block.body ? @rw.slice(node.block.body) : ""
+          "rieles_outer = out\nout = +\"\"\n#{body}\ncontent_for_set(#{key}, out)\nout = rieles_outer"
+        elsif args[1]
+          "content_for_set(#{key}, (#{@rw.slice(args[1])}).to_s)"
+        else
+          "content_for_get(#{key}).to_s"
         end
       end
     end
@@ -458,11 +487,38 @@ module Rieles
     end
 
     def lower_partial(node, args, kw)
+      if args.size == 1 && !args.first.is_a?(Prism::StringNode)
+        return lower_record_partial(node, args.first)
+      end
+      if kw[:partial] && kw[:collection]
+        name = Rieles.literal(kw[:partial]).to_s
+        return lower_collection(node, name, kw[:collection], kw[:as] ? Rieles.literal(kw[:as]).to_s : File.basename(name))
+      end
       fail!(node, "render in views takes a partial name: render \"name\", local: value") unless args.size == 1
       name = Rieles.literal(args.first).to_s
       dir, base = name.include?("/") ? [File.dirname(name), File.basename(name)] : [@ctx.dir, name]
       method = @ctx.partial_method("#{dir}/_#{base}", kw.keys, "#{@file}:#{node.location.start_line}")
       @rw.replace(node) { "#{method}(#{kw.values.map { |v| @rw.slice(v) }.join(', ')})" }
+    end
+
+    # render @entries / render entry: the partial is named after the
+    # variable, entries/_entry.html.erb with local `entry`.
+    def lower_record_partial(node, value)
+      name = value.slice.delete_prefix("@")
+      fail!(node, "render @records needs a variable, got `#{value.slice}`") unless name.match?(/\A[a-z_]\w*\z/)
+      single = Inflector.singularize(name)
+      if single == name
+        method = @ctx.partial_method("#{Inflector.pluralize(name)}/_#{name}", [name.to_sym], where(node))
+        @rw.replace(node) { "#{method}(#{@rw.slice(value)})" }
+      else
+        lower_collection(node, "#{name}/#{single}", value, single)
+      end
+    end
+
+    def lower_collection(node, name, collection, local)
+      dir, base = name.include?("/") ? [File.dirname(name), File.basename(name)] : [@ctx.dir, name]
+      method = @ctx.partial_method("#{dir}/_#{base}", [local.to_sym], where(node))
+      @rw.replace(node) { "(#{@rw.slice(collection)}).to_a.map { |#{local}| #{method}(#{local}) }.join" }
     end
 
     def status_code(node)

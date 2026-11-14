@@ -1,5 +1,8 @@
 Rieles.routes.draw do
   resources :posts
+  get "/home", to: "pages#home"
+  get "/bare", to: "bare#show"
+  get "/plain", to: "plain#show"
   get "/models/seed", to: "models#seed"
   get "/models/query", to: "models#query"
   get "/models/validations", to: "models#validations"

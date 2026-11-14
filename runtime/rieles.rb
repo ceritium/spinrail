@@ -463,6 +463,18 @@ module Rieles
     def flash = @flash
     def flash_get(key) = @flash[key]
 
+    def content_for_set(key, html)
+      @content_for = Tep.str_hash if @content_for.nil?
+      @content_for[key] = @content_for.fetch(key, "") + html
+    end
+
+    def content_for_get(key)
+      return "" if @content_for.nil?
+      @content_for.fetch(key, "")
+    end
+
+    def content_for?(key) = !content_for_get(key).empty?
+
     def flash_set(key, value)
       @flash[key] = value
       @req.session.set("_flash." + key, value)
@@ -571,6 +583,9 @@ module Rieles
     end
 
     def flash = @controller.flash
+    def content_for_set(key, html) = @controller.content_for_set(key, html)
+    def content_for_get(key) = @controller.content_for_get(key)
+    def content_for?(key) = @controller.content_for?(key)
     def flash_get(key) = @controller.flash_get(key)
     def notice = @controller.flash_get("notice")
     def alert = @controller.flash_get("alert")
