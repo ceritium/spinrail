@@ -75,7 +75,8 @@ Roughly in priority order within each section.
 - [x] Hanami-style endpoints alongside controllers (`to: Actions::Stats::Show`).
 - [x] View classes with methods and computed exposures (`expose :x do |a| ... end`).
 - [x] `response.status=`, `halt`.
-- [ ] `request.params` beyond `[:key]`, Hanami-style params validation.
+- [x] `request.params` with `require`/`permit` in actions.
+- [ ] Hanami-style params validation (`params do required(:x).filled end`).
 
 ## Routing
 

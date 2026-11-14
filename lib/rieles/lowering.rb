@@ -96,6 +96,8 @@ module Rieles
         @rw.replace(node) { "(#{@rw.slice(arg)}).dom_id" }
       elsif @ctx.view? && node.receiver.nil? && %i[link_to button_to].include?(node.name) && node.block.nil?
         lower_link(node)
+      elsif node.name == :params && local?(node.receiver, :request) && node.arguments.nil?
+        @rw.replace(node) { "params" }
       elsif params_call?(node)
         lower_params(node)
       elsif mass_assignment?(node)

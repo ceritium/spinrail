@@ -7,6 +7,11 @@ class LoweringTest < CompilerTest
     assert_equal %(params.require_key("post").permit_keys(["title"])), lower("params.expect(post: [:title])")
   end
 
+  def test_request_params_in_actions
+    assert_equal %(params.require_key("q").permit_keys(["term"])), lower("request.params.require(:q).permit(:term)")
+    assert_equal %(param("id")), lower("request.params[:id]")
+  end
+
   def test_redirects
     assert_equal "redirect_to(x, 303)", lower("redirect_to x, status: :see_other")
     assert_equal %(redirect_with_flash(x, 302, "Saved", "")), lower(%(redirect_to x, notice: "Saved"))
