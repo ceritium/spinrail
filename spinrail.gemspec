@@ -11,6 +11,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency "prism"
   spec.add_dependency "minitest"
   spec.add_dependency "base64"
-  spec.add_dependency "reline"
   spec.add_development_dependency "rubocop"
 end

@@ -68,11 +68,6 @@ compile (`eval` of a String, `method_missing`, `send`/`define_method` with a
 computed name, `ObjectSpace`, `binding`) without waiting for a build:
 `bundle exec rubocop`. `test/` is left out, since tests run on CRuby.
 
-`bin/spinrail console` compiles each line you type against the app and runs
-it, printing the result (`=> #<User id: 1, ...>`). There is no interpreter in
-the binary, so a line takes a few seconds and local variables don't carry
-over to the next one; the database does, and `;` chains statements.
-
 The example:
 
 ```sh
