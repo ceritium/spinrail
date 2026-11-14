@@ -1,4 +1,5 @@
 require "optparse"
+require "open3"
 
 module Rieles
   # `rieles <command>` run from an app's root (apps carry a bin/rieles
@@ -85,6 +86,7 @@ module Rieles
       File.write(File.join(@app, "log/test.log"), "")
       env = { "RIELES_APP" => @app, "RIELES_BINARY" => binary }
       loader = "files = ARGV.shift(#{files.size}); files.each { |f| require File.expand_path(f) }"
+      $stdout.flush
       exec(env, RbConfig.ruby, "-I", File.join(FRAMEWORK, "lib"), "-r", "rieles/test", "-e", loader, *files, *options)
     end
 
@@ -105,8 +107,24 @@ module Rieles
         "SPINELKIT_DIR" => File.join(VENDOR, "spinelkit"),
         "TEP_SKIP_SPINEL_FRESH" => "1"
       }
-      system(env, TEP, "build", source, "-o", output) or abort "rieles: build failed"
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      $stdout.print "rieles: compiling #{File.basename(@app)}... "
+      $stdout.flush
+      log, status = Open3.capture2e(env, TEP, "build", source, "-o", output)
+      unless status.success?
+        puts "failed"
+        warn log
+        abort "rieles: build failed (generated source: #{rel_to_app(source)})"
+      end
+      puts format("done in %.1fs", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+      warnings = log.lines.select { |l| l.match?(/warning|error/i) && KNOWN_WARNINGS.none? { |k| l.include?(k) } }
+      warn warnings.join unless warnings.empty?
     end
+
+    # Harmless and not actionable by apps (see the build notes in README).
+    KNOWN_WARNINGS = ["Router @routes: Array[Route] stays a boxed array", "ignoring duplicate libraries"].freeze
+
+    def rel_to_app(file) = file.delete_prefix("#{@app}/")
 
     def stale?
       return true unless File.exist?(binary)

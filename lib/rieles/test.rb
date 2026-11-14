@@ -17,6 +17,12 @@ module Rieles
     def self.forgery_protection! = @forgery_protection = true
     def self.forgery_protection? = @forgery_protection == true
 
+    # Extra environment for the server, e.g. server_env "RIELES_LOG_LEVEL" => "info".
+    def self.server_env(vars = nil)
+      @server_env = (@server_env || {}).merge(vars) if vars
+      (superclass.respond_to?(:server_env) ? superclass.server_env : {}).merge(@server_env || {})
+    end
+
     def setup
       @db_dir = Dir.mktmpdir("rieles-test")
       @port = free_port
@@ -25,6 +31,7 @@ module Rieles
       log.flush
       env = { "DATABASE_PATH" => File.join(@db_dir, "test.sqlite3"), "RIELES_LOG_FORMAT" => "dev",
               "RIELES_ENV" => "test", "RIELES_FORGERY_PROTECTION" => self.class.forgery_protection? ? "1" : "0" }
+      env.merge!(self.class.server_env)
       @pid = Process.spawn(env, ENV.fetch("RIELES_BINARY"), "-p", @port.to_s,
                            chdir: ENV.fetch("RIELES_APP"), out: log, err: log)
       log.close

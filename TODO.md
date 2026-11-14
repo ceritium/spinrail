@@ -86,17 +86,18 @@ Roughly in priority order within each section.
 
 ## Runtime
 
-- [ ] Environments (development/production): hide error messages, pick the
-      log format and level per environment.
-- [ ] Log levels (`RIELES_LOG_LEVEL`): SQL and rendered templates only at debug.
-- [ ] Log: request id, also sent as `X-Request-Id`.
+- [x] Environments (`RIELES_ENV`): error details only in development, logfmt
+      and info level in production, `SECRET_KEY_BASE` required there.
+- [x] Log levels (`RIELES_LOG_LEVEL`): SQL and rendered templates only at debug.
+- [x] Log: request id, also sent as `X-Request-Id` (an incoming one is kept).
 - [ ] Log: client IP (tep has no peer address yet).
 - [ ] Log: backtraces for 500s, if spinel can produce useful ones.
-- [ ] Log: configurable filtered params; SQL bind values in dev.
-- [ ] Log: a failure inside the logger must not take the server down.
-- [ ] Log: write to a file or stderr, not only stdout.
-- [ ] Quieter `rieles build`: one summary line, only warnings and errors.
-- [ ] Static files from `public/` (binary files can't be embedded as assets).
+- [x] Log: configurable filtered params (`RIELES_FILTER_PARAMETERS`).
+- [ ] Log: SQL bind values in dev.
+- [x] Log: a failure inside the logger must not take the server down.
+- [x] Log: write to a file (`RIELES_LOG_FILE`).
+- [x] Quieter `rieles build`: one summary line, only warnings and errors.
+- [x] Static files from `public/`, served from disk.
 - [ ] i18n for validation messages and views.
 - [ ] Prefork workers on Linux.
 

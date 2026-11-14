@@ -155,6 +155,7 @@ module Rieles
         # connection is idle (OriPekelman/tep#277).
         "set :scheduler, :scheduled",
         "Tep.session_secret = ENV.fetch(\"SECRET_KEY_BASE\", #{local_secret.inspect})",
+        *(Dir.exist?(path("public")) ? ["set :public_dir, \"public\""] : []),
         File.read(RUNTIME),
         application_record,
         *Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }.map { |f| Model.new(f, schema).to_ruby },
@@ -482,7 +483,16 @@ module Rieles
 
     def schema_setup(schema)
       statements = schema.tables.values.map { |t| "  db.exec(#{t.create_sql.inspect})" }
-      "on_start do\n  db = Rieles.db\n#{statements.join("\n")}\nend\n"
+      <<~RUBY
+        on_start do
+          if Rieles.env == "production" && ENV.fetch("SECRET_KEY_BASE", "").empty?
+            $stderr.puts "rieles: set SECRET_KEY_BASE in production"
+            exit(1)
+          end
+          db = Rieles.db
+        #{statements.join("\n")}
+        end
+      RUBY
     end
 
     def action_route_block(route)
@@ -540,7 +550,9 @@ module Rieles
         end
 
         #{route.verb} #{route.path.inspect} do
-          Rieles.log.start(req.verb, req.path, #{label.inspect}, req.params)
+          request_id = Rieles.request_id(req)
+          res.headers["X-Request-Id"] = request_id
+          Rieles.log.start(req.verb, req.path, #{label.inspect}, request_id, req.params)
           c = #{klass}.new(req, res)
           begin
             c.#{runner}
@@ -556,7 +568,7 @@ module Rieles
             c.render_error(422, e.message)
           rescue StandardError => e
             Rieles.log.error(e)
-            c.render_error(500, "Something went wrong")
+            c.render_error(500, Rieles.env == "development" ? e.class.name + ": " + e.message : "Something went wrong")
           end
           Rieles.log.finish(res.status)
           c.response_body
@@ -567,7 +579,9 @@ module Rieles
     def not_found_block
       <<~RUBY
         not_found do
-          Rieles.log.start(req.verb, req.path, "", req.params)
+          request_id = Rieles.request_id(req)
+          res.headers["X-Request-Id"] = request_id
+          Rieles.log.start(req.verb, req.path, "", request_id, req.params)
           c = ApplicationController.new(req, res)
           c.render_error(404, "Not found")
           Rieles.log.finish(res.status)

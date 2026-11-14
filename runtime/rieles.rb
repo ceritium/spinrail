@@ -74,17 +74,21 @@ end
 module Rieles
   class RecordNotFound < StandardError; end
 
-  FILTERED_PARAMS = ["password", "token", "secret"].freeze
-
   def self.clock
     Process.clock_gettime(Process::CLOCK_MONOTONIC)
   end
 
+  LOG_LEVELS = { "debug" => 0, "info" => 1, "warn" => 2, "error" => 3 }.freeze
+
   # Collects one request's timings; subclasses decide how it is printed.
   # A worker serves one request at a time, so a single instance is enough.
+  # A logging failure is reported on stderr and never fails the request.
   class Logger
     def initialize
-      @color = $stdout.tty?
+      default = Rieles.env == "production" ? "info" : "debug"
+      @level = LOG_LEVELS.fetch(ENV.fetch("RIELES_LOG_LEVEL", default), 1)
+      @file = ENV.fetch("RIELES_LOG_FILE", "")
+      @color = @file.empty? && $stdout.tty?
       reset
     end
 
@@ -96,29 +100,35 @@ module Rieles
       @verb = ""
       @path = ""
       @action = ""
+      @request_id = ""
       @location = ""
       @error = ""
       @param_names = []
       @param_values = []
     end
 
-    def start(verb, path, action, params)
+    def start(verb, path, action, request_id, params)
       reset
       @started = Rieles.clock
       @verb = verb
       @path = path
       @action = action
+      @request_id = request_id
       params.each do |name, value|
         @param_names << name
         @param_values << (filtered?(name) ? "[FILTERED]" : value.dup.force_encoding("UTF-8").scrub("?"))
       end
-      on_start
+      on_start if @level <= 1
+    rescue StandardError => e
+      failed(e)
     end
 
     def sql(name, statement, t0)
       ms = since(t0)
       @db += ms
-      on_sql(name, statement, ms)
+      on_sql(name, statement, ms) if @level == 0
+    rescue StandardError => e
+      failed(e)
     end
 
     def render_start
@@ -130,21 +140,29 @@ module Rieles
       ms = since(t0)
       @depth -= 1
       @view += ms if @depth == 0
-      on_render(template, ms)
+      on_render(template, ms) if @level == 0
+    rescue StandardError => e
+      failed(e)
     end
 
     def redirect(location)
       @location = location
-      on_redirect
+      on_redirect if @level <= 1
+    rescue StandardError => e
+      failed(e)
     end
 
     def error(e)
       @error = e.class.name + ": " + e.message
-      on_error
+      on_error if @level <= 3
+    rescue StandardError => failure
+      failed(failure)
     end
 
     def finish(status)
-      on_finish(status, since(@started))
+      on_finish(status, since(@started)) if @level <= 1 || (@error.length > 0 && @level <= 3)
+    rescue StandardError => e
+      failed(e)
     end
 
     def on_start; end
@@ -154,13 +172,25 @@ module Rieles
     def on_error; end
     def on_finish(status, elapsed); end
 
+    def emit(line)
+      if @file.empty?
+        puts line
+      else
+        File.open(@file, "a") { |f| f.puts(line) }
+      end
+    end
+
+    def failed(e)
+      $stderr.puts "rieles: logging failed: " + e.class.name + ": " + e.message
+    end
+
     def since(t0) = (Rieles.clock - t0) * 1000.0
     def ms(value) = format("%.1f", value)
     def time = Time.now.strftime("%Y-%m-%dT%H:%M:%S%z")
 
     def filtered?(name)
       key = name.downcase
-      FILTERED_PARAMS.any? { |f| key.include?(f) }
+      Rieles.filter_parameters.any? { |f| key.include?(f) }
     end
 
     def escape(text)
@@ -184,9 +214,9 @@ module Rieles
   # Rails-style, several lines per request.
   class DevLogger < Logger
     def on_start
-      puts ""
-      puts "Started " + @verb + " " + @path.inspect + " at " + Time.now.strftime("%Y-%m-%d %H:%M:%S")
-      puts "Processing by " + @action if @action.length > 0
+      emit ""
+      emit "Started " + @verb + " " + @path.inspect + " at " + Time.now.strftime("%Y-%m-%d %H:%M:%S") + " [" + @request_id + "]"
+      emit "Processing by " + @action if @action.length > 0
       return if @param_names.empty?
       pairs = []
       i = 0
@@ -194,42 +224,42 @@ module Rieles
         pairs << @param_names[i].inspect + " => " + @param_values[i].inspect
         i += 1
       end
-      puts "  Parameters: {" + pairs.join(", ") + "}"
+      emit "  Parameters: {" + pairs.join(", ") + "}"
     end
 
     def on_sql(name, statement, elapsed)
-      puts "  " + paint(name + " (" + ms(elapsed) + "ms)", "1;36") + "  " + paint(statement, "1;34")
+      emit "  " + paint(name + " (" + ms(elapsed) + "ms)", "1;36") + "  " + paint(statement, "1;34")
     end
 
     def on_render(template, elapsed)
-      puts "  Rendered " + template + " (" + ms(elapsed) + "ms)"
+      emit "  Rendered " + template + " (" + ms(elapsed) + "ms)"
     end
 
     def on_redirect
-      puts "Redirected to " + @location
+      emit "Redirected to " + @location
     end
 
     def on_error
-      puts paint("  " + @error, "1;31")
+      emit paint("  " + @error, "1;31")
     end
 
     def on_finish(status, elapsed)
       line = "Completed " + status.to_s + " " + Tep.reason(status) + " in " + ms(elapsed) + "ms" \
              " (Views: " + ms(@view) + "ms | DB: " + ms(@db) + "ms)"
-      puts paint(line, status >= 500 ? "1;31" : (status >= 400 ? "1;33" : "1;32"))
+      emit paint(line, status >= 500 ? "1;31" : (status >= 400 ? "1;33" : "1;32"))
     end
   end
 
   # One line per request: key=value, quoted when needed.
   class LogfmtLogger < Logger
     def on_finish(status, elapsed)
-      line = "time=" + time + " method=" + @verb + " path=" + value(@path)
+      line = "time=" + time + " request_id=" + value(@request_id) + " method=" + @verb + " path=" + value(@path)
       line = line + " action=" + value(@action) if @action.length > 0
       line = line + " status=" + status.to_s + " duration_ms=" + ms(elapsed) +
              " view_ms=" + ms(@view) + " db_ms=" + ms(@db)
       line = line + " location=" + value(@location) if @location.length > 0
       line = line + " error=" + value(@error) if @error.length > 0
-      puts line
+      emit line
     end
 
     def value(text)
@@ -241,7 +271,8 @@ module Rieles
   # One JSON object per request.
   class JsonLogger < Logger
     def on_finish(status, elapsed)
-      fields = ["\"time\":" + str(time), "\"method\":" + str(@verb), "\"path\":" + str(@path)]
+      fields = ["\"time\":" + str(time), "\"request_id\":" + str(@request_id),
+                "\"method\":" + str(@verb), "\"path\":" + str(@path)]
       fields << "\"action\":" + str(@action) if @action.length > 0
       fields << "\"status\":" + status.to_s
       fields << "\"duration_ms\":" + ms(elapsed)
@@ -249,7 +280,7 @@ module Rieles
       fields << "\"db_ms\":" + ms(@db)
       fields << "\"location\":" + str(@location) if @location.length > 0
       fields << "\"error\":" + str(@error) if @error.length > 0
-      puts "{" + fields.join(",") + "}"
+      emit "{" + fields.join(",") + "}"
     end
 
     def str(text)
@@ -257,8 +288,13 @@ module Rieles
     end
   end
 
+  def self.filter_parameters
+    ENV.fetch("RIELES_FILTER_PARAMETERS", "password,token,secret,_key,crypt,salt,certificate,otp,ssn").split(",")
+  end
+
   def self.build_logger
-    format = ENV.fetch("RIELES_LOG_FORMAT", "dev")
+    default = Rieles.env == "production" ? "logfmt" : "dev"
+    format = ENV.fetch("RIELES_LOG_FORMAT", default)
     return LogfmtLogger.new if format == "logfmt"
     return JsonLogger.new if format == "json"
     DevLogger.new
@@ -267,6 +303,15 @@ module Rieles
   LOG = build_logger
 
   def self.log = LOG
+
+  # Reuses a sane incoming X-Request-Id, as Rails does behind a proxy.
+  def self.request_id(req)
+    incoming = req.req_headers["x-request-id"]
+    if incoming && incoming.length > 0 && incoming.length <= 200 && incoming.match?(/\A[\w\-.]+\z/)
+      return incoming
+    end
+    Crypto.sp_crypto_random_b64url(16)
+  end
 
   def self.env = ENV.fetch("RIELES_ENV", "development")
 

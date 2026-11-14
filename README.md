@@ -94,9 +94,22 @@ Helpers: `get/post/put/patch/delete`, `response`, `follow_redirect!`,
 - Views: layout with `yield`, partials (`render "entry", entry: entry`),
   `<%= %>` escapes, `<%== %>` and `raw` don't, `form_with` and field
   helpers, `link_to`, `button_to`, `csrf_meta_tags`, `pluralize`.
-- Request log: Rails-style by default (params with `password`/`token`/`secret`
-  filtered, SQL, rendered templates, timings); one line per request with
-  `RIELES_LOG_FORMAT=logfmt` or `RIELES_LOG_FORMAT=json`.
+- Request log: Rails-style by default (filtered params, SQL, rendered
+  templates, timings); one line per request with `RIELES_LOG_FORMAT=logfmt`
+  or `json`. Each response carries `X-Request-Id`.
+- Static files in `public/` and assets in `app/assets/`.
+
+## Configuration
+
+| Variable | Default | |
+|---|---|---|
+| `RIELES_ENV` | `development` | `production` hides error details and needs `SECRET_KEY_BASE` |
+| `SECRET_KEY_BASE` | `tmp/local_secret.txt` | signs the session cookie |
+| `DATABASE_PATH` | `db/development.sqlite3` | |
+| `RIELES_LOG_FORMAT` | `dev` (`logfmt` in production) | `dev`, `logfmt`, `json` |
+| `RIELES_LOG_LEVEL` | `debug` (`info` in production) | SQL and templates only at `debug` |
+| `RIELES_LOG_FILE` | stdout | |
+| `RIELES_FILTER_PARAMETERS` | `password,token,secret,...` | substrings, comma-separated |
 
 ## Not yet
 
