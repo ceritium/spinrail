@@ -1,7 +1,7 @@
-# Compiled in when RIELES_DATABASE=postgres. Gives tep's PG battery the
+# Compiled in when SPINRAIL_DATABASE=postgres. Gives tep's PG battery the
 # cursor-style interface the generated code uses with Tep::SQLite, and
-# translates the few SQLite-isms rieles emits.
-module Rieles
+# translates the few SQLite-isms spinrail emits.
+module Spinrail
   class PgConnection
     PQTRANS_IDLE = 0
 
@@ -30,7 +30,7 @@ module Rieles
       0
     end
 
-    # Rieles.transaction uses savepoints, which PostgreSQL only allows inside
+    # Spinrail.transaction uses savepoints, which PostgreSQL only allows inside
     # a transaction block: open one around the outermost savepoint.
     def exec(sql)
       return true if sql.start_with?("PRAGMA")
@@ -137,7 +137,7 @@ module Rieles
       return table_info(sql) if sql.start_with?("PRAGMA table_info(")
       out = sql.sub("INTEGER PRIMARY KEY", "BIGSERIAL PRIMARY KEY").gsub(" REAL", " DOUBLE PRECISION")
                .gsub(" LIMIT -1", " LIMIT ALL").sub("BEGIN IMMEDIATE", "BEGIN")
-      if out.start_with?("INSERT OR REPLACE INTO rieles_cache")
+      if out.start_with?("INSERT OR REPLACE INTO spinrail_cache")
         out = out.sub("INSERT OR REPLACE INTO", "INSERT INTO") +
               " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at"
       end

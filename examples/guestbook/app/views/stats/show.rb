@@ -1,3 +1,3 @@
-class Views::Stats::Show < Rieles::View
+class Views::Stats::Show < Spinrail::View
   expose :count, :latest
 end

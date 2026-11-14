@@ -1,4 +1,4 @@
-class UploadsTest < Rieles::IntegrationTest
+class UploadsTest < Spinrail::IntegrationTest
   def test_a_file_field_makes_the_form_multipart
     get "/uploads/new"
     assert_select "form[enctype='multipart/form-data']"

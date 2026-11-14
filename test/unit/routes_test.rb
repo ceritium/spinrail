@@ -2,7 +2,7 @@ require_relative "helper"
 
 class RoutesTest < CompilerTest
   def routes(body)
-    Rieles::Routes.new(File.join(app("config/routes.rb" => "Rieles.routes.draw do\n#{body}\nend\n"), "config/routes.rb"))
+    Spinrail::Routes.new(File.join(app("config/routes.rb" => "Spinrail.routes.draw do\n#{body}\nend\n"), "config/routes.rb"))
   end
 
   def table(r) = r.routes.map { |x| "#{x.verb.upcase} #{x.path} #{x.controller}##{x.action}" }
@@ -30,13 +30,13 @@ class RoutesTest < CompilerTest
   end
 
   def test_bad_target
-    assert_raises(Rieles::CompileError) { routes(%(get "/x", to: "nope")) }
+    assert_raises(Spinrail::CompileError) { routes(%(get "/x", to: "nope")) }
   end
 end
 
 class RoutesExtrasTest < CompilerTest
   def routes(body)
-    Rieles::Routes.new(File.join(app("config/routes.rb" => "Rieles.routes.draw do\n#{body}\nend\n"), "config/routes.rb"))
+    Spinrail::Routes.new(File.join(app("config/routes.rb" => "Spinrail.routes.draw do\n#{body}\nend\n"), "config/routes.rb"))
   end
 
   def table(r) = r.routes.map { |x| "#{x.verb.upcase} #{x.path} #{x.controller}##{x.action}" }

@@ -1,4 +1,4 @@
-module Rieles
+module Spinrail
   # Applies replacements to Prism node ranges. Replacements are lazy so they
   # can embed the (rewritten) source of their own child nodes.
   class SourceRewriter
@@ -55,7 +55,7 @@ module Rieles
                         http_basic_authenticate_with].freeze
 
     def self.lower(source, file, context)
-      root = Rieles.parse(source, file)
+      root = Spinrail.parse(source, file)
       rewriter = SourceRewriter.new(source)
       root.accept(new(rewriter, file, context))
       rewriter.emit
@@ -106,7 +106,7 @@ module Rieles
         arg = node.arguments.arguments.first
         @rw.replace(node) { "(#{@rw.slice(arg)}).dom_id" }
       elsif @ctx.view? && node.receiver.nil? && %i[stylesheet_link_tag javascript_include_tag image_tag].include?(node.name)
-        args, kw = Rieles.call_args(node)
+        args, kw = Spinrail.call_args(node)
         @rw.replace(node) { "#{node.name}((#{@rw.slice(args.first)}).to_s, #{html_attrs(kw)})" }
       elsif @ctx.view? && node.receiver.nil? && %i[link_to button_to].include?(node.name) && node.block.nil?
         lower_link(node)
@@ -125,7 +125,7 @@ module Rieles
       elsif (store = store_access(node))
         lower_store(node, *store)
       elsif params_lookup?(node)
-        key = Rieles.literal(node.arguments.arguments.first).to_s
+        key = Spinrail.literal(node.arguments.arguments.first).to_s
         @rw.replace(node) { "param(#{key.inspect})" }
       elsif (path = nested_params_path(node))
         @rw.replace(node) { "param(#{(path.first + path.drop(1).map { |k| "[#{k}]" }.join).inspect})" }
@@ -154,7 +154,7 @@ module Rieles
         arg = node.arguments&.arguments&.first
         value = arg ? "(#{@rw.slice(arg)}).to_s" : '""'
         name = node.receiver.slice
-        @rw.replace(node) { node.name == :perform_later ? "Rieles.enqueue(#{name.inspect}, #{value})" : "#{name}.new.perform(#{value})" }
+        @rw.replace(node) { node.name == :perform_later ? "Spinrail.enqueue(#{name.inspect}, #{value})" : "#{name}.new.perform(#{value})" }
       elsif node.receiver.nil? && @ctx.job? && %i[queue_as retry_on discard_on].include?(node.name)
         @rw.replace(node) { "" }
       elsif node.receiver.nil? && @ctx.controller? && CONTROLLER_DSL.include?(node.name)
@@ -233,9 +233,9 @@ module Rieles
       plain = hash.elements.reject { |e| e.value.is_a?(Prism::HashNode) }
       code = prefix + (plain.empty? ? "all" : "where(#{plain.map { |e| @rw.slice(e) }.join(', ')})")
       hash.elements.select { |e| e.value.is_a?(Prism::HashNode) }.each do |e|
-        table = Rieles.literal(e.key).to_s
+        table = Spinrail.literal(e.key).to_s
         e.value.elements.each do |inner|
-          code += ".where_qualified(#{"#{table}.#{Rieles.literal(inner.key)}".inspect}, (#{@rw.slice(inner.value)}).to_s)"
+          code += ".where_qualified(#{"#{table}.#{Spinrail.literal(inner.key)}".inspect}, (#{@rw.slice(inner.value)}).to_s)"
         end
       end
       code
@@ -266,47 +266,47 @@ module Rieles
                     assert_includes refute_includes assert_empty refute_empty assert_raises assert_difference
                     assert_no_difference fixtures].freeze
 
-    # Minitest assertions become rieles_assert(ok, "file:line", message);
+    # Minitest assertions become spinrail_assert(ok, "file:line", message);
     # posts(:first) becomes Post.find(<fixture id>).
     def lower_test_call(node)
       if @ctx.fixture_tables.include?(node.name.to_s) && node.arguments&.arguments&.size == 1
-        label = Rieles.literal(node.arguments.arguments.first).to_s
+        label = Spinrail.literal(node.arguments.arguments.first).to_s
         model = Inflector.camelize(Inflector.singularize(node.name.to_s))
         id = Zlib.crc32(label) % (2**30 - 1)
         @rw.replace(node) { "#{model}.find(#{id})" }
         return true
       end
       return false unless ASSERTIONS.include?(node.name)
-      args, = Rieles.call_args(node)
+      args, = Spinrail.call_args(node)
       at = where(node).inspect
       s = ->(n) { "(#{@rw.slice(n)})" }
       @rw.replace(node) do
         case node.name
         when :fixtures then ""
-        when :assert then "rieles_assert(#{s.(args[0])}, #{at}, #{args[1] ? s.(args[1]) : '"Expected a truthy value"'})"
-        when :refute, :assert_not then "rieles_assert(!#{s.(args[0])}, #{at}, #{args[1] ? s.(args[1]) : '"Expected a falsy value"'})"
+        when :assert then "spinrail_assert(#{s.(args[0])}, #{at}, #{args[1] ? s.(args[1]) : '"Expected a truthy value"'})"
+        when :refute, :assert_not then "spinrail_assert(!#{s.(args[0])}, #{at}, #{args[1] ? s.(args[1]) : '"Expected a falsy value"'})"
         when :assert_equal
-          "rieles_assert(#{s.(args[0])} == #{s.(args[1])}, #{at}, \"Expected \" + #{s.(args[0])}.inspect + \", got \" + #{s.(args[1])}.inspect)"
+          "spinrail_assert(#{s.(args[0])} == #{s.(args[1])}, #{at}, \"Expected \" + #{s.(args[0])}.inspect + \", got \" + #{s.(args[1])}.inspect)"
         when :assert_not_equal, :refute_equal
-          "rieles_assert(#{s.(args[0])} != #{s.(args[1])}, #{at}, \"Expected something other than \" + #{s.(args[0])}.inspect)"
-        when :assert_nil then "rieles_assert(#{s.(args[0])}.nil?, #{at}, \"Expected nil, got \" + #{s.(args[0])}.inspect)"
-        when :refute_nil, :assert_not_nil then "rieles_assert(!#{s.(args[0])}.nil?, #{at}, \"Expected a value, got nil\")"
+          "spinrail_assert(#{s.(args[0])} != #{s.(args[1])}, #{at}, \"Expected something other than \" + #{s.(args[0])}.inspect)"
+        when :assert_nil then "spinrail_assert(#{s.(args[0])}.nil?, #{at}, \"Expected nil, got \" + #{s.(args[0])}.inspect)"
+        when :refute_nil, :assert_not_nil then "spinrail_assert(!#{s.(args[0])}.nil?, #{at}, \"Expected a value, got nil\")"
         when :assert_includes
-          "rieles_assert(#{s.(args[0])}.include?(#{s.(args[1])}), #{at}, \"Expected \" + #{s.(args[0])}.inspect + \" to include \" + #{s.(args[1])}.inspect)"
+          "spinrail_assert(#{s.(args[0])}.include?(#{s.(args[1])}), #{at}, \"Expected \" + #{s.(args[0])}.inspect + \" to include \" + #{s.(args[1])}.inspect)"
         when :refute_includes
-          "rieles_assert(!#{s.(args[0])}.include?(#{s.(args[1])}), #{at}, #{s.(args[0])}.inspect + \" includes \" + #{s.(args[1])}.inspect)"
-        when :assert_empty then "rieles_assert(#{s.(args[0])}.empty?, #{at}, \"Expected empty, got \" + #{s.(args[0])}.inspect)"
-        when :refute_empty then "rieles_assert(!#{s.(args[0])}.empty?, #{at}, \"Expected not empty\")"
+          "spinrail_assert(!#{s.(args[0])}.include?(#{s.(args[1])}), #{at}, #{s.(args[0])}.inspect + \" includes \" + #{s.(args[1])}.inspect)"
+        when :assert_empty then "spinrail_assert(#{s.(args[0])}.empty?, #{at}, \"Expected empty, got \" + #{s.(args[0])}.inspect)"
+        when :refute_empty then "spinrail_assert(!#{s.(args[0])}.empty?, #{at}, \"Expected not empty\")"
         when :assert_raises
           body = node.block&.body ? @rw.slice(node.block.body) : ""
           klass = args[0] ? @rw.slice(args[0]) : "StandardError"
           "begin\n#{body}\nflunk(#{at} + \": expected #{klass} to be raised\")\nrescue #{klass}\nnil\nend"
         when :assert_difference, :assert_no_difference
-          expr = Rieles.literal(args[0]).to_s
-          diff = node.name == :assert_no_difference ? 0 : (args[1] ? Rieles.literal(args[1]) : 1)
+          expr = Spinrail.literal(args[0]).to_s
+          diff = node.name == :assert_no_difference ? 0 : (args[1] ? Spinrail.literal(args[1]) : 1)
           body = node.block&.body ? @rw.slice(node.block.body) : ""
-          "rieles_before = (#{expr})\n#{body}\nrieles_change = (#{expr}) - rieles_before\n" \
-            "rieles_assert(rieles_change == #{diff}, #{at}, \"#{expr} changed by \" + rieles_change.to_s + \", expected #{diff}\")"
+          "spinrail_before = (#{expr})\n#{body}\nspinrail_change = (#{expr}) - spinrail_before\n" \
+            "spinrail_assert(spinrail_change == #{diff}, #{at}, \"#{expr} changed by \" + spinrail_change.to_s + \", expected #{diff}\")"
         end
       end
       true
@@ -320,17 +320,17 @@ module Rieles
     end
 
     def lower_rails_cache(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       ttl = kw[:expires_in] ? "(#{@rw.slice(kw[:expires_in])})" : "0"
       @rw.replace(node) do
         key = args[0] ? "(#{@rw.slice(args[0])}).cache_key" : '""'
         case node.name
-        when :fetch then "Rieles.cache_fetch(#{key}, #{ttl}) { #{node.block&.body ? @rw.slice(node.block.body) : '""'} }"
-        when :read then "Rieles.cache.read(#{key})"
-        when :exist? then "!Rieles.cache.read(#{key}).nil?"
-        when :write then "Rieles.cache.write(#{key}, (#{@rw.slice(args[1])}).to_s, #{ttl})"
-        when :delete then "Rieles.cache.delete(#{key})"
-        when :clear then "Rieles.cache.clear"
+        when :fetch then "Spinrail.cache_fetch(#{key}, #{ttl}) { #{node.block&.body ? @rw.slice(node.block.body) : '""'} }"
+        when :read then "Spinrail.cache.read(#{key})"
+        when :exist? then "!Spinrail.cache.read(#{key}).nil?"
+        when :write then "Spinrail.cache.write(#{key}, (#{@rw.slice(args[1])}).to_s, #{ttl})"
+        when :delete then "Spinrail.cache.delete(#{key})"
+        when :clear then "Spinrail.cache.clear"
         end
       end
     end
@@ -338,13 +338,13 @@ module Rieles
     # <% cache @post do %>...<% end %>: the block's markup is stored under
     # the key (a string, or a record's cache_key) and reused.
     def lower_fragment_cache(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       ttl = kw[:expires_in] ? "(#{@rw.slice(kw[:expires_in])})" : "0"
       @rw.replace(node) do
         key = "\"views/\" + (#{@rw.slice(args[0])}).cache_key"
         body = node.block.body ? @rw.slice(node.block.body) : ""
-        "rieles_fragment = Rieles.cache.read(#{key})\nif rieles_fragment.nil?\n  rieles_outer = out\n  out = +\"\"\n" \
-          "#{body}\n  rieles_fragment = Rieles.cache.write(#{key}, out, #{ttl})\n  out = rieles_outer\nend\nout << rieles_fragment"
+        "spinrail_fragment = Spinrail.cache.read(#{key})\nif spinrail_fragment.nil?\n  spinrail_outer = out\n  out = +\"\"\n" \
+          "#{body}\n  spinrail_fragment = Spinrail.cache.write(#{key}, out, #{ttl})\n  out = spinrail_outer\nend\nout << spinrail_fragment"
       end
     end
 
@@ -357,7 +357,7 @@ module Rieles
     # mail(to:, subject:, from:) renders <mailer>/<action>.text.erb and
     # .html.erb with the ivars the action assigned.
     def lower_mail(node)
-      _, kw = Rieles.call_args(node)
+      _, kw = Spinrail.call_args(node)
       fail!(node, "mail needs to:") unless kw[:to]
       action = @ctx.current_def
       bodies = %w[text html].map do |format|
@@ -370,7 +370,7 @@ module Rieles
       fail!(node, "no app/views/#{@ctx.dir}/#{action}.text.erb or .html.erb") if bodies.all? { |b| b == '""' }
       @rw.replace(node) do
         s = ->(k) { kw[k] ? "(#{@rw.slice(kw[k])}).to_s" : '""' }
-        "rieles_mail(#{s.(:to)}, #{s.(:from)}, #{s.(:subject)}, #{bodies[0]}, #{bodies[1]})"
+        "spinrail_mail(#{s.(:to)}, #{s.(:from)}, #{s.(:subject)}, #{bodies[0]}, #{bodies[1]})"
       end
     end
 
@@ -396,15 +396,15 @@ module Rieles
     end
 
     def lower_params(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       @rw.replace(node) do
         recv = @rw.slice(node.receiver)
         case node.name
-        when :require then "#{recv}.require_key(#{Rieles.literal(args.first).to_s.inspect})"
-        when :permit then "#{recv}.permit_keys(#{args.map { |a| Rieles.literal(a).to_s }.inspect})"
+        when :require then "#{recv}.require_key(#{Spinrail.literal(args.first).to_s.inspect})"
+        when :permit then "#{recv}.permit_keys(#{args.map { |a| Spinrail.literal(a).to_s }.inspect})"
         when :expect
           key, fields = kw.first
-          "#{recv}.require_key(#{key.to_s.inspect}).permit_keys(#{Rieles.literal(fields).map(&:to_s).inspect})"
+          "#{recv}.require_key(#{key.to_s.inspect}).permit_keys(#{Spinrail.literal(fields).map(&:to_s).inspect})"
         end
       end
     end
@@ -445,7 +445,7 @@ module Rieles
     # form_with(model: @entry) do |f| ... end, inlined: the block body
     # writes to the template's `out` between the form tags.
     def lower_form(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       fail!(node, "form_with takes keyword options") unless args.empty?
       var = node.block.parameters&.parameters&.requireds&.first&.name or fail!(node, "form_with needs a block parameter")
       model = kw[:model]
@@ -454,11 +454,11 @@ module Rieles
         fail!(node, "form_with model: [parent, record]") unless model.elements.size == 2
         parent, model = model.elements
       end
-      scope = kw[:scope] ? Rieles.literal(kw[:scope]).to_s : model ? model_scope(model) : ""
+      scope = kw[:scope] ? Spinrail.literal(kw[:scope]).to_s : model ? model_scope(model) : ""
       @forms << { var: var, scope: scope, model: model }
       attrs = html_attrs(kw.reject { |k, _| %i[model scope url method local multipart].include?(k) })
       # A file field makes the form multipart, as in Rails.
-      if (kw[:multipart] && Rieles.literal(kw[:multipart]) == true) || file_field?(node.block)
+      if (kw[:multipart] && Spinrail.literal(kw[:multipart]) == true) || file_field?(node.block)
         attrs = "#{attrs} + \" enctype=\\\"multipart/form-data\\\"\""
       end
       @rw.replace(node) do
@@ -467,7 +467,7 @@ module Rieles
               elsif parent then nested_model_url(node, model_scope(parent), @rw.slice(parent), scope, m)
               else model_url(node, scope, m)
               end
-        method = if kw[:method] then Rieles.literal(kw[:method]).to_s.inspect
+        method = if kw[:method] then Spinrail.literal(kw[:method]).to_s.inspect
                  elsif m then "(#{m}.persisted? ? \"patch\" : \"post\")"
                  else '"post"'
                  end
@@ -522,7 +522,7 @@ module Rieles
     end
 
     def lower_field_html(node, form, wrap)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       attr = args.first && (args.first.is_a?(Prism::SymbolNode) || args.first.is_a?(Prism::StringNode)) ? args.first.unescaped : nil
       model = form[:model]
       @rw.replace(node) do
@@ -548,7 +548,7 @@ module Rieles
       when :collection_select
         fail!(node, "f.collection_select(:attr, records, :value_method, :text_method)") unless args.size == 4
         coll = "(#{@rw.slice(args[1])}).to_a"
-        v, t = Rieles.literal(args[2]), Rieles.literal(args[3])
+        v, t = Spinrail.literal(args[2]), Spinrail.literal(args[3])
         "form_select_pairs(#{scope}, #{attr.inspect}, #{value.(".to_s")}, #{coll}.map { |r| r.#{v}.to_s }, " \
           "#{coll}.map { |r| r.#{t}.to_s }, #{attrs})"
       when :submit
@@ -573,13 +573,13 @@ module Rieles
     # t("key", name: value), I18n.locale and I18n.locale = "es".
     def lower_i18n(node)
       case node.name
-      when :locale then return @rw.replace(node) { "Rieles.locale" }
-      when :locale= then return @rw.replace(node) { "Rieles.set_locale((#{@rw.slice(node.arguments.arguments.first)}).to_s)" }
+      when :locale then return @rw.replace(node) { "Spinrail.locale" }
+      when :locale= then return @rw.replace(node) { "Spinrail.set_locale((#{@rw.slice(node.arguments.arguments.first)}).to_s)" }
       end
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       if %i[l localize].include?(node.name)
-        format = kw[:format] ? Rieles.literal(kw[:format]).to_s : "default"
-        return @rw.replace(node) { "Rieles.localize((#{@rw.slice(args.first)}).to_s, #{format.inspect})" }
+        format = kw[:format] ? Spinrail.literal(kw[:format]).to_s : "default"
+        return @rw.replace(node) { "Spinrail.localize((#{@rw.slice(args.first)}).to_s, #{format.inspect})" }
       end
       key_node = args.first or fail!(node, "t needs a key")
       literal = key_node.is_a?(Prism::StringNode) || key_node.is_a?(Prism::SymbolNode)
@@ -588,12 +588,12 @@ module Rieles
         key = static ? static.inspect : "(#{@rw.slice(key_node)}).to_s"
         if kw.key?(:count)
           rest = kw.reject { |k, _| k == :count }
-          "Rieles.t_count(#{key}, #{@rw.slice(kw[:count])}, #{rest.keys.map(&:to_s).inspect}, " \
+          "Spinrail.t_count(#{key}, #{@rw.slice(kw[:count])}, #{rest.keys.map(&:to_s).inspect}, " \
             "[#{rest.values.map { |v| "(#{@rw.slice(v)}).to_s" }.join(', ')}])"
         elsif kw.empty?
-          "Rieles.t(#{key})"
+          "Spinrail.t(#{key})"
         else
-          "Rieles.t_with(#{key}, #{kw.keys.map(&:to_s).inspect}, [#{kw.values.map { |v| "(#{@rw.slice(v)}).to_s" }.join(', ')}])"
+          "Spinrail.t_with(#{key}, #{kw.keys.map(&:to_s).inspect}, [#{kw.values.map { |v| "(#{@rw.slice(v)}).to_s" }.join(', ')}])"
         end
       end
     end
@@ -628,14 +628,14 @@ module Rieles
     # Stored on the controller: the page and its layout are rendered by
     # different view instances. The block form captures what it writes.
     def lower_content_for(node)
-      args, = Rieles.call_args(node)
-      key = Rieles.literal(args.first).to_s.inspect
+      args, = Spinrail.call_args(node)
+      key = Spinrail.literal(args.first).to_s.inspect
       @rw.replace(node) do
         if node.name == :content_for?
           "content_for?(#{key})"
         elsif node.block
           body = node.block.body ? @rw.slice(node.block.body) : ""
-          "rieles_outer = out\nout = +\"\"\n#{body}\ncontent_for_set(#{key}, out)\nout = rieles_outer"
+          "spinrail_outer = out\nout = +\"\"\n#{body}\ncontent_for_set(#{key}, out)\nout = spinrail_outer"
         elsif args[1]
           "content_for_set(#{key}, (#{@rw.slice(args[1])}).to_s)"
         else
@@ -646,7 +646,7 @@ module Rieles
 
     # <%= link_to path, class: "x" do %>...<% end %>, inlined like form_with.
     def lower_link_block(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       fail!(node, "link_to with a block takes the url") unless args.size == 1
       @rw.replace(node) do
         open = "\"<a href=\\\"\" + h((#{@rw.slice(args[0])}).to_s) + \"\\\"\" + #{html_attrs(kw)} + \">\""
@@ -657,7 +657,7 @@ module Rieles
 
     # turbo_frame_tag "id" do ... end, or turbo_frame_tag "id", src: path
     def lower_turbo_frame(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       @rw.replace(node) do
         open = "\"<turbo-frame id=\\\"\" + h((#{@rw.slice(args.first)}).to_s) + \"\\\"\" + #{html_attrs(kw)} + \">\""
         if node.block
@@ -670,9 +670,9 @@ module Rieles
     end
 
     def lower_link(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       fail!(node, "#{node.name}(text, url, html_options)") unless args.size == 2
-      method = kw[:method] ? Rieles.literal(kw[:method]).to_s : "post"
+      method = kw[:method] ? Spinrail.literal(kw[:method]).to_s : "post"
       @rw.replace(node) do
         attrs = html_attrs(kw.reject { |k, _| k == :method })
         text = "(#{@rw.slice(args[0])}).to_s"
@@ -685,7 +685,7 @@ module Rieles
     def html_attrs(kw)
       parts = kw.flat_map do |key, value|
         if key == :data && value.is_a?(Prism::HashNode)
-          value.elements.map { |a| attr_part("data-#{Rieles.literal(a.key).to_s.tr('_', '-')}", a.value) }
+          value.elements.map { |a| attr_part("data-#{Spinrail.literal(a.key).to_s.tr('_', '-')}", a.value) }
         else
           [attr_part(key.to_s.tr("_", "-"), value)]
         end
@@ -698,7 +698,7 @@ module Rieles
       when Prism::TrueNode then " #{name}".inspect
       when Prism::FalseNode, Prism::NilNode then nil
       when Prism::StringNode, Prism::IntegerNode, Prism::SymbolNode
-        %( #{name}="#{CGI.escapeHTML(Rieles.literal(value).to_s)}").inspect
+        %( #{name}="#{CGI.escapeHTML(Spinrail.literal(value).to_s)}").inspect
       else "#{%( #{name}=").inspect} + h((#{@rw.slice(value)}).to_s) + #{'"'.inspect}"
       end
     end
@@ -760,7 +760,7 @@ module Rieles
         when :order then "#{prefix.call}order_sql(#{@rw.slice(arg)})"
         when :exists? then "#{prefix.call}where(#{@rw.slice(arg)}).exists?"
         when :includes, :preload, :eager_load
-          names = node.arguments.arguments.map { |a| Rieles.literal(a).to_s }
+          names = node.arguments.arguments.map { |a| Spinrail.literal(a).to_s }
           "#{prefix.call}with_includes(#{names.inspect})"
         when :joins
           "#{prefix.call}with_joins(#{node.arguments.arguments.map { |a| a.unescaped }.inspect})"
@@ -769,7 +769,7 @@ module Rieles
         when :where then lower_nested_where(prefix.call, arg)
         when :count
           group = node.receiver
-          column = Rieles.literal(group.arguments.arguments.first).to_s
+          column = Spinrail.literal(group.arguments.arguments.first).to_s
           "#{group.receiver ? "#{@rw.slice(group.receiver)}." : ''}group_count(#{column.inspect})"
         end
       end
@@ -786,7 +786,7 @@ module Rieles
       key = node.arguments.arguments.first
       return nil unless key.is_a?(Prism::SymbolNode) || key.is_a?(Prism::StringNode)
       recv = node.receiver
-      return [Rieles.literal(recv.arguments.arguments.first).to_s, key.unescaped] if recv.is_a?(Prism::CallNode) && params_lookup?(recv)
+      return [Spinrail.literal(recv.arguments.arguments.first).to_s, key.unescaped] if recv.is_a?(Prism::CallNode) && params_lookup?(recv)
       inner = recv.is_a?(Prism::CallNode) && nested_params_path(recv)
       inner && inner + [key.unescaped]
     end
@@ -805,7 +805,7 @@ module Rieles
     # Action classes: response.render(view, name: value, ...) passes the
     # view's exposures by name; the build checks them against `expose`.
     def lower_action_render(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       unless args.size == 1 && args.first.is_a?(Prism::CallNode) && args.first.name == :view
         fail!(node, "expected response.render(view, exposure: value, ...)")
       end
@@ -819,7 +819,7 @@ module Rieles
 
     # halt 401 / halt 422, "body": respond and leave the method.
     def lower_halt(node)
-      args, = Rieles.call_args(node)
+      args, = Spinrail.call_args(node)
       fail!(node, "halt takes a status and an optional body") unless (1..2).cover?(args.size)
       code = status_code(args[0])
       @ctx.record_response(nil, where(node))
@@ -830,7 +830,7 @@ module Rieles
     end
 
     def lower_redirect(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       fail!(node, "redirect_to needs a location") if args.empty?
       status = kw[:status] ? status_code(kw[:status]) : 302
       @ctx.record_response(nil, where(node))
@@ -848,7 +848,7 @@ module Rieles
     end
 
     def lower_render(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       @ctx.view? ? lower_partial(node, args, kw) : lower_template(node, args, kw)
     end
 
@@ -857,7 +857,7 @@ module Rieles
       if kw[:view]
         # render view: Views::Stats::Show, count: ... -- a Hanami-style view from a controller.
         exposures = kw.reject { |k, _| %i[view status].include?(k) }
-        key = Rieles.class_key(kw[:view].slice, "Views") or fail!(node, "expected view: Views::..., got `#{kw[:view].slice}`")
+        key = Spinrail.class_key(kw[:view].slice, "Views") or fail!(node, "expected view: Views::..., got `#{kw[:view].slice}`")
         view = @ctx.view_for(key, exposures.keys, where(node))
         @ctx.record_response(nil, where(node))
         @rw.replace(node) do
@@ -875,13 +875,13 @@ module Rieles
         @ctx.record_response(nil, where(node))
         @rw.replace(node) { "render_plain(#{@rw.slice(kw[:plain])}, #{status})" }
       elsif args.first
-        name = Rieles.literal(args.first).to_s
+        name = Spinrail.literal(args.first).to_s
         template = name.include?("/") ? name : "#{@ctx.dir}/#{name}"
         method = @ctx.render_method(template) or fail!(node, "missing template app/views/#{template}.html.erb")
         @ctx.record_response(template, where(node))
         layout = ""
         if kw.key?(:layout)
-          value = Rieles.literal(kw[:layout])
+          value = Spinrail.literal(kw[:layout])
           layout = value ? value.to_s : "none"
           fail!(node, "no app/views/layouts/#{layout}.html.erb") if value && !@ctx.layout?(layout)
         end
@@ -900,13 +900,13 @@ module Rieles
     end
 
     def lower_turbo_stream(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       fail!(node, "turbo_stream.#{node.name}(target, ...)") unless args.first
       content = if node.name == :remove then nil
                 elsif kw[:partial]
-                  name = Rieles.literal(kw[:partial]).to_s
+                  name = Spinrail.literal(kw[:partial]).to_s
                   dir, base = name.include?("/") ? [File.dirname(name), File.basename(name)] : [@ctx.dir, name]
-                  locals = kw[:locals] ? kw[:locals].elements.to_h { |e| [Rieles.literal(e.key), e.value] } : {}
+                  locals = kw[:locals] ? kw[:locals].elements.to_h { |e| [Spinrail.literal(e.key), e.value] } : {}
                   method, keywords = @ctx.partial_method("#{dir}/_#{base}", locals.keys, where(node))
                   [method, keywords, locals]
                 elsif args[1] then args[1]
@@ -924,7 +924,7 @@ module Rieles
     end
 
     def lower_head(node)
-      args, = Rieles.call_args(node)
+      args, = Spinrail.call_args(node)
       fail!(node, "head takes a status") unless args.size == 1
       @ctx.record_response(nil, where(node))
       code = status_code(args.first)
@@ -953,11 +953,11 @@ module Rieles
         return lower_record_partial(node, args.first)
       end
       if kw[:partial] && kw[:collection]
-        name = Rieles.literal(kw[:partial]).to_s
-        return lower_collection(node, name, kw[:collection], kw[:as] ? Rieles.literal(kw[:as]).to_s : File.basename(name))
+        name = Spinrail.literal(kw[:partial]).to_s
+        return lower_collection(node, name, kw[:collection], kw[:as] ? Spinrail.literal(kw[:as]).to_s : File.basename(name))
       end
       fail!(node, "render in views takes a partial name: render \"name\", local: value") unless args.size == 1
-      name = Rieles.literal(args.first).to_s
+      name = Spinrail.literal(args.first).to_s
       dir, base = name.include?("/") ? [File.dirname(name), File.basename(name)] : [@ctx.dir, name]
       method, keywords = @ctx.partial_method("#{dir}/_#{base}", kw.keys, "#{@file}:#{node.location.start_line}")
       @rw.replace(node) do
@@ -987,7 +987,7 @@ module Rieles
     end
 
     def status_code(node)
-      value = Rieles.literal(node)
+      value = Spinrail.literal(node)
       return value if value.is_a?(Integer)
       STATUS.fetch(value) { fail!(node, "unknown status :#{value}") }
     end

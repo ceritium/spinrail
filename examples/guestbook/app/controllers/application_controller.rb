@@ -1,2 +1,2 @@
-class ApplicationController < Rieles::Controller
+class ApplicationController < Spinrail::Controller
 end

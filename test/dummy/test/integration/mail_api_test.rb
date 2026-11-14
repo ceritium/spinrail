@@ -1,9 +1,9 @@
 require "socket"
 
-class MailApiTest < Rieles::IntegrationTest
+class MailApiTest < Spinrail::IntegrationTest
   API = TCPServer.new("127.0.0.1", 0)
-  server_env "RIELES_MAIL_DELIVERY" => "http", "RIELES_MAIL_URL" => "http://127.0.0.1:#{API.addr[1]}/emails",
-             "RIELES_MAIL_TOKEN" => "re_test"
+  server_env "SPINRAIL_MAIL_DELIVERY" => "http", "SPINRAIL_MAIL_URL" => "http://127.0.0.1:#{API.addr[1]}/emails",
+             "SPINRAIL_MAIL_TOKEN" => "re_test"
 
   def test_mail_goes_to_the_api
     captured = Thread.new do

@@ -1,4 +1,4 @@
-class ModelsTest < Rieles::IntegrationTest
+class ModelsTest < Spinrail::IntegrationTest
   def setup
     super
     get "/models/seed"
@@ -71,7 +71,7 @@ class ModelsTest < Rieles::IntegrationTest
   end
 end
 
-class ModelsScopedTest < Rieles::IntegrationTest
+class ModelsScopedTest < Spinrail::IntegrationTest
   def setup
     super
     get "/models/seed"
@@ -89,17 +89,17 @@ class ModelsScopedTest < Rieles::IntegrationTest
   end
 end
 
-class SeedsTest < Rieles::IntegrationTest
+class SeedsTest < Spinrail::IntegrationTest
   def test_seeds_run_against_the_database
-    assert system({ "RIELES_SEED" => "1", "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path,
-                    "RIELES_LOG_LEVEL" => "error" },
-                  ENV.fetch("RIELES_BINARY"), out: File::NULL)
+    assert system({ "SPINRAIL_SEED" => "1", "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path,
+                    "SPINRAIL_LOG_LEVEL" => "error" },
+                  ENV.fetch("SPINRAIL_BINARY"), out: File::NULL)
     get "/models/authors"
     assert_equal "Seeded", response.body
   end
 end
 
-class BigTextTest < Rieles::IntegrationTest
+class BigTextTest < Spinrail::IntegrationTest
   def test_text_over_64_kb_comes_back_whole
     get "/models/seed"
     get "/models/big"
@@ -108,7 +108,7 @@ class BigTextTest < Rieles::IntegrationTest
   end
 end
 
-class NullableTest < Rieles::IntegrationTest
+class NullableTest < Spinrail::IntegrationTest
   def test_nullable_columns
     get "/models/seed"
     get "/models/nulls"
@@ -124,7 +124,7 @@ class NullableTest < Rieles::IntegrationTest
   end
 end
 
-class JoinsTest < Rieles::IntegrationTest
+class JoinsTest < Spinrail::IntegrationTest
   def test_joins_and_group
     get "/models/seed"
     get "/models/joins"

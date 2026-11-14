@@ -28,15 +28,15 @@ Roughly in priority order within each section.
 - [x] Columns added to `db/schema.rb` are added to existing tables at boot.
 - [x] Migrations in `db/migrate` (`create_table`, `add/remove/rename_column`,
       `add_reference`, `rename/drop_table`, `add/remove_index`, `execute`), applied
-      at boot through `schema_migrations`; `rieles db:migrate` dumps db/schema.rb;
+      at boot through `schema_migrations`; `spinrail db:migrate` dumps db/schema.rb;
       `generate migration`. Indexes in db/schema.rb too.
-- [x] Reversible `change` (or `up`/`down`), `rieles db:rollback`.
+- [x] Reversible `change` (or `up`/`down`), `spinrail db:rollback`.
 - [ ] `change_column` (SQLite needs a table rebuild).
-- [x] `db/seeds.rb` (`rieles db:seed`, `rieles db:reset`).
-- [x] PostgreSQL, experimental: `RIELES_DATABASE=postgres` at build time and
+- [x] `db/seeds.rb` (`spinrail db:seed`, `spinrail db:reset`).
+- [x] PostgreSQL, experimental: `SPINRAIL_DATABASE=postgres` at build time and
       `DATABASE_URL` at run time; an adapter gives tep's PG battery the SQLite
       cursor interface and translates the SQLite-isms. The dummy's 73 request
-      tests pass against it (`RIELES_DATABASE=postgres bin/rieles test`).
+      tests pass against it (`SPINRAIL_DATABASE=postgres bin/spinrail test`).
 - [ ] PostgreSQL: three model tests fail when run after the others (an INSERT
       raises PG::ServerError with no message and nothing in the server log);
       they pass alone. The model test binary shares one connection.
@@ -118,21 +118,21 @@ Roughly in priority order within each section.
 
 ## Tooling
 
-- [x] `rieles new` (app skeleton) and `rieles generate model|controller|scaffold`.
-- [x] `rieles server` rebuilds when sources changed.
-- [x] `rieles server` rebuilds on change and swaps the binary once it compiles.
+- [x] `spinrail new` (app skeleton) and `spinrail generate model|controller|scaffold`.
+- [x] `spinrail server` rebuilds when sources changed.
+- [x] `spinrail server` rebuilds on change and swaps the binary once it compiles.
 - [x] Point spinel/C errors at the app file and line (controllers, actions, helpers;
       generated code names its source file).
 - [x] Build errors in templates point at the .erb file and line.
 - [ ] Line mapping for generated model code (today it names the model file).
 - [x] Unit tests for the compiler (`rake unit`; `rake` also runs both apps).
-- [x] Framework request tests in `test/dummy` (`bin/rieles test` there).
+- [x] Framework request tests in `test/dummy` (`bin/spinrail test` there).
 - [x] Tests: fixtures, `assert_select`, cookies/session across requests.
 - [x] Model tests (`test/models`): compiled into a test build of the binary, one
       rolled-back transaction per test, Minitest assertions lowered at build time.
 - [ ] CI.
-- [x] Package as a gem (`gem build rieles.gemspec`); the toolchain goes to
-      `RIELES_VENDOR` or `~/.cache/rieles/vendor` outside a checkout.
+- [x] Package as a gem (`gem build spinrail.gemspec`); the toolchain goes to
+      `SPINRAIL_VENDOR` or `~/.cache/spinrail/vendor` outside a checkout.
 - [ ] Publish the gem (name, license and ownership to decide).
 
 ## Mailers
@@ -140,21 +140,21 @@ Roughly in priority order within each section.
 - [x] `app/mailers` with `mail(to:, subject:, from:)`, `default from:`, `.text.erb`
       (unescaped) and `.html.erb` templates, `deliver_now`/`deliver_later`, log or
       file delivery, `deliveries` in request tests, `generate mailer`.
-- [x] HTTP API delivery (`RIELES_MAIL_DELIVERY=http`, JSON in the shape Resend takes).
+- [x] HTTP API delivery (`SPINRAIL_MAIL_DELIVERY=http`, JSON in the shape Resend takes).
 - [ ] SMTP, attachments, mailer layouts, previews.
 
 ## Caching
 
 - [x] `Rails.cache.fetch/read/write/delete/clear` with `expires_in` (in memory, per
       process), fragment caching `<% cache @post do %>`, `cache_key`, `5.minutes`.
-- [x] A shared store (`RIELES_CACHE_STORE=sqlite`) so workers see the same cache.
+- [x] A shared store (`SPINRAIL_CACHE_STORE=sqlite`) so workers see the same cache.
 - [x] Timestamps with microseconds, so two writes in one second get new cache keys.
 
 ## Jobs
 
 - [x] `app/jobs` with `perform_later`/`perform_now`, a SQLite queue claimed under
-      `BEGIN IMMEDIATE`, retries with backoff, `rieles jobs`; inline in tests.
-- [x] `rieles jobs -c N`: N threads in a binary of its own (the server keeps
+      `BEGIN IMMEDIATE`, retries with backoff, `spinrail jobs`; inline in tests.
+- [x] `spinrail jobs -c N`: N threads in a binary of its own (the server keeps
       the single-threaded runtime), a connection each.
 - [ ] Threaded jobs on PostgreSQL (the PG battery's state hasn't been checked
       for threads).
@@ -163,24 +163,24 @@ Roughly in priority order within each section.
 
 ## Runtime
 
-- [x] Environments (`RIELES_ENV`): error details only in development, logfmt
+- [x] Environments (`SPINRAIL_ENV`): error details only in development, logfmt
       and info level in production, `SECRET_KEY_BASE` required there.
-- [x] Log levels (`RIELES_LOG_LEVEL`): SQL and rendered templates only at debug.
+- [x] Log levels (`SPINRAIL_LOG_LEVEL`): SQL and rendered templates only at debug.
 - [x] Log: request id, also sent as `X-Request-Id` (an incoming one is kept).
 - [x] Log: client IP; `request.ip` / `request.remote_ip` (tep fork).
 - [ ] Log: backtraces for 500s. Blocked: spinel exceptions carry an empty backtrace.
-- [x] Log: configurable filtered params (`RIELES_FILTER_PARAMETERS`).
+- [x] Log: configurable filtered params (`SPINRAIL_FILTER_PARAMETERS`).
 - [x] Log: SQL bind values at debug level.
 - [x] Log: a failure inside the logger must not take the server down.
-- [x] Log: write to a file (`RIELES_LOG_FILE`).
-- [x] Quieter `rieles build`: one summary line, only warnings and errors.
+- [x] Log: write to a file (`SPINRAIL_LOG_FILE`).
+- [x] Quieter `spinrail build`: one summary line, only warnings and errors.
 - [x] Static files from `public/`, served from disk.
 - [x] i18n: `config/locales/*.yml`, `t`/`I18n.t` with lazy `.keys` and interpolation,
       `I18n.locale =` per request, translated validation messages and attribute names.
 - [x] i18n: pluralization (`count:` with zero/one/other), `l` with `time.formats`.
 - [ ] i18n: number formats, Accept-Language.
 - [x] Workers (`-w N`): the boot connection is closed before forking; SQLite
-      runs in WAL with a busy timeout. `RIELES_SERVER=prefork` builds tep's
+      runs in WAL with a busy timeout. `SPINRAIL_SERVER=prefork` builds tep's
       default server.
 - [x] tep's scheduled server dropped connections in bursts (fixed in the fork).
 
@@ -193,10 +193,10 @@ Roughly in priority order within each section.
       [OriPekelman/tep#278](https://github.com/OriPekelman/tep/pull/278).
 - [x] Compare notes with [rubys/roundhouse](https://github.com/rubys/roundhouse)
       (summary in README). Ideas worth taking:
-- [x] `rieles check`: the build's static checks without compiling.
-- [x] `rieles runner FILE` / `runner -e CODE`: compiled into a one-off binary.
-- [x] `rieles generate authentication` (Rails 8 style) and `<%= password_digest("x") %>`
+- [x] `spinrail check`: the build's static checks without compiling.
+- [x] `spinrail runner FILE` / `runner -e CODE`: compiled into a one-off binary.
+- [x] `spinrail generate authentication` (Rails 8 style) and `<%= password_digest("x") %>`
       in ERB fixtures.
-- [ ] Differential tests: the same requests against a Rails app and the rieles build.
+- [ ] Differential tests: the same requests against a Rails app and the spinrail build.
 - [x] N+1 warnings: an association read inside a loop over records without
       `includes` (the block variable's name picks the model).

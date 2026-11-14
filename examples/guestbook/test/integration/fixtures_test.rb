@@ -1,4 +1,4 @@
-class FixturesTest < Rieles::IntegrationTest
+class FixturesTest < Spinrail::IntegrationTest
   fixtures :entries
 
   def test_index_lists_the_fixtures

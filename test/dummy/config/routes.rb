@@ -1,4 +1,4 @@
-Rieles.routes.draw do
+Spinrail.routes.draw do
   resources :posts do
     resources :comments, only: [:index, :new, :create, :show]
     member do

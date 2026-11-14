@@ -1,5 +1,5 @@
 require_relative "helper"
-require_relative "../../lib/rieles/test_html"
+require_relative "../../lib/spinrail/test_html"
 
 class TestHTMLTest < CompilerTest
   HTML = <<~HTML
@@ -7,7 +7,7 @@ class TestHTMLTest < CompilerTest
     <form action="/x"><input name="post[title]" value="Hi"><p id="note">Note</p></form>
   HTML
 
-  def select(selector) = Rieles::TestHTML.select(Rieles::TestHTML.parse(HTML), selector)
+  def select(selector) = Spinrail::TestHTML.select(Spinrail::TestHTML.parse(HTML), selector)
 
   def test_selectors
     assert_equal ["One & two", "Three"], select("ul.entries li").map(&:text)

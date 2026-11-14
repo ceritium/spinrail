@@ -1,4 +1,4 @@
-module Rieles
+module Spinrail
   # controller is a path ("posts", "admin/posts"); nil for action classes.
   # regex/captures: globs (*path) and constraints, served as tep regex
   # routes whose numbered captures are copied to named params.
@@ -23,8 +23,8 @@ module Rieles
       @helpers = {} # name => [params, ruby expression]
       @scopes = [Scope.new("", "", "", [], nil, "", "", false)]
       @concerns = {}
-      root = Rieles.parse(File.read(file), file)
-      draw = find_draw(root) or fail!(root, "expected Rieles.routes.draw do ... end")
+      root = Spinrail.parse(File.read(file), file)
+      draw = find_draw(root) or fail!(root, "expected Spinrail.routes.draw do ... end")
       body(draw.block)
     end
 
@@ -53,7 +53,7 @@ module Rieles
       when :resource then resources(node, plural: false)
       when :namespace then namespace(node)
       when :scope then path_scope(node)
-      when :concern then @concerns[Rieles.literal(Rieles.call_args(node).first.first)] = node.block
+      when :concern then @concerns[Spinrail.literal(Spinrail.call_args(node).first.first)] = node.block
       when :shallow then within(scope.dup.tap { |sc| sc.shallow = true }) { body(node.block) }
       when :member, :collection then nest_kind(node)
       when *VERBS then verb(node)
@@ -62,7 +62,7 @@ module Rieles
     end
 
     def root(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       target = args.first || kw[:to]
       controller, action = endpoint(node, target)
       add(:get, scope.path.empty? ? "/" : scope.path, controller, action)
@@ -70,8 +70,8 @@ module Rieles
     end
 
     def namespace(node)
-      args, = Rieles.call_args(node)
-      name = Rieles.literal(args.first).to_s
+      args, = Spinrail.call_args(node)
+      name = Spinrail.literal(args.first).to_s
       within(Scope.new("#{scope.path}/#{name}", "#{scope.helper}#{name}_", "#{scope.module}#{name}/", scope.params, nil,
                        "#{scope.base_path}/#{name}", "#{scope.base_helper}#{name}_", scope.shallow)) do
         body(node.block)
@@ -80,10 +80,10 @@ module Rieles
 
     # scope "/prefix", module: "admin", as: "admin" -- each part optional.
     def path_scope(node)
-      args, kw = Rieles.call_args(node)
-      prefix = args.first ? "/#{Rieles.literal(args.first).to_s.delete_prefix('/')}" : ""
-      mod = kw[:module] ? "#{Rieles.literal(kw[:module])}/" : ""
-      as = kw[:as] ? "#{Rieles.literal(kw[:as])}_" : ""
+      args, kw = Spinrail.call_args(node)
+      prefix = args.first ? "/#{Spinrail.literal(args.first).to_s.delete_prefix('/')}" : ""
+      mod = kw[:module] ? "#{Spinrail.literal(kw[:module])}/" : ""
+      as = kw[:as] ? "#{Spinrail.literal(kw[:as])}_" : ""
       within(Scope.new("#{scope.path}#{prefix}", "#{scope.helper}#{as}", "#{scope.module}#{mod}", scope.params, nil,
                        "#{scope.base_path}#{prefix}", "#{scope.base_helper}#{as}", scope.shallow)) do
         body(node.block)
@@ -98,23 +98,23 @@ module Rieles
     end
 
     def verb(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       if scope.kind
         return member_route(node, args, kw)
       end
-      path = Rieles.literal(args.first).to_s
+      path = Spinrail.literal(args.first).to_s
       path = "/#{path}" unless path.start_with?("/")
       fail!(node, "#{node.name} needs `to: \"controller#action\"`") unless kw[:to]
       controller, action = endpoint(node, kw[:to])
       full = "#{scope.path}#{path}"
-      constraints = kw[:constraints] ? kw[:constraints].elements.to_h { |e| [Rieles.literal(e.key).to_s, e.value] } : {}
+      constraints = kw[:constraints] ? kw[:constraints].elements.to_h { |e| [Spinrail.literal(e.key).to_s, e.value] } : {}
       if full.include?("*") || constraints.any?
         regex, captures = route_regex(node, full, constraints)
         @routes << Route.new(node.name, full, controller, action.to_s, regex, captures)
       else
         add(node.name, full, controller, action)
       end
-      name = kw[:as] ? Rieles.literal(kw[:as]).to_s : path.delete_prefix("/").tr("/-", "__")
+      name = kw[:as] ? Spinrail.literal(kw[:as]).to_s : path.delete_prefix("/").tr("/-", "__")
       return if name.empty? || name.match?(/[:*]/)
       params = full.scan(/[:*](\w+)/).flatten
       helper("#{scope.helper}#{name}", params, path_expr(full))
@@ -122,7 +122,7 @@ module Rieles
 
     # Inside member/collection: `post :publish` -> posts#publish.
     def member_route(node, args, kw)
-      action = Rieles.literal(args.first).to_s
+      action = Spinrail.literal(args.first).to_s
       r = @resource
       to = kw[:to] ? endpoint(node, kw[:to]) : [r[:controller], action]
       if scope.kind == :member && r[:plural]
@@ -137,15 +137,15 @@ module Rieles
     end
 
     def resources(node, plural:)
-      args, kw = Rieles.call_args(node)
-      name = Rieles.literal(args.first).to_s
+      args, kw = Spinrail.call_args(node)
+      name = Spinrail.literal(args.first).to_s
       all = plural ? RESOURCE_ACTIONS : SINGULAR_ACTIONS
-      actions = kw[:only] ? Array(Rieles.literal(kw[:only])) : all
-      actions -= Array(Rieles.literal(kw[:except])) if kw[:except]
+      actions = kw[:only] ? Array(Spinrail.literal(kw[:only])) : all
+      actions -= Array(Spinrail.literal(kw[:except])) if kw[:except]
       single = plural ? Inflector.singularize(name) : name
-      controller = scope.module + (kw[:controller] ? Rieles.literal(kw[:controller]).to_s : (plural ? name : Inflector.pluralize(name)))
+      controller = scope.module + (kw[:controller] ? Spinrail.literal(kw[:controller]).to_s : (plural ? name : Inflector.pluralize(name)))
       base = "#{scope.path}/#{name}"
-      shallow = (kw[:shallow] ? Rieles.literal(kw[:shallow]) : scope.shallow) && !scope.params.empty?
+      shallow = (kw[:shallow] ? Spinrail.literal(kw[:shallow]) : scope.shallow) && !scope.params.empty?
       member_base = shallow ? "#{scope.base_path}/#{name}" : base
       member = plural ? "#{member_base}/:id" : base
       member_params = shallow ? [] : scope.params
@@ -164,7 +164,7 @@ module Rieles
       saved = @routes
       @routes = []
       nested_param = "#{single}_id"
-      concern_nodes = Array(kw[:concerns] ? Rieles.literal(kw[:concerns]) : []).flat_map do |c|
+      concern_nodes = Array(kw[:concerns] ? Spinrail.literal(kw[:concerns]) : []).flat_map do |c|
         block = @concerns[c] or fail!(node, "unknown concern :#{c}")
         block.body&.body || []
       end
@@ -211,7 +211,7 @@ module Rieles
         nested_path = plural ? "#{base}/:#{nested_param}" : base
         nested_params = plural ? helper_params + [nested_param] : helper_params
         within(Scope.new(nested_path, "#{@resource[:helper_single]}_", scope.module, nested_params, nil,
-                         scope.base_path, scope.base_helper, scope.shallow || kw[:shallow] && Rieles.literal(kw[:shallow]))) do
+                         scope.base_path, scope.base_helper, scope.shallow || kw[:shallow] && Spinrail.literal(kw[:shallow]))) do
           deferred.each { |stmt| statement(stmt) }
         end
       end
@@ -267,14 +267,14 @@ module Rieles
     # class, returned as its key with a nil controller.
     def endpoint(node, target)
       return [nil, constant_key(node, target)] if target.is_a?(Prism::ConstantReadNode) || target.is_a?(Prism::ConstantPathNode)
-      value = Rieles.literal(target).to_s
+      value = Spinrail.literal(target).to_s
       controller, action = value.split("#", 2)
       fail!(node, "expected \"controller#action\" or Actions::..., got #{value.inspect}") unless action
       [scope.module + controller, action]
     end
 
     def constant_key(node, target)
-      Rieles.class_key(target.slice, "Actions") or fail!(node, "expected Actions::..., got `#{target.slice}`")
+      Spinrail.class_key(target.slice, "Actions") or fail!(node, "expected Actions::..., got `#{target.slice}`")
     end
 
     def fail!(node, message)

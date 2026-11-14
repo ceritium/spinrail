@@ -1,6 +1,6 @@
 require "strscan"
 
-module Rieles
+module Spinrail
   # Compiles ERB into a Ruby method body. Unlike tep's ERB, templates are
   # methods on the controller, so they read its typed ivars and can loop.
   # `<%= %>` escapes; `<%== %>`, raw(...), render and yield don't.
@@ -21,8 +21,8 @@ module Rieles
       body = tokens.map { |kind, text, line| tag_line(emit(kind, text, layout, raw_call), kind, line) }.join
       body = body.gsub(/^  out << h\(\((.*)\)\.to_s\)( # L\d+)?$/) { "  out << (#{$1}).to_s#{$2}" } unless escape
       return "def #{signature}\n  out = +\"\"\n#{body}  out\nend\n" unless log_as
-      "def #{signature}\n  rieles_t0 = Rieles.log.render_start\n  out = +\"\"\n#{body}" \
-        "  Rieles.log.render_end(#{log_as.inspect}, rieles_t0)\n  out\nend\n"
+      "def #{signature}\n  spinrail_t0 = Spinrail.log.render_start\n  out = +\"\"\n#{body}" \
+        "  Spinrail.log.render_end(#{log_as.inspect}, spinrail_t0)\n  out\nend\n"
     end
 
     def tokenize(source)

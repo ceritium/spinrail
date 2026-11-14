@@ -1,4 +1,4 @@
-Rieles.routes.draw do
+Spinrail.routes.draw do
   root "entries#index"
   resources :entries, only: [:index, :show, :create]
   get "/stats", to: Actions::Stats::Show

@@ -8,7 +8,7 @@ end
 desc "Request tests of the dummy app and the guestbook (builds both)"
 task :apps do
   %w[test/dummy examples/guestbook].each do |dir|
-    sh File.join(dir, "bin/rieles"), "test"
+    sh File.join(dir, "bin/spinrail"), "test"
   end
 end
 

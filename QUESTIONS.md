@@ -3,7 +3,7 @@
 Decisions made while working through the TODO without the owner; each one
 is easy to revisit.
 
-- Name: "rieles" is a working name.
+- Name: "spinrail" is a working name.
 - Default branch: `master` or `main`?
 - `presence` on a NOT NULL integer/float/boolean column is a compile error
   (it could never fail). Keep it strict?
@@ -12,7 +12,7 @@ is easy to revisit.
 - `belongs_to` reader returns nil when the parent is gone (`find_by`), like
   Rails; `find` would raise instead.
 - Framework tests live in `test/dummy`, a Rails-style dummy app, and run
-  through the same `bin/rieles test` apps use.
+  through the same `bin/spinrail test` apps use.
 - Session values are Strings (`session[:visits] = 1` reads back "1");
   Rails' cookie store keeps JSON types.
 - CSRF is on by default outside tests, so plain `curl -d` POSTs get 422;
@@ -44,7 +44,7 @@ is easy to revisit.
 - Jobs take a single argument, passed as a String (perform(id) gets "3").
   Enough, or encode several typed arguments?
 - Spinel segfaulted (exit 139, in unrelated requests) when a subclass of
-  Rieles::Controller redefined initialize with a different arity; mailers
+  Spinrail::Controller redefined initialize with a different arity; mailers
   now share a ViewContext base instead. Worth a minimal repro for matz/spinel?
 - tep bakes `set :public_dir, './public'` as an absolute path from the
   build directory, so a binary built elsewhere looks in the wrong place

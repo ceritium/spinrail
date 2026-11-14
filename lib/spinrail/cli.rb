@@ -2,21 +2,21 @@ require "optparse"
 require "open3"
 require "tmpdir"
 
-module Rieles
-  # `rieles <command>` run from an app's root (apps carry a bin/rieles
+module Spinrail
+  # `spinrail <command>` run from an app's root (apps carry a bin/spinrail
   # that does that). The toolchain lives in <repo>/vendor, see toolchain.mk.
   class CLI
     TOOLCHAIN = File.expand_path("../../toolchain.mk", __dir__)
-    # In a checkout, <repo>/vendor; as a gem, RIELES_VENDOR or ~/.cache/rieles.
-    CHECKOUT_VENDOR = File.expand_path("../../../vendor", __dir__)
+    # In a checkout, <repo>/vendor; as a gem, SPINRAIL_VENDOR or ~/.cache/spinrail.
+    CHECKOUT_VENDOR = File.expand_path("../../vendor", __dir__)
     FRAMEWORK = File.expand_path("../..", __dir__)
-    VENDOR = ENV.fetch("RIELES_VENDOR") do
-      File.exist?(File.expand_path("../../../.git", __dir__)) ? CHECKOUT_VENDOR : File.join(Dir.home, ".cache/rieles/vendor")
+    VENDOR = ENV.fetch("SPINRAIL_VENDOR") do
+      File.exist?(File.expand_path("../../.git", __dir__)) ? CHECKOUT_VENDOR : File.join(Dir.home, ".cache/spinrail/vendor")
     end
     TEP = File.join(VENDOR, "tep/bin/tep")
 
     COMMANDS = {
-      "new" => "Create an app: rieles new PATH",
+      "new" => "Create an app: spinrail new PATH",
       "generate" => "model|controller|scaffold NAME [field:type ...] (alias g)",
       "server" => "Build if needed, start the server and rebuild on change (-p PORT, -w WORKERS, --no-reload)",
       "build" => "Compile the app into a native binary (-o OUTPUT)",
@@ -43,7 +43,7 @@ module Rieles
       command = ALIASES.fetch(@argv.first, @argv.first)
       @argv.shift
       case command
-      when "new" then Generators.new(File.expand_path(@argv.first || abort("rieles: new PATH"))).new_app
+      when "new" then Generators.new(File.expand_path(@argv.first || abort("spinrail: new PATH"))).new_app
       when "generate" then Generators.new(@app).generate(@argv[0], @argv[1], @argv[2..] || [])
       when "server" then server
       when "build" then build(option("-o") || binary, force: true)
@@ -61,7 +61,7 @@ module Rieles
       else help(command)
       end
     rescue CompileError => e
-      abort "rieles: #{e.message}"
+      abort "spinrail: #{e.message}"
     end
 
     private
@@ -74,8 +74,8 @@ module Rieles
     end
 
     def help(command)
-      warn "rieles: unknown command #{command}" if command && !%w[help -h --help].include?(command)
-      puts "Usage: rieles COMMAND\n\n"
+      warn "spinrail: unknown command #{command}" if command && !%w[help -h --help].include?(command)
+      puts "Usage: spinrail COMMAND\n\n"
       COMMANDS.each { |name, desc| puts format("  %-8s %s", name, desc) }
       exit(command.nil? || %w[help -h --help].include?(command) ? 0 : 1)
     end
@@ -83,10 +83,10 @@ module Rieles
     def server
       port = option("-p") || "3000"
       workers = option("-w")
-      reload = !@argv.delete("--no-reload") && ENV.fetch("RIELES_ENV", "development") == "development"
+      reload = !@argv.delete("--no-reload") && ENV.fetch("SPINRAIL_ENV", "development") == "development"
       build(binary) if stale?
       Dir.chdir(@app)
-      puts "rieles: http://localhost:#{port} (Ctrl+C to stop)"
+      puts "spinrail: http://localhost:#{port} (Ctrl+C to stop)"
       $stdout.flush
       exec(binary, "-p", port, *(workers ? ["-w", workers] : [])) unless reload
       watch(port)
@@ -110,7 +110,7 @@ module Rieles
         begin
           next unless compile(next_binary)
         rescue CompileError => e
-          warn "rieles: #{e.message}"
+          warn "spinrail: #{e.message}"
           next
         end
         stop_server(pid)
@@ -126,7 +126,7 @@ module Rieles
         return pid unless Process.wait(pid, Process::WNOHANG)
         sleep 0.3 # the old process may still hold the port
       end
-      abort "rieles: the server didn't start"
+      abort "spinrail: the server didn't start"
     end
 
     def stop_server(pid)
@@ -147,16 +147,16 @@ module Rieles
       build = Build.new(@app)
       source = build.send(:generate)
       result = Prism.parse(source)
-      abort "rieles: generated code doesn't parse: #{result.errors.first.message}" if result.failure?
+      abort "spinrail: generated code doesn't parse: #{result.errors.first.message}" if result.failure?
       build.warnings.uniq.each { |w| warn "warning: #{w}" }
-      puts "rieles: ok (#{build.routes.routes.size} routes, #{build.model_names.size} models)"
+      puts "spinrail: ok (#{build.routes.routes.size} routes, #{build.model_names.size} models)"
     end
 
     def routes
       all = Build.new(@app).routes.routes
       width = all.map { |r| r.path.size }.max.to_i
       all.each do |r|
-        target = r.controller ? "#{r.controller}##{r.action}" : Rieles.class_name(r.action, "Actions")
+        target = r.controller ? "#{r.controller}##{r.action}" : Spinrail.class_name(r.action, "Actions")
         puts format("%-7s %-#{width}s  %s", r.verb.to_s.upcase, r.path, target)
       end
     end
@@ -168,17 +168,17 @@ module Rieles
       files, options = @argv.partition { |a| a.end_with?(".rb") || File.directory?(a) }
       files = ["test"] if files.empty?
       files = files.flat_map { |f| f.end_with?(".rb") ? [f] : Dir[File.join(f, "**/*_test.rb")].sort }
-      abort "rieles: no tests in test/" if files.empty?
+      abort "spinrail: no tests in test/" if files.empty?
       model_files, request_files = files.partition { |f| f.start_with?("test/models/") }
       FileUtils.mkdir_p(File.join(@app, "log"))
       File.write(File.join(@app, "log/test.log"), "")
       ok = model_files.empty? || model_tests(option_value(options, "-n"))
       return exit(ok ? 0 : 1) if request_files.empty?
       build(binary) if stale?
-      env = { "RIELES_APP" => @app, "RIELES_BINARY" => binary }
+      env = { "SPINRAIL_APP" => @app, "SPINRAIL_BINARY" => binary }
       loader = "files = ARGV.shift(#{request_files.size}); files.each { |f| require File.expand_path(f) }"
       $stdout.flush
-      system(env, RbConfig.ruby, "-I", File.join(FRAMEWORK, "lib"), "-r", "rieles/test", "-e", loader, *request_files, *options)
+      system(env, RbConfig.ruby, "-I", File.join(FRAMEWORK, "lib"), "-r", "spinrail/test", "-e", loader, *request_files, *options)
       exit(ok && $?.success? ? 0 : 1)
     end
 
@@ -190,12 +190,12 @@ module Rieles
     def model_tests(filter)
       test_binary = flavored(File.join(@app, "tmp", "#{File.basename(@app)}-test"))
       newest = (input_mtimes.values + Dir[File.join(@app, "test/**/*")].map { |f| File.mtime(f) }).max
-      compile(test_binary, tests: true) or abort "rieles: build failed" if !File.exist?(test_binary) || newest > File.mtime(test_binary)
-      Dir.mktmpdir("rieles-models") do |dir|
-        env = { "DATABASE_PATH" => File.join(dir, "test.sqlite3"), "RIELES_ENV" => "test", "RIELES_RUN_TESTS" => "1",
-                "RIELES_LOG_FILE" => File.join(@app, "log/test.log"), "RIELES_TEST_NAME" => filter }
-        if ENV.fetch("RIELES_DATABASE", "sqlite") == "postgres"
-          pg_database = "rieles_models_#{Process.pid}"
+      compile(test_binary, tests: true) or abort "spinrail: build failed" if !File.exist?(test_binary) || newest > File.mtime(test_binary)
+      Dir.mktmpdir("spinrail-models") do |dir|
+        env = { "DATABASE_PATH" => File.join(dir, "test.sqlite3"), "SPINRAIL_ENV" => "test", "SPINRAIL_RUN_TESTS" => "1",
+                "SPINRAIL_LOG_FILE" => File.join(@app, "log/test.log"), "SPINRAIL_TEST_NAME" => filter }
+        if ENV.fetch("SPINRAIL_DATABASE", "sqlite") == "postgres"
+          pg_database = "spinrail_models_#{Process.pid}"
           system("createdb", pg_database, exception: true)
           env["DATABASE_URL"] = "postgres:///#{pg_database}"
         end
@@ -203,9 +203,9 @@ module Rieles
         sql = Fixtures.load(@app, ["all"])
         unless sql.empty?
           File.write(File.join(dir, "fixtures.sql"), sql)
-          env["RIELES_BOOT_SQL"] = File.join(dir, "fixtures.sql")
+          env["SPINRAIL_BOOT_SQL"] = File.join(dir, "fixtures.sql")
         end
-        puts "rieles: model tests"
+        puts "spinrail: model tests"
         $stdout.flush
         system(env, test_binary)
       ensure
@@ -216,14 +216,14 @@ module Rieles
     def runner
       code = option("-e")
       file = @argv.shift unless code
-      abort "rieles: runner FILE or runner -e 'puts Post.count'" unless code || file
+      abort "spinrail: runner FILE or runner -e 'puts Post.count'" unless code || file
       code ||= File.read(file)
       output = File.join(@app, "tmp", "#{File.basename(@app)}-runner")
       setup unless File.executable?(File.join(VENDOR, "spinel/spinel")) && File.exist?(TEP)
-      compile(output, script: code) or abort "rieles: build failed"
+      compile(output, script: code) or abort "spinrail: build failed"
       Dir.chdir(@app)
       $stdout.flush
-      exec({ "RIELES_LOG_LEVEL" => ENV.fetch("RIELES_LOG_LEVEL", "error") }, output)
+      exec({ "SPINRAIL_LOG_LEVEL" => ENV.fetch("SPINRAIL_LOG_LEVEL", "error") }, output)
     end
 
     # -c N > 1 works N jobs at once on spinel threads, in a binary of its
@@ -232,48 +232,48 @@ module Rieles
       threads = option("-c").to_i
       if threads > 1
         output = flavored(File.join(@app, "tmp", "#{File.basename(@app)}-jobs"))
-        compile(output, threads: true) or abort "rieles: build failed" if !File.exist?(output) || input_mtimes.values.max > File.mtime(output)
+        compile(output, threads: true) or abort "spinrail: build failed" if !File.exist?(output) || input_mtimes.values.max > File.mtime(output)
         Dir.chdir(@app)
         $stdout.flush
-        exec({ "RIELES_JOB_THREADS" => threads.to_s }, output)
+        exec({ "SPINRAIL_JOB_THREADS" => threads.to_s }, output)
       end
       build(binary) if stale?
       Dir.chdir(@app)
       $stdout.flush
-      exec({ "RIELES_JOBS" => "1" }, binary)
+      exec({ "SPINRAIL_JOBS" => "1" }, binary)
     end
 
     def migrate
       migrations = Migrations.new(File.join(@app, "db/migrate"))
-      abort "rieles: no migrations in db/migrate" unless migrations.any?
+      abort "spinrail: no migrations in db/migrate" unless migrations.any?
       schema = File.join(@app, "db/schema.rb")
       unless File.exist?(schema) && File.read(schema) == migrations.schema_rb
         File.write(schema, migrations.schema_rb)
-        puts "rieles: wrote db/schema.rb"
+        puts "spinrail: wrote db/schema.rb"
       end
       build(binary) if stale?
       Dir.chdir(@app)
-      system({ "RIELES_MIGRATE" => "1" }, binary) or abort "rieles: migrating failed"
+      system({ "SPINRAIL_MIGRATE" => "1" }, binary) or abort "spinrail: migrating failed"
     end
 
     def rollback
-      abort "rieles: no migrations in db/migrate" unless Migrations.new(File.join(@app, "db/migrate")).any?
+      abort "spinrail: no migrations in db/migrate" unless Migrations.new(File.join(@app, "db/migrate")).any?
       build(binary) if stale?
       Dir.chdir(@app)
-      system({ "RIELES_ROLLBACK" => "1" }, binary) or abort "rieles: rollback failed"
+      system({ "SPINRAIL_ROLLBACK" => "1" }, binary) or abort "spinrail: rollback failed"
     end
 
     def seed
-      abort "rieles: no db/seeds.rb" unless File.exist?(File.join(@app, "db/seeds.rb"))
+      abort "spinrail: no db/seeds.rb" unless File.exist?(File.join(@app, "db/seeds.rb"))
       build(binary) if stale?
       Dir.chdir(@app)
-      system({ "RIELES_SEED" => "1" }, binary) or abort "rieles: seeding failed"
+      system({ "SPINRAIL_SEED" => "1" }, binary) or abort "spinrail: seeding failed"
     end
 
     def reset_db
       database = ENV.fetch("DATABASE_PATH", File.join(@app, "db/development.sqlite3"))
       FileUtils.rm_f([database, "#{database}-wal", "#{database}-shm"])
-      puts "rieles: deleted #{database.delete_prefix("#{@app}/")}"
+      puts "spinrail: deleted #{database.delete_prefix("#{@app}/")}"
       seed if File.exist?(File.join(@app, "db/seeds.rb"))
     end
 
@@ -283,21 +283,21 @@ module Rieles
 
     def setup
       FileUtils.mkdir_p(VENDOR)
-      system("make", "-s", "-f", TOOLCHAIN, "VENDOR=#{VENDOR}", "setup") or abort "rieles: toolchain setup failed"
+      system("make", "-s", "-f", TOOLCHAIN, "VENDOR=#{VENDOR}", "setup") or abort "spinrail: toolchain setup failed"
     end
 
     def build(output, force: false)
       return unless force || stale?
-      compile(output) or abort "rieles: build failed (generated source: tmp/rieles/app.rb)"
+      compile(output) or abort "spinrail: build failed (generated source: tmp/spinrail/app.rb)"
     end
 
     def compile(output, tests: false, script: nil, threads: false)
       setup unless File.executable?(File.join(VENDOR, "spinel/spinel")) && File.exist?(TEP)
       build = Build.new(@app, tests: tests, script: script, threads: threads)
-      dir = if tests then "tmp/rieles-test"
-            elsif script then "tmp/rieles-runner"
-            elsif threads then "tmp/rieles-jobs"
-            else "tmp/rieles"
+      dir = if tests then "tmp/spinrail-test"
+            elsif script then "tmp/spinrail-runner"
+            elsif threads then "tmp/spinrail-jobs"
+            else "tmp/spinrail"
             end
       source = build.write(File.join(@app, dir))
       build.warnings.uniq.each { |w| warn "warning: #{w}" }
@@ -306,9 +306,9 @@ module Rieles
         "SPINELKIT_DIR" => File.join(VENDOR, "spinelkit"),
         "TEP_SKIP_SPINEL_FRESH" => "1"
       }
-      env.merge!(postgres_env) if ENV.fetch("RIELES_DATABASE", "sqlite") == "postgres"
+      env.merge!(postgres_env) if ENV.fetch("SPINRAIL_DATABASE", "sqlite") == "postgres"
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      $stdout.print "rieles: compiling #{File.basename(@app)}... "
+      $stdout.print "spinrail: compiling #{File.basename(@app)}... "
       $stdout.flush
       log, status = Open3.capture2e(env, TEP, "build", source, "-o", output)
       unless status.success?
@@ -331,11 +331,11 @@ module Rieles
       pg_config = ENV.fetch("PG_CONFIG", "pg_config")
       include_dir = `#{pg_config} --includedir`.strip
       lib_dir = `#{pg_config} --libdir`.strip
-      abort "rieles: pg_config not found; install libpq or set PG_CONFIG" if include_dir.empty?
+      abort "spinrail: pg_config not found; install libpq or set PG_CONFIG" if include_dir.empty?
       shim = File.join(VENDOR, "tep/native/pg/tep_pg.o")
       source = shim.sub(/\.o\z/, ".c")
       unless File.exist?(shim) && File.mtime(shim) >= File.mtime(source)
-        system("cc", "-O2", "-I#{include_dir}", "-c", source, "-o", shim) or abort "rieles: building tep_pg.o failed"
+        system("cc", "-O2", "-I#{include_dir}", "-c", source, "-o", shim) or abort "spinrail: building tep_pg.o failed"
       end
       { "TEP_PG_O" => shim, "TEP_PG_CFLAGS" => "-I#{include_dir}", "TEP_PG_LIBS" => "-L#{lib_dir} -lpq",
         "LIBRARY_PATH" => [lib_dir, ENV["LIBRARY_PATH"]].compact.join(":") }
@@ -363,12 +363,12 @@ module Rieles
         next "  in code generated from #{origin.delete_prefix('generated ')}: #{text}" if origin.start_with?("generated ")
         "  #{origin}:#{n - mark}: #{text}"
       end
-      hints.empty? ? "" : "rieles: the error is near\n#{hints.uniq.join("\n")}"
+      hints.empty? ? "" : "spinrail: the error is near\n#{hints.uniq.join("\n")}"
     end
 
     # The database adapter is chosen at build time, so switching it rebuilds.
     def flavor_file = File.join(@app, "tmp/.database")
-    def flavor = ENV.fetch("RIELES_DATABASE", "sqlite")
+    def flavor = ENV.fetch("SPINRAIL_DATABASE", "sqlite")
     def flavored(path) = flavor == "sqlite" ? path : "#{path}-#{flavor}"
 
     def stale?

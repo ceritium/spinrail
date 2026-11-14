@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+# Runs spinrail against this app from any directory.
+require_relative "../../../lib/spinrail"
+
+Spinrail::CLI.new(ARGV, File.expand_path("..", __dir__)).run

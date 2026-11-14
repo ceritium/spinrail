@@ -1,4 +1,4 @@
-class Actions::Signups::Create < Rieles::Action
+class Actions::Signups::Create < Spinrail::Action
   params do
     required(:user).hash do
       required(:name).filled(:string)

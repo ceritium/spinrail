@@ -1,4 +1,4 @@
-class Views::Reports::Show < Rieles::View
+class Views::Reports::Show < Spinrail::View
   expose :posts, :title
   expose :heading do |title, posts|
     title + " (" + posts.count.to_s + ")"

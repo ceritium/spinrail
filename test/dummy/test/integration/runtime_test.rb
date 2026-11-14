@@ -1,6 +1,6 @@
 require "json"
 
-class RuntimeTest < Rieles::IntegrationTest
+class RuntimeTest < Spinrail::IntegrationTest
   def test_request_id_header
     get "/session"
     assert_match(/\A[\w-]{16,}\z/, response["X-Request-Id"])
@@ -15,17 +15,17 @@ class RuntimeTest < Rieles::IntegrationTest
   end
 end
 
-class LogFileTest < Rieles::IntegrationTest
+class LogFileTest < Spinrail::IntegrationTest
   def setup
-    self.class.server_env("RIELES_LOG_FILE" => File.join(Dir.tmpdir, "rieles-log-#{Process.pid}-#{name}.log"),
-                          "RIELES_LOG_FORMAT" => "json", "RIELES_LOG_LEVEL" => "info")
+    self.class.server_env("SPINRAIL_LOG_FILE" => File.join(Dir.tmpdir, "spinrail-log-#{Process.pid}-#{name}.log"),
+                          "SPINRAIL_LOG_FORMAT" => "json", "SPINRAIL_LOG_LEVEL" => "info")
     super
   end
 
   def test_json_lines_go_to_the_file
     get "/session", headers: { "X-Request-Id" => "req-1" }
     sleep 0.05
-    line = File.read(self.class.server_env["RIELES_LOG_FILE"]).lines.last
+    line = File.read(self.class.server_env["SPINRAIL_LOG_FILE"]).lines.last
     entry = JSON.parse(line)
     assert_equal "req-1", entry["request_id"]
     assert_equal "SessionsController#show", entry["action"]
@@ -34,8 +34,8 @@ class LogFileTest < Rieles::IntegrationTest
   end
 end
 
-class ProductionTest < Rieles::IntegrationTest
-  server_env "RIELES_ENV" => "production", "SECRET_KEY_BASE" => "x" * 64, "RIELES_LOG_FORMAT" => "logfmt"
+class ProductionTest < Spinrail::IntegrationTest
+  server_env "SPINRAIL_ENV" => "production", "SECRET_KEY_BASE" => "x" * 64, "SPINRAIL_LOG_FORMAT" => "logfmt"
 
   def test_errors_hide_details
     get "/models/bang"

@@ -1,4 +1,4 @@
-class ApplicationController < Rieles::Controller
+class ApplicationController < Spinrail::Controller
   before_action :set_locale
   rescue_from ArgumentError, with: :bad_argument
 

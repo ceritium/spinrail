@@ -1,2 +1,2 @@
-class ApplicationRecord < Rieles::Record
+class ApplicationRecord < Spinrail::Record
 end

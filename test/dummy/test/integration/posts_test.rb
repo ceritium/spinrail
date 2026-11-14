@@ -1,4 +1,4 @@
-class PostsTest < Rieles::IntegrationTest
+class PostsTest < Spinrail::IntegrationTest
   def setup
     super
     get "/models/seed"

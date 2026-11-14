@@ -1,7 +1,7 @@
 require "pathname"
 
-module Rieles
-  # rieles new / rieles generate model|controller|scaffold.
+module Spinrail
+  # spinrail new / spinrail generate model|controller|scaffold.
   class Generators
     TYPES = %w[string text integer float boolean datetime date references].freeze
 
@@ -25,19 +25,19 @@ module Rieles
     end
 
     def new_app
-      abort "rieles: #{@app} already exists" if File.exist?(@app)
+      abort "spinrail: #{@app} already exists" if File.exist?(@app)
       name = File.basename(@app)
-      write "bin/rieles", <<~RUBY, mode: 0o755
+      write "bin/spinrail", <<~RUBY, mode: 0o755
         #!/usr/bin/env ruby
         #{framework_require}
 
-        Rieles::CLI.new(ARGV, File.expand_path("..", __dir__)).run
+        Spinrail::CLI.new(ARGV, File.expand_path("..", __dir__)).run
       RUBY
       write ".gitignore", "/#{name}\n/*.next\n/tmp/\n/log/\n/db/*.sqlite3*\n"
-      write "config/routes.rb", "Rieles.routes.draw do\n  root \"home#index\"\nend\n"
-      write "db/schema.rb", "Rieles::Schema.define do\nend\n"
-      write "app/models/application_record.rb", "class ApplicationRecord < Rieles::Record\nend\n"
-      write "app/controllers/application_controller.rb", "class ApplicationController < Rieles::Controller\nend\n"
+      write "config/routes.rb", "Spinrail.routes.draw do\n  root \"home#index\"\nend\n"
+      write "db/schema.rb", "Spinrail::Schema.define do\nend\n"
+      write "app/models/application_record.rb", "class ApplicationRecord < Spinrail::Record\nend\n"
+      write "app/controllers/application_controller.rb", "class ApplicationController < Spinrail::Controller\nend\n"
       write "app/controllers/home_controller.rb", "class HomeController < ApplicationController\n  def index\n  end\nend\n"
       write "app/helpers/application_helper.rb", "module ApplicationHelper\nend\n"
       write "app/views/home/index.html.erb", "<h1>#{Inflector.camelize(name)}</h1>\n<p>Edit app/views/home/index.html.erb.</p>\n"
@@ -61,18 +61,18 @@ module Rieles
       write "app/assets/style.css", "body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }\n" \
                                     ".notice { color: #166534; }\n.alert, .error { color: #b91c1c; }\n"
       write "test/integration/home_test.rb", <<~RUBY
-        class HomeTest < Rieles::IntegrationTest
+        class HomeTest < Spinrail::IntegrationTest
           def test_home
             get "/"
             assert_response :success
           end
         end
       RUBY
-      @out.puts "\nNext: cd #{@app} && bin/rieles server"
+      @out.puts "\nNext: cd #{@app} && bin/spinrail server"
     end
 
     def generate(kind, name, args)
-      abort "rieles: generate #{kind} NAME ..." unless name || kind == "authentication"
+      abort "spinrail: generate #{kind} NAME ..." unless name || kind == "authentication"
       case kind
       when "model" then model(name, fields(args))
       when "controller" then controller(name, args)
@@ -80,7 +80,7 @@ module Rieles
       when "migration" then migration(name, fields(args))
       when "mailer" then mailer(name, args)
       when "authentication" then authentication
-      else abort "rieles: generate model|controller|scaffold|migration|mailer|authentication"
+      else abort "spinrail: generate model|controller|scaffold|migration|mailer|authentication"
       end
     end
 
@@ -88,16 +88,16 @@ module Rieles
 
     # A checkout's apps point at it; a gem install's use the gem.
     def framework_require
-      return 'require "rieles"' unless File.exist?(File.expand_path("../../../.git", __dir__))
+      return 'require "spinrail"' unless File.exist?(File.expand_path("../../.git", __dir__))
       lib = Pathname.new(File.expand_path("..", __dir__)).relative_path_from(Pathname.new(File.join(File.expand_path(@app), "bin")))
-      "require_relative #{File.join(lib.to_s, "rieles").inspect}"
+      "require_relative #{File.join(lib.to_s, "spinrail").inspect}"
     end
 
     def fields(args)
       args.map do |arg|
         name, type = arg.split(":", 2)
         type ||= "string"
-        abort "rieles: unknown type #{type} (#{TYPES.join(', ')})" unless TYPES.include?(type)
+        abort "spinrail: unknown type #{type} (#{TYPES.join(', ')})" unless TYPES.include?(type)
         Field.new(name, type)
       end
     end
@@ -128,10 +128,10 @@ module Rieles
              end
       version = Time.now.strftime("%Y%m%d%H%M%S")
       write "db/migrate/#{version}_#{Inflector.underscore(name)}.rb",
-            "class #{klass} < Rieles::Migration\n  def change\n#{body.join("\n")}#{body.empty? ? '' : "\n"}  end\nend\n"
+            "class #{klass} < Spinrail::Migration\n  def change\n#{body.join("\n")}#{body.empty? ? '' : "\n"}  end\nend\n"
     end
 
-    # Rails 8's generator, in rieles terms: User with has_secure_password,
+    # Rails 8's generator, in spinrail terms: User with has_secure_password,
     # a SessionsController, and require_authentication everywhere else.
     def authentication
       model("user", fields(%w[email_address:string password_digest:string]))
@@ -175,7 +175,7 @@ module Rieles
       controller = File.join(@app, "app/controllers/application_controller.rb")
       source = File.read(controller)
       unless source.include?("require_authentication")
-        source = source.sub(/^class ApplicationController < Rieles::Controller\n/) do |line|
+        source = source.sub(/^class ApplicationController < Spinrail::Controller\n/) do |line|
           "#{line}  before_action :require_authentication\n"
         end
         source = source.sub(/^end\s*\z/, <<~RUBY)
@@ -192,7 +192,7 @@ module Rieles
       end
       write "test/fixtures/users.yml", "one:\n  email_address: one@example.com\n  password_digest: <%= password_digest(\"password\") %>\n"
       write "test/integration/sessions_test.rb", <<~RUBY
-        class SessionsTest < Rieles::IntegrationTest
+        class SessionsTest < Spinrail::IntegrationTest
           fixtures :users
 
           def test_requires_sign_in
@@ -331,7 +331,7 @@ module Rieles
       write "app/views/#{plural}/edit.html.erb", "<h1>Editing #{human.downcase}</h1>\n<%= render \"form\", #{single}: @#{single} %>\n<%= link_to \"Show\", #{single}_path(@#{single}) %>\n"
       sample = fields.reject(&:references?).to_h { |f| ["#{single}[#{f.column}]", sample_value(f)] }
       write "test/integration/#{plural}_test.rb", <<~RUBY
-        class #{Inflector.camelize(plural)}Test < Rieles::IntegrationTest
+        class #{Inflector.camelize(plural)}Test < Spinrail::IntegrationTest
           def test_index
             get "/#{plural}"
             assert_response :success
@@ -355,15 +355,15 @@ module Rieles
     def add_route(line)
       file = File.join(@app, "config/routes.rb")
       source = File.read(file)
-      abort "rieles: config/routes.rb has no `Rieles.routes.draw do`" unless source.include?("Rieles.routes.draw do\n")
-      File.write(file, source.sub("Rieles.routes.draw do\n", "Rieles.routes.draw do\n  #{line}\n"))
+      abort "spinrail: config/routes.rb has no `Spinrail.routes.draw do`" unless source.include?("Spinrail.routes.draw do\n")
+      File.write(file, source.sub("Spinrail.routes.draw do\n", "Spinrail.routes.draw do\n  #{line}\n"))
       @out.puts "      route  #{line}"
     end
 
     def insert_before_last_end(rel, text)
       file = File.join(@app, rel)
       source = File.read(file)
-      index = source.rindex(/^end\b/) or abort "rieles: can't find the closing end of #{rel}"
+      index = source.rindex(/^end\b/) or abort "spinrail: can't find the closing end of #{rel}"
       File.write(file, source.insert(index, text))
       @out.puts "     update  #{rel}"
     end

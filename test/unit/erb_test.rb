@@ -1,7 +1,7 @@
 require_relative "helper"
 
 class ErbTest < CompilerTest
-  def compile(source, **opts) = Rieles::Erb.compile(source, "t", **opts)
+  def compile(source, **opts) = Spinrail::Erb.compile(source, "t", **opts)
 
   def test_escapes_expressions
     assert_includes compile("<%= name %>"), "out << h((name).to_s)"
@@ -30,6 +30,6 @@ class ErbTest < CompilerTest
   end
 
   def test_unterminated_tag
-    assert_raises(Rieles::CompileError) { compile("<%= oops") }
+    assert_raises(Spinrail::CompileError) { compile("<%= oops") }
   end
 end

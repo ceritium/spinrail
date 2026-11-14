@@ -1,0 +1,21 @@
+#!/bin/bash
+# Jobs install third-party packages. They get the internet and DNS, but not
+# the LAN, the tailnet, other containers or the host, whichever machine this
+# runs on. Exits non-zero if the rules cannot be applied (the container lacks
+# NET_ADMIN, say), and the entrypoint then refuses to start the runner.
+set -euo pipefail
+
+ipt=iptables
+iptables -L OUTPUT >/dev/null 2>&1 || ipt=iptables-legacy
+$ipt -A OUTPUT -o lo -j ACCEPT
+$ipt -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+for ns in $(awk '/^nameserver/ { print $2 }' /etc/resolv.conf | grep -v :); do
+  $ipt -A OUTPUT -d "$ns" -p udp --dport 53 -j ACCEPT
+  $ipt -A OUTPUT -d "$ns" -p tcp --dport 53 -j ACCEPT
+done
+for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 169.254.0.0/16; do
+  $ipt -A OUTPUT -d "$net" -j REJECT
+done
+ip6t=${ipt/iptables/ip6tables}
+$ip6t -A OUTPUT -o lo -j ACCEPT 2>/dev/null || true
+$ip6t -P OUTPUT DROP 2>/dev/null || true

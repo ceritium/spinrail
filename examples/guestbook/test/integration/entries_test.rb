@@ -1,4 +1,4 @@
-class EntriesTest < Rieles::IntegrationTest
+class EntriesTest < Spinrail::IntegrationTest
   def test_index_starts_empty
     get "/"
     assert_response :success
@@ -45,7 +45,7 @@ class EntriesTest < Rieles::IntegrationTest
   end
 end
 
-class EntriesFormTest < Rieles::IntegrationTest
+class EntriesFormTest < Spinrail::IntegrationTest
   forgery_protection!
 
   def test_the_form_carries_a_valid_token

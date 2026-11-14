@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Self-hosted, ephemeral ; the image in
+    # .github/runner/runner carries Ruby, spinel and spinelkit in /opt/vendor.
+    runs-on: [self-hosted, linux, spinrail]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      # tep comes from a private fork, read with a deploy key.
+      - name: tep fork access
+        env:
+          TEP_DEPLOY_KEY: ${{ secrets.TEP_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$TEP_DEPLOY_KEY" > ~/.ssh/tep && chmod 600 ~/.ssh/tep
+          git config --global core.sshCommand "ssh -i ~/.ssh/tep -o StrictHostKeyChecking=accept-new"
+          git config --global url."git@github.com:ceritium/tep".insteadOf https://github.com/ceritium/tep
+      - run: make -f toolchain.mk setup VENDOR=/opt/vendor
+      - name: Compiler unit tests
+        run: ruby -S rake unit
+      - name: Request tests
+        run: ruby -S rake apps

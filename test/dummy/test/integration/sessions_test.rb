@@ -1,4 +1,4 @@
-class SessionsTest < Rieles::IntegrationTest
+class SessionsTest < Spinrail::IntegrationTest
   def test_session_and_flash_survive_one_redirect
     post "/session", params: { name: "Ana" }
     assert_redirected_to "/session"
@@ -27,7 +27,7 @@ class SessionsTest < Rieles::IntegrationTest
   end
 end
 
-class ForgeryProtectionTest < Rieles::IntegrationTest
+class ForgeryProtectionTest < Spinrail::IntegrationTest
   forgery_protection!
 
   def test_post_without_token_is_rejected

@@ -4,7 +4,7 @@ require "openssl"
 require "yaml"
 require "zlib"
 
-module Rieles
+module Spinrail
   # test/fixtures/<table>.yml, as in Rails: labels get stable ids
   # (CRC32, like ActiveRecord's), `author: ana` sets author_id, and missing
   # columns take their schema default. Loaded as SQL when the server boots.

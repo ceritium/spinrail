@@ -1,4 +1,4 @@
-class StatsTest < Rieles::IntegrationTest
+class StatsTest < Spinrail::IntegrationTest
   def test_counts_entries
     post "/entries", params: { "entry[name]" => "Ana", "entry[body]" => "one" }
     post "/entries", params: { "entry[name]" => "Bea", "entry[body]" => "two" }

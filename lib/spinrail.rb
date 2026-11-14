@@ -6,10 +6,10 @@ require "digest"
 require "yaml"
 require "zlib"
 
-module Rieles
+module Spinrail
   class CompileError < StandardError; end
 
-  RUNTIME = File.expand_path("../runtime/rieles.rb", __dir__)
+  RUNTIME = File.expand_path("../runtime/spinrail.rb", __dir__)
 
   def self.literal(node)
     case node
@@ -55,13 +55,13 @@ module Rieles
   end
 end
 
-require_relative "rieles/inflector"
-require_relative "rieles/lowering"
-require_relative "rieles/routes"
-require_relative "rieles/schema"
-require_relative "rieles/migrations"
-require_relative "rieles/models"
-require_relative "rieles/views"
-require_relative "rieles/build"
-require_relative "rieles/generators"
-require_relative "rieles/cli"
+require_relative "spinrail/inflector"
+require_relative "spinrail/lowering"
+require_relative "spinrail/routes"
+require_relative "spinrail/schema"
+require_relative "spinrail/migrations"
+require_relative "spinrail/models"
+require_relative "spinrail/views"
+require_relative "spinrail/build"
+require_relative "spinrail/generators"
+require_relative "spinrail/cli"

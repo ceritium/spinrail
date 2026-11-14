@@ -1,3 +1,3 @@
-class Views::Signups::Create < Rieles::View
+class Views::Signups::Create < Spinrail::View
   expose :name
 end

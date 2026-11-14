@@ -7,10 +7,10 @@ TEP_REPO      ?= https://github.com/ceritium/tep
 TEP_REF       ?= rieles-8
 SPINELKIT_REF := v0.3.1
 
-# VENDOR defaults to <repo>/vendor; the rieles CLI passes its own when
+# VENDOR defaults to <repo>/vendor; the spinrail CLI passes its own when
 # installed as a gem.
 TOOLCHAIN_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
-VENDOR         ?= $(abspath $(TOOLCHAIN_ROOT)/../vendor)
+VENDOR         ?= $(TOOLCHAIN_ROOT)/vendor
 SPINEL_DIR     := $(VENDOR)/spinel
 TEP_DIR        := $(VENDOR)/tep
 SPINELKIT_DIR  := $(VENDOR)/spinelkit

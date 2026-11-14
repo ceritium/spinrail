@@ -1,4 +1,4 @@
-module Rieles
+module Spinrail
   # Just enough HTML parsing for assert_select: tags, attributes, text, and
   # selectors made of tag, .class, #id and [attr=value] with descendant
   # combinators.

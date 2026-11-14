@@ -1,4 +1,4 @@
-class CacheTest < Rieles::IntegrationTest
+class CacheTest < Spinrail::IntegrationTest
   def test_fetch_and_fragments
     get "/models/seed"
     get "/models/cached"
@@ -17,5 +17,5 @@ class CacheTest < Rieles::IntegrationTest
 end
 
 class SharedCacheTest < CacheTest
-  server_env "RIELES_CACHE_STORE" => "sqlite"
+  server_env "SPINRAIL_CACHE_STORE" => "sqlite"
 end

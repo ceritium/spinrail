@@ -1,4 +1,4 @@
-class LoginsTest < Rieles::IntegrationTest
+class LoginsTest < Spinrail::IntegrationTest
   def test_signup_and_login
     post "/signup", params: { "user[email]" => "ana@example.com", "user[password]" => "pw", "user[password_confirmation]" => "pw" }
     assert_response :success

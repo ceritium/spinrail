@@ -1,6 +1,6 @@
-class EagerTest < Rieles::IntegrationTest
-  LOG = File.join(Dir.tmpdir, "rieles-eager-#{Process.pid}.log")
-  server_env "RIELES_LOG_FILE" => LOG, "RIELES_LOG_LEVEL" => "debug"
+class EagerTest < Spinrail::IntegrationTest
+  LOG = File.join(Dir.tmpdir, "spinrail-eager-#{Process.pid}.log")
+  server_env "SPINRAIL_LOG_FILE" => LOG, "SPINRAIL_LOG_LEVEL" => "debug"
 
   def setup
     File.delete(LOG) if File.exist?(LOG)

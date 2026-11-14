@@ -56,7 +56,7 @@ class Array
   def to_json = "[" + map { |item| item.to_json }.join(",") + "]"
 end
 
-module Rieles
+module Spinrail
   class RecordNotFound < StandardError; end
 
   def self.clock
@@ -70,9 +70,9 @@ module Rieles
   # A logging failure is reported on stderr and never fails the request.
   class Logger
     def initialize
-      default = Rieles.env == "production" ? "info" : "debug"
-      @level = LOG_LEVELS.fetch(ENV.fetch("RIELES_LOG_LEVEL", default), 1)
-      @file = ENV.fetch("RIELES_LOG_FILE", "")
+      default = Spinrail.env == "production" ? "info" : "debug"
+      @level = LOG_LEVELS.fetch(ENV.fetch("SPINRAIL_LOG_LEVEL", default), 1)
+      @file = ENV.fetch("SPINRAIL_LOG_FILE", "")
       @color = @file.empty? && $stdout.tty?
       reset
     end
@@ -95,7 +95,7 @@ module Rieles
 
     def start(verb, path, action, request_id, params, ip)
       reset
-      @started = Rieles.clock
+      @started = Spinrail.clock
       @verb = verb
       @path = path
       @action = action
@@ -128,7 +128,7 @@ module Rieles
 
     def render_start
       @depth += 1
-      Rieles.clock
+      Spinrail.clock
     end
 
     def render_end(template, t0)
@@ -168,7 +168,7 @@ module Rieles
     def on_finish(status, elapsed); end
 
     def emit(line)
-      Rieles.synchronize do
+      Spinrail.synchronize do
         if @file.empty?
           puts line
         else
@@ -178,16 +178,16 @@ module Rieles
     end
 
     def failed(e)
-      $stderr.puts "rieles: logging failed: " + e.class.name + ": " + e.message
+      $stderr.puts "spinrail: logging failed: " + e.class.name + ": " + e.message
     end
 
-    def since(t0) = (Rieles.clock - t0) * 1000.0
+    def since(t0) = (Spinrail.clock - t0) * 1000.0
     def ms(value) = format("%.1f", value)
     def time = Time.now.strftime("%Y-%m-%dT%H:%M:%S%z")
 
     def filtered?(name)
       key = name.downcase
-      Rieles.filter_parameters.any? { |f| key.include?(f) }
+      Spinrail.filter_parameters.any? { |f| key.include?(f) }
     end
 
     def escape(text)
@@ -289,12 +289,12 @@ module Rieles
   end
 
   def self.filter_parameters
-    ENV.fetch("RIELES_FILTER_PARAMETERS", "password,token,secret,_key,crypt,salt,certificate,otp,ssn").split(",")
+    ENV.fetch("SPINRAIL_FILTER_PARAMETERS", "password,token,secret,_key,crypt,salt,certificate,otp,ssn").split(",")
   end
 
   def self.build_logger
-    default = Rieles.env == "production" ? "logfmt" : "dev"
-    format = ENV.fetch("RIELES_LOG_FORMAT", default)
+    default = Spinrail.env == "production" ? "logfmt" : "dev"
+    format = ENV.fetch("SPINRAIL_LOG_FORMAT", default)
     return LogfmtLogger.new if format == "logfmt"
     return JsonLogger.new if format == "json"
     DevLogger.new
@@ -313,11 +313,11 @@ module Rieles
     Crypto.sp_crypto_random_b64url(16)
   end
 
-  def self.env = ENV.fetch("RIELES_ENV", "development")
+  def self.env = ENV.fetch("SPINRAIL_ENV", "development")
 
   # Off in tests unless a test asks for it, as in Rails.
   def self.forgery_protection?
-    ENV.fetch("RIELES_FORGERY_PROTECTION", Rieles.env == "test" ? "0" : "1") == "1"
+    ENV.fetch("SPINRAIL_FORGERY_PROTECTION", Spinrail.env == "test" ? "0" : "1") == "1"
   end
 
   def self.database_path
@@ -500,7 +500,7 @@ module Rieles
     # Waits on other workers' locks instead of failing with SQLITE_BUSY.
     def connection
       return @conn if @open
-      raise StatementInvalid, "can't open " + Rieles.database_path unless @conn.open(Rieles.database_path)
+      raise StatementInvalid, "can't open " + Spinrail.database_path unless @conn.open(Spinrail.database_path)
       @conn.exec("PRAGMA busy_timeout = 5000")
       @conn.exec("PRAGMA journal_mode = WAL")
       @open = true
@@ -523,7 +523,7 @@ module Rieles
 
   # Cache only SQL fixed at build time; tep keeps 64 cached statements.
   def self.prepare(sql, cached)
-    db = Rieles.db
+    db = Spinrail.db
     ok = cached ? db.prepare_cached(sql) : db.prepare(sql)
     raise StatementInvalid, "can't prepare: " + sql unless ok
     db
@@ -532,22 +532,22 @@ module Rieles
   def self.write(db, name, sql, t0)
     rc = db.step
     db.finalize
-    Rieles.log.sql(name, sql, t0)
+    Spinrail.log.sql(name, sql, t0)
     raise StatementInvalid, "failed: " + sql if rc < 0
     true
   end
 
   # A savepoint, so it also nests inside a model test's transaction.
   def self.transaction
-    db = Rieles.db
-    db.exec("SAVEPOINT rieles_tx")
+    db = Spinrail.db
+    db.exec("SAVEPOINT spinrail_tx")
     begin
       result = yield
-      db.exec("RELEASE rieles_tx")
+      db.exec("RELEASE spinrail_tx")
       result
     rescue StandardError => e
-      db.exec("ROLLBACK TO rieles_tx")
-      db.exec("RELEASE rieles_tx")
+      db.exec("ROLLBACK TO spinrail_tx")
+      db.exec("RELEASE spinrail_tx")
       raise e
     end
   end
@@ -557,12 +557,12 @@ module Rieles
   class AssertionFailed < Exception; end
 
   # Base of test/models/*_test.rb; assertions are lowered at build time
-  # to rieles_assert calls.
+  # to spinrail_assert calls.
   class ModelTest
     def setup; end
     def teardown; end
 
-    def rieles_assert(ok, where, message)
+    def spinrail_assert(ok, where, message)
       raise AssertionFailed, where + ": " + message unless ok
     end
 
@@ -574,13 +574,13 @@ module Rieles
     def initialize
       @runs = 0
       @failures = []
-      @filter = ENV.fetch("RIELES_TEST_NAME", "")
+      @filter = ENV.fetch("SPINRAIL_TEST_NAME", "")
     end
 
     def run_case(name)
       return unless @filter.empty? || name.include?(@filter)
       @runs += 1
-      db = Rieles.db
+      db = Spinrail.db
       db.exec("BEGIN")
       begin
         yield
@@ -606,7 +606,7 @@ module Rieles
   # Columns added to db/schema.rb after the table was created. Every
   # column has a default, so ADD COLUMN works on existing rows.
   def self.add_missing_columns(table, names, statements)
-    db = Rieles.db
+    db = Spinrail.db
     existing = []
     db.prepare("PRAGMA table_info(" + table + ")")
     while db.step == 1
@@ -617,7 +617,7 @@ module Rieles
     while i < names.length
       unless existing.include?(names[i])
         db.exec(statements[i])
-        puts "rieles: added column " + table + "." + names[i]
+        puts "spinrail: added column " + table + "." + names[i]
       end
       i += 1
     end
@@ -625,7 +625,7 @@ module Rieles
 
   # Statements separated by ";\n" (test fixtures), run once at boot.
   def self.run_sql_file(path)
-    db = Rieles.db
+    db = Spinrail.db
     File.read(path).split(";\n").each do |statement|
       db.exec(statement) unless statement.strip.empty?
     end
@@ -636,18 +636,18 @@ module Rieles
     attr_accessor :current
 
     def initialize
-      @current = Rieles.default_locale
+      @current = Spinrail.default_locale
     end
   end
 
-  def self.default_locale = ENV.fetch("RIELES_DEFAULT_LOCALE", "en")
+  def self.default_locale = ENV.fetch("SPINRAIL_DEFAULT_LOCALE", "en")
 
   LOCALE = LocaleState.new
 
   def self.locale = LOCALE.current
 
   def self.set_locale(locale)
-    LOCALE.current = locale.empty? ? Rieles.default_locale : locale
+    LOCALE.current = locale.empty? ? Spinrail.default_locale : locale
   end
 
   # First language in Accept-Language the app has translations for.
@@ -655,20 +655,20 @@ module Rieles
     return "" if header.nil?
     header.split(",").each do |part|
       code = part.split(";").first.strip.split("-").first.to_s.downcase
-      return code if !code.empty? && RielesTranslations::LOCALES.include?(code)
+      return code if !code.empty? && SpinrailTranslations::LOCALES.include?(code)
     end
     ""
   end
 
-  def self.translate(key) = RielesTranslations::ALL[Rieles.locale + "." + key]
+  def self.translate(key) = SpinrailTranslations::ALL[Spinrail.locale + "." + key]
 
   def self.t(key)
-    found = Rieles.translate(key)
-    found.nil? ? "translation missing: " + Rieles.locale + "." + key : found
+    found = Spinrail.translate(key)
+    found.nil? ? "translation missing: " + Spinrail.locale + "." + key : found
   end
 
   def self.t_with(key, names, values)
-    text = Rieles.t(key)
+    text = Spinrail.t(key)
     i = 0
     while i < names.length
       text = text.gsub("%{" + names[i] + "}", values[i])
@@ -679,37 +679,37 @@ module Rieles
 
   # count: picks key.zero/one/other when the locale defines them.
   def self.t_count(key, count, names, values)
-    branch = count == 0 && !Rieles.translate(key + ".zero").nil? ? ".zero" : (count == 1 ? ".one" : ".other")
-    chosen = Rieles.translate(key + branch).nil? ? key : key + branch
-    Rieles.t_with(chosen, names, values).gsub("%{count}", count.to_s)
+    branch = count == 0 && !Spinrail.translate(key + ".zero").nil? ? ".zero" : (count == 1 ? ".one" : ".other")
+    chosen = Spinrail.translate(key + branch).nil? ? key : key + branch
+    Spinrail.t_with(chosen, names, values).gsub("%{count}", count.to_s)
   end
 
   # l("2026-11-14 09:30:00", format: :short) with time.formats.short as a
-  # strftime pattern; timestamps are the strings Rieles.now writes.
+  # strftime pattern; timestamps are the strings Spinrail.now writes.
   def self.localize(timestamp, format)
     parts = timestamp.split(/[- :T]/).map { |x| x.to_i }
     return timestamp if parts.length < 3
     while parts.length < 6
       parts << 0
     end
-    pattern = Rieles.translate("time.formats." + format)
+    pattern = Spinrail.translate("time.formats." + format)
     pattern = format == "short" ? "%d %b %H:%M" : (format == "long" ? "%B %d, %Y %H:%M" : "%Y-%m-%d %H:%M:%S") if pattern.nil?
     Time.new(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]).strftime(pattern)
   end
 
   def self.message(key, default, count)
-    found = Rieles.translate("errors.messages." + key)
+    found = Spinrail.translate("errors.messages." + key)
     (found.nil? ? default : found).gsub("%{count}", count)
   end
 
   def self.attribute_name(model, attribute)
-    found = Rieles.translate("activerecord.attributes." + model + "." + attribute)
-    found.nil? ? Rieles.humanize(attribute) : found
+    found = Spinrail.translate("activerecord.attributes." + model + "." + attribute)
+    found.nil? ? Spinrail.humanize(attribute) : found
   end
 
   # Applies one db/migrate version unless schema_migrations has it.
   def self.migrate(version, name, statements)
-    db = Rieles.db
+    db = Spinrail.db
     db.prepare("SELECT 1 FROM schema_migrations WHERE version = ?")
     db.bind_str(1, version)
     done = db.step == 1
@@ -719,7 +719,7 @@ module Rieles
     statements.each do |statement|
       next if db.exec(statement)
       db.exec("ROLLBACK")
-      $stderr.puts "rieles: migration " + version + " " + name + " failed at: " + statement
+      $stderr.puts "spinrail: migration " + version + " " + name + " failed at: " + statement
       exit(1)
     end
     db.prepare("INSERT INTO schema_migrations (version) VALUES (?)")
@@ -727,11 +727,11 @@ module Rieles
     db.step
     db.finalize
     db.exec("COMMIT")
-    puts "rieles: migrated " + version + " " + name
+    puts "spinrail: migrated " + version + " " + name
   end
 
   def self.latest_migration
-    db = Rieles.db
+    db = Spinrail.db
     db.prepare("SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1")
     latest = db.step == 1 ? db.col_str(0) : ""
     db.finalize
@@ -739,12 +739,12 @@ module Rieles
   end
 
   def self.unapply(version, name, statements)
-    db = Rieles.db
+    db = Spinrail.db
     db.exec("BEGIN")
     statements.each do |statement|
       next if db.exec(statement)
       db.exec("ROLLBACK")
-      $stderr.puts "rieles: rolling back " + version + " " + name + " failed at: " + statement
+      $stderr.puts "spinrail: rolling back " + version + " " + name + " failed at: " + statement
       exit(1)
     end
     db.prepare("DELETE FROM schema_migrations WHERE version = ?")
@@ -752,16 +752,16 @@ module Rieles
     db.step
     db.finalize
     db.exec("COMMIT")
-    puts "rieles: rolled back " + version + " " + name
+    puts "spinrail: rolled back " + version + " " + name
   end
 
   def self.irreversible(version, name)
-    $stderr.puts "rieles: " + version + " " + name + " can't be rolled back; define up and down"
+    $stderr.puts "spinrail: " + version + " " + name + " can't be rolled back; define up and down"
     exit(1)
   end
 
   # Background jobs: app/jobs classes with perform(arg), arg a String.
-  # perform_later enqueues into rieles_jobs; `rieles jobs` drains it.
+  # perform_later enqueues into spinrail_jobs; `spinrail jobs` drains it.
   class Job
     def perform(arg)
       "" + arg
@@ -771,19 +771,19 @@ module Rieles
   JOB_ATTEMPTS = 3
 
   def self.jobs_schema
-    Rieles.db.exec("CREATE TABLE IF NOT EXISTS rieles_jobs (id INTEGER PRIMARY KEY, job TEXT NOT NULL, " \
+    Spinrail.db.exec("CREATE TABLE IF NOT EXISTS spinrail_jobs (id INTEGER PRIMARY KEY, job TEXT NOT NULL, " \
                    "arg TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, " \
                    "run_at INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)")
   end
 
-  # Tests run jobs right away unless RIELES_JOBS_INLINE=0.
+  # Tests run jobs right away unless SPINRAIL_JOBS_INLINE=0.
   def self.enqueue(job, arg)
-    if ENV.fetch("RIELES_JOBS_INLINE", Rieles.env == "test" ? "1" : "0") == "1"
-      RielesJobs.dispatch(job, arg)
+    if ENV.fetch("SPINRAIL_JOBS_INLINE", Spinrail.env == "test" ? "1" : "0") == "1"
+      SpinrailJobs.dispatch(job, arg)
       return 0
     end
-    Rieles.jobs_schema
-    db = Rieles.prepare("INSERT INTO rieles_jobs (job, arg, status, run_at, created_at) VALUES (?, ?, 'queued', ?, ?)", true)
+    Spinrail.jobs_schema
+    db = Spinrail.prepare("INSERT INTO spinrail_jobs (job, arg, status, run_at, created_at) VALUES (?, ?, 'queued', ?, ?)", true)
     db.bind_str(1, job)
     db.bind_str(2, arg)
     db.bind_int(3, Time.now.to_i)
@@ -796,10 +796,10 @@ module Rieles
   # Claims the oldest due job inside BEGIN IMMEDIATE, so two workers can't
   # take the same row. Returns "id|attempts|job|arg" or "".
   def self.claim_job
-    db = Rieles.db
+    db = Spinrail.db
     # Busy past busy_timeout: claim nothing rather than race outside a transaction.
     return "" unless db.exec("BEGIN IMMEDIATE")
-    db.prepare("SELECT id, attempts, job, arg FROM rieles_jobs WHERE status = 'queued' AND run_at <= ? ORDER BY id LIMIT 1")
+    db.prepare("SELECT id, attempts, job, arg FROM spinrail_jobs WHERE status = 'queued' AND run_at <= ? ORDER BY id LIMIT 1")
     db.bind_int(1, Time.now.to_i)
     claimed = ""
     id = 0
@@ -809,7 +809,7 @@ module Rieles
     end
     db.finalize
     if id > 0
-      db.prepare("UPDATE rieles_jobs SET status = 'running' WHERE id = ?")
+      db.prepare("UPDATE spinrail_jobs SET status = 'running' WHERE id = ?")
       db.bind_int(1, id)
       db.step
       db.finalize
@@ -819,8 +819,8 @@ module Rieles
   end
 
   def self.finish_job(id, status, attempts, run_at, error)
-    db = Rieles.db
-    db.prepare("UPDATE rieles_jobs SET status = ?, attempts = ?, run_at = ?, error = ? WHERE id = ?")
+    db = Spinrail.db
+    db.prepare("UPDATE spinrail_jobs SET status = ?, attempts = ?, run_at = ?, error = ? WHERE id = ?")
     db.bind_str(1, status)
     db.bind_int(2, attempts)
     db.bind_int(3, run_at)
@@ -830,38 +830,38 @@ module Rieles
     db.finalize
   end
 
-  # The `rieles jobs` loop: failures retry after 2, 4... seconds, then stay failed.
+  # The `spinrail jobs` loop: failures retry after 2, 4... seconds, then stay failed.
   def self.work_jobs
-    Rieles.jobs_schema
-    puts "rieles: working jobs (Ctrl+C to stop)"
+    Spinrail.jobs_schema
+    puts "spinrail: working jobs (Ctrl+C to stop)"
     $stdout.flush
-    loop { sleep 1 unless Rieles.work_job }
+    loop { sleep 1 unless Spinrail.work_job }
   end
 
   # Claims and performs one job; false when none was due.
   def self.work_job
-    claimed = Rieles.claim_job
+    claimed = Spinrail.claim_job
     return false if claimed.empty?
     parts = claimed.split("|", 4)
     id = parts[0].to_i
     attempts = parts[1].to_i + 1
-    t0 = Rieles.clock
+    t0 = Spinrail.clock
     begin
-      RielesJobs.dispatch(parts[2], parts[3])
-      Rieles.finish_job(id, "done", attempts, Time.now.to_i, "")
-      Rieles.say("Performed " + parts[2] + " #" + id.to_s + " in " + format("%.1f", (Rieles.clock - t0) * 1000.0) + "ms")
+      SpinrailJobs.dispatch(parts[2], parts[3])
+      Spinrail.finish_job(id, "done", attempts, Time.now.to_i, "")
+      Spinrail.say("Performed " + parts[2] + " #" + id.to_s + " in " + format("%.1f", (Spinrail.clock - t0) * 1000.0) + "ms")
     rescue StandardError => e
       retry_job = attempts < JOB_ATTEMPTS
       wait = 2
       (attempts - 1).times { wait *= 2 }
-      Rieles.finish_job(id, retry_job ? "queued" : "failed", attempts, Time.now.to_i + wait, e.class.name + ": " + e.message)
-      Rieles.say("Failed " + parts[2] + " #" + id.to_s + ": " + e.message + (retry_job ? " (retrying in " + wait.to_s + "s)" : ""))
+      Spinrail.finish_job(id, retry_job ? "queued" : "failed", attempts, Time.now.to_i + wait, e.class.name + ": " + e.message)
+      Spinrail.say("Failed " + parts[2] + " #" + id.to_s + ": " + e.message + (retry_job ? " (retrying in " + wait.to_s + "s)" : ""))
     end
     true
   end
 
   def self.say(line)
-    Rieles.synchronize do
+    Spinrail.synchronize do
       puts line
       $stdout.flush
     end
@@ -873,26 +873,26 @@ module Rieles
   end
 
   # Rails.cache: in memory per process (like MemoryStore), or a SQLite
-  # table every worker shares with RIELES_CACHE_STORE=sqlite. expires_in 0
+  # table every worker shares with SPINRAIL_CACHE_STORE=sqlite. expires_in 0
   # means no expiry.
   class Cache
     def initialize
       @values = Tep.str_hash
       @expires = { "" => 0 }
-      @shared = ENV.fetch("RIELES_CACHE_STORE", "memory") == "sqlite"
+      @shared = ENV.fetch("SPINRAIL_CACHE_STORE", "memory") == "sqlite"
       @ready = false
     end
 
     def table
       return if @ready
-      Rieles.db.exec("CREATE TABLE IF NOT EXISTS rieles_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires_at INTEGER NOT NULL)")
+      Spinrail.db.exec("CREATE TABLE IF NOT EXISTS spinrail_cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires_at INTEGER NOT NULL)")
       @ready = true
     end
 
     def read(key)
       return read_shared(key) if @shared
       value = nil
-      Rieles.synchronize do
+      Spinrail.synchronize do
         expires = @expires.fetch(key, 0)
         if expires > 0 && Time.now.to_i >= expires
           @values.delete(key)
@@ -906,8 +906,8 @@ module Rieles
 
     def read_shared(key)
       table
-      db = Rieles.db
-      db.prepare("SELECT value FROM rieles_cache WHERE key = ? AND (expires_at = 0 OR expires_at > ?)")
+      db = Spinrail.db
+      db.prepare("SELECT value FROM spinrail_cache WHERE key = ? AND (expires_at = 0 OR expires_at > ?)")
       db.bind_str(1, key)
       db.bind_int(2, Time.now.to_i)
       found = db.step == 1
@@ -919,8 +919,8 @@ module Rieles
     def write(key, value, expires_in)
       if @shared
         table
-        db = Rieles.db
-        db.prepare("INSERT OR REPLACE INTO rieles_cache (key, value, expires_at) VALUES (?, ?, ?)")
+        db = Spinrail.db
+        db.prepare("INSERT OR REPLACE INTO spinrail_cache (key, value, expires_at) VALUES (?, ?, ?)")
         db.bind_str(1, key)
         db.bind_str(2, value)
         db.bind_int(3, expires_in > 0 ? Time.now.to_i + expires_in : 0)
@@ -928,7 +928,7 @@ module Rieles
         db.finalize
         return value
       end
-      Rieles.synchronize do
+      Spinrail.synchronize do
         @values[key] = value
         @expires[key] = expires_in > 0 ? Time.now.to_i + expires_in : 0
       end
@@ -938,13 +938,13 @@ module Rieles
     def delete(key)
       if @shared
         table
-        db = Rieles.db
-        db.prepare("DELETE FROM rieles_cache WHERE key = ?")
+        db = Spinrail.db
+        db.prepare("DELETE FROM spinrail_cache WHERE key = ?")
         db.bind_str(1, key)
         db.step
         db.finalize
       end
-      Rieles.synchronize do
+      Spinrail.synchronize do
         @values.delete(key)
         @expires.delete(key)
       end
@@ -953,9 +953,9 @@ module Rieles
     def clear
       if @shared
         table
-        Rieles.db.exec("DELETE FROM rieles_cache")
+        Spinrail.db.exec("DELETE FROM spinrail_cache")
       end
-      Rieles.synchronize do
+      Spinrail.synchronize do
         @values = Tep.str_hash
         @expires = { "" => 0 }
       end
@@ -999,7 +999,7 @@ module Rieles
       name = attribute.to_s
       full = full_message
       if full.empty?
-        full = name == "base" ? message : Rieles.attribute_name(@model, name) + " " + message
+        full = name == "base" ? message : Spinrail.attribute_name(@model, name) + " " + message
       end
       @attributes << name
       @messages << message
@@ -1151,7 +1151,7 @@ module Rieles
     end
 
     # The best Accept-Language match among config/locales, or "".
-    def locale_from_accept_language = Rieles.locale_from_header(@req.req_headers["accept-language"])
+    def locale_from_accept_language = Spinrail.locale_from_header(@req.req_headers["accept-language"])
 
     def wants_turbo_stream?
       accept = @req.req_headers["accept"]
@@ -1228,7 +1228,7 @@ module Rieles
     end
 
     def redirect_to(location, status)
-      Rieles.log.redirect(location)
+      Spinrail.log.redirect(location)
       @res.set_status(status)
       @res.headers["Location"] = location
       @response_body = ""
@@ -1273,12 +1273,12 @@ module Rieles
     end
 
     def deliver_now
-      Rieles.deliver(self)
+      Spinrail.deliver(self)
       self
     end
 
     def deliver_later
-      Rieles.enqueue("Rieles::Mail", to_json)
+      Spinrail.enqueue("Spinrail::Mail", to_json)
       self
     end
 
@@ -1290,7 +1290,7 @@ module Rieles
     end
 
     def self.from_json(text)
-      h = Rieles::JsonParams.new(text, Tep.str_hash).parse
+      h = Spinrail::JsonParams.new(text, Tep.str_hash).parse
       Mail.new(h.fetch("to", ""), h.fetch("from", ""), h.fetch("subject", ""), h.fetch("text", ""), h.fetch("html", ""))
     end
 
@@ -1306,28 +1306,28 @@ module Rieles
   class Mailer < ViewContext
     def default_from = "from@example.com"
 
-    def rieles_mail(to, from, subject, text, html)
+    def spinrail_mail(to, from, subject, text, html)
       Mail.new(to, from.empty? ? default_from : from, subject, text, html)
     end
   end
 
   class DeliveryFailed < StandardError; end
 
-  # RIELES_MAIL_DELIVERY: log (default) prints it; file writes it into
-  # RIELES_MAIL_DIR (default tmp/mails), which tests read back; http POSTs
-  # {from, to, subject, text, html} as JSON to RIELES_MAIL_URL with
-  # RIELES_MAIL_TOKEN as a bearer token (the shape Resend's API takes).
+  # SPINRAIL_MAIL_DELIVERY: log (default) prints it; file writes it into
+  # SPINRAIL_MAIL_DIR (default tmp/mails), which tests read back; http POSTs
+  # {from, to, subject, text, html} as JSON to SPINRAIL_MAIL_URL with
+  # SPINRAIL_MAIL_TOKEN as a bearer token (the shape Resend's API takes).
   def self.deliver(mail)
-    method = ENV.fetch("RIELES_MAIL_DELIVERY", "log")
+    method = ENV.fetch("SPINRAIL_MAIL_DELIVERY", "log")
     if method == "http"
       headers = Tep.str_hash
       headers["Content-Type"] = "application/json"
-      token = ENV.fetch("RIELES_MAIL_TOKEN", "")
+      token = ENV.fetch("SPINRAIL_MAIL_TOKEN", "")
       headers["Authorization"] = "Bearer " + token unless token.empty?
-      res = Tep::Http.send_req("POST", ENV.fetch("RIELES_MAIL_URL", ""), mail.to_json, headers)
+      res = Tep::Http.send_req("POST", ENV.fetch("SPINRAIL_MAIL_URL", ""), mail.to_json, headers)
       raise DeliveryFailed, "mail API answered " + res.status.to_s + ": " + res.body if res.status < 200 || res.status >= 300
     elsif method == "file"
-      path = ENV.fetch("RIELES_MAIL_DIR", "tmp/mails") + "/" + Time.now.strftime("%Y%m%d%H%M%S%6N") + ".eml"
+      path = ENV.fetch("SPINRAIL_MAIL_DIR", "tmp/mails") + "/" + Time.now.strftime("%Y%m%d%H%M%S%6N") + ".eml"
       File.open(path, "w") { |f| f.write(mail.to_s) }
     else
       puts "", "Delivered mail to " + mail.to, mail.to_s, ""
@@ -1432,7 +1432,7 @@ module Rieles
     def asset_path(source, extension)
       return source if source.start_with?("/") || source.include?("://")
       name = source.include?(".") ? source : source + extension
-      RielesAssets::DIGESTS.fetch(name, "/" + name)
+      SpinrailAssets::DIGESTS.fetch(name, "/" + name)
     end
 
     def stylesheet_link_tag(source, attrs)
@@ -1469,8 +1469,8 @@ module Rieles
 
     # number.format.delimiter / separator from the locale, else "," and ".".
     def number_with_delimiter(number)
-      delimiter = Rieles.translate("number.format.delimiter")
-      separator = Rieles.translate("number.format.separator")
+      delimiter = Spinrail.translate("number.format.delimiter")
+      separator = Spinrail.translate("number.format.separator")
       plain = number_with_commas(number)
       return plain if delimiter.nil? && separator.nil?
       plain.gsub(",", "\u0000").gsub(".", separator.nil? ? "." : separator).gsub("\u0000", delimiter.nil? ? "," : delimiter)
@@ -1507,11 +1507,11 @@ module Rieles
 
     def number_to_currency(number, unit: "$", precision: 2)
       amount = format("%." + precision.to_s + "f", number.to_f.abs)
-      unit = Rieles.translate("number.currency.format.unit") || unit if unit == "$"
+      unit = Spinrail.translate("number.currency.format.unit") || unit if unit == "$"
       (number.to_f < 0 ? "-" : "") + unit + number_with_delimiter(amount)
     end
 
-    # Timestamps are "YYYY-MM-DD HH:MM:SS[.ffffff]" local time (see Rieles.now).
+    # Timestamps are "YYYY-MM-DD HH:MM:SS[.ffffff]" local time (see Spinrail.now).
     def time_ago_in_words(timestamp)
       parts = timestamp.split(/[- :T]/).map { |x| x.to_i }
       return "" if parts.length < 6

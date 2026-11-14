@@ -1,0 +1,4 @@
+#!/usr/bin/env ruby
+require "spinrail"
+
+Spinrail::CLI.new(ARGV).run

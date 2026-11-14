@@ -1,4 +1,4 @@
-module Rieles
+module Spinrail
   # Regular English only; enough for conventional table and resource names.
   module Inflector
     module_function

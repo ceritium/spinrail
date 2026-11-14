@@ -1,4 +1,4 @@
-class UserTest < Rieles::ModelTest
+class UserTest < Spinrail::ModelTest
   def test_hashes_and_authenticates
     user = User.create(email: "ana@example.com", password: "secret123")
     assert user.persisted?

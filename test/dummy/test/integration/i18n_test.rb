@@ -1,4 +1,4 @@
-class I18nTest < Rieles::IntegrationTest
+class I18nTest < Spinrail::IntegrationTest
   def test_english_defaults
     get "/i18n"
     assert_select "h1", "Translations"

@@ -43,7 +43,7 @@ class LoweringTest < CompilerTest
   end
 
   def test_unknown_status
-    error = assert_raises(Rieles::CompileError) { lower("head :teapot_ish") }
+    error = assert_raises(Spinrail::CompileError) { lower("head :teapot_ish") }
     assert_match(/unknown status :teapot_ish/, error.message)
   end
 
@@ -57,6 +57,6 @@ class LoweringTest < CompilerTest
   end
 
   def test_views_cannot_assign_ivars
-    assert_raises(Rieles::CompileError) { lower("@x = 1", view: true, controller: false) }
+    assert_raises(Spinrail::CompileError) { lower("@x = 1", view: true, controller: false) }
   end
 end

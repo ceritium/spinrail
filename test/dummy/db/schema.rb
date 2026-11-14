@@ -1,4 +1,4 @@
-Rieles::Schema.define do
+Spinrail::Schema.define do
   create_table :authors do |t|
     t.string :name
     t.string :email

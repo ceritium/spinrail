@@ -1,4 +1,4 @@
-class InlineJobsTest < Rieles::IntegrationTest
+class InlineJobsTest < Spinrail::IntegrationTest
   def test_jobs_run_inline_in_tests
     get "/models/seed"
     get "/models/shout"
@@ -7,8 +7,8 @@ class InlineJobsTest < Rieles::IntegrationTest
   end
 end
 
-class QueuedJobsTest < Rieles::IntegrationTest
-  server_env "RIELES_JOBS_INLINE" => "0"
+class QueuedJobsTest < Spinrail::IntegrationTest
+  server_env "SPINRAIL_JOBS_INLINE" => "0"
 
   def test_a_worker_drains_the_queue
     get "/models/seed"
@@ -16,9 +16,9 @@ class QueuedJobsTest < Rieles::IntegrationTest
     get "/models/authors"
     assert_equal "Ana,Bea", response.body
 
-    log = File.join(Dir.tmpdir, "rieles-jobs-#{Process.pid}.log")
-    worker = Process.spawn({ "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path, "RIELES_JOBS" => "1", "RIELES_ENV" => "test",
-                             "RIELES_JOBS_INLINE" => "0" }, ENV.fetch("RIELES_BINARY"), out: log, err: log)
+    log = File.join(Dir.tmpdir, "spinrail-jobs-#{Process.pid}.log")
+    worker = Process.spawn({ "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path, "SPINRAIL_JOBS" => "1", "SPINRAIL_ENV" => "test",
+                             "SPINRAIL_JOBS_INLINE" => "0" }, ENV.fetch("SPINRAIL_BINARY"), out: log, err: log)
     50.times do
       get "/models/authors"
       break if response.body == "Ana!,Bea"
@@ -34,17 +34,17 @@ class QueuedJobsTest < Rieles::IntegrationTest
   end
 end
 
-class ThreadedJobsTest < Rieles::IntegrationTest
-  server_env "RIELES_JOBS_INLINE" => "0"
+class ThreadedJobsTest < Spinrail::IntegrationTest
+  server_env "SPINRAIL_JOBS_INLINE" => "0"
 
   # Eight half-second jobs on four threads: serially they'd take 4s.
   def test_jobs_run_concurrently_on_threads
-    skip "threaded jobs need Tep::SQLite" if ENV.fetch("RIELES_DATABASE", "sqlite") == "postgres"
+    skip "threaded jobs need Tep::SQLite" if ENV.fetch("SPINRAIL_DATABASE", "sqlite") == "postgres"
     get "/models/seed"
     get "/models/shout?slow=8"
-    log = File.join(Dir.tmpdir, "rieles-threads-#{Process.pid}.log")
-    worker = Process.spawn({ "DATABASE_PATH" => database_path, "RIELES_ENV" => "test", "RIELES_JOBS_INLINE" => "0" },
-                           File.expand_path("bin/rieles"), "jobs", "-c", "4", out: log, err: log)
+    log = File.join(Dir.tmpdir, "spinrail-threads-#{Process.pid}.log")
+    worker = Process.spawn({ "DATABASE_PATH" => database_path, "SPINRAIL_ENV" => "test", "SPINRAIL_JOBS_INLINE" => "0" },
+                           File.expand_path("bin/spinrail"), "jobs", "-c", "4", out: log, err: log)
     1200.times do
       break if File.read(log).include?("working jobs on 4 threads")
       sleep 0.1

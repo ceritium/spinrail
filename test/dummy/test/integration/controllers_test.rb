@@ -1,6 +1,6 @@
 require "json"
 
-class ControllersTest < Rieles::IntegrationTest
+class ControllersTest < Spinrail::IntegrationTest
   def setup
     super
     get "/models/seed"

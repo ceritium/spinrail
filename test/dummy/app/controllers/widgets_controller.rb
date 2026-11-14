@@ -3,7 +3,7 @@ class WidgetsController < ApplicationController
   before_action :require_token, except: [:index, :show, :open, :boom]
   skip_before_action :set_locale, only: [:open]
   after_action :tag
-  rescue_from Rieles::RecordNotFound, with: :missing
+  rescue_from Spinrail::RecordNotFound, with: :missing
 
   def index
     render json: { locale: @locale, count: Post.count, posts: Post.order(id: :asc).limit(1), tags: ["a", "b"], ok: true }

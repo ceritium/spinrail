@@ -5,11 +5,11 @@ require "socket"
 require "stringio"
 require "tmpdir"
 require "uri"
-require_relative "../rieles"
+require_relative "../spinrail"
 require_relative "fixtures"
 require_relative "test_html"
 
-module Rieles
+module Spinrail
   # Request tests run in CRuby against the compiled binary over HTTP. Each
   # test gets its own server and an empty database, so tests don't leak.
   class IntegrationTest < Minitest::Test
@@ -28,36 +28,36 @@ module Rieles
       @fixture_tables || (superclass.respond_to?(:fixture_tables) ? superclass.fixture_tables : [])
     end
 
-    # Extra environment for the server, e.g. server_env "RIELES_LOG_LEVEL" => "info".
+    # Extra environment for the server, e.g. server_env "SPINRAIL_LOG_LEVEL" => "info".
     def self.server_env(vars = nil)
       @server_env = (@server_env || {}).merge(vars) if vars
       (superclass.respond_to?(:server_env) ? superclass.server_env : {}).merge(@server_env || {})
     end
 
     def setup
-      @db_dir = Dir.mktmpdir("rieles-test")
+      @db_dir = Dir.mktmpdir("spinrail-test")
       @port = free_port
-      log = File.open(File.join(ENV.fetch("RIELES_APP"), "log/test.log"), "a")
+      log = File.open(File.join(ENV.fetch("SPINRAIL_APP"), "log/test.log"), "a")
       log.puts "", "== #{self.class.name}##{name}"
       log.flush
-      env = { "DATABASE_PATH" => database_path, "RIELES_LOG_FORMAT" => "dev",
-              "RIELES_ENV" => "test", "RIELES_FORGERY_PROTECTION" => self.class.forgery_protection? ? "1" : "0" }
+      env = { "DATABASE_PATH" => database_path, "SPINRAIL_LOG_FORMAT" => "dev",
+              "SPINRAIL_ENV" => "test", "SPINRAIL_FORGERY_PROTECTION" => self.class.forgery_protection? ? "1" : "0" }
       FileUtils.mkdir_p(mail_dir)
-      env["RIELES_MAIL_DELIVERY"] = "file"
-      env["RIELES_MAIL_DIR"] = mail_dir
+      env["SPINRAIL_MAIL_DELIVERY"] = "file"
+      env["SPINRAIL_MAIL_DIR"] = mail_dir
       if postgres?
-        @pg_database = "rieles_test_#{Process.pid}_#{object_id}"
+        @pg_database = "spinrail_test_#{Process.pid}_#{object_id}"
         system("createdb", @pg_database, exception: true)
         env["DATABASE_URL"] = "postgres:///#{@pg_database}"
       end
       env.merge!(self.class.server_env)
-      fixtures_sql = Fixtures.load(ENV.fetch("RIELES_APP"), self.class.fixture_tables)
+      fixtures_sql = Fixtures.load(ENV.fetch("SPINRAIL_APP"), self.class.fixture_tables)
       unless fixtures_sql.empty?
         File.write(File.join(@db_dir, "fixtures.sql"), fixtures_sql)
-        env["RIELES_BOOT_SQL"] = File.join(@db_dir, "fixtures.sql")
+        env["SPINRAIL_BOOT_SQL"] = File.join(@db_dir, "fixtures.sql")
       end
-      @pid = Process.spawn(env, ENV.fetch("RIELES_BINARY"), "-p", @port.to_s,
-                           chdir: ENV.fetch("RIELES_APP"), out: log, err: log)
+      @pid = Process.spawn(env, ENV.fetch("SPINRAIL_BINARY"), "-p", @port.to_s,
+                           chdir: ENV.fetch("SPINRAIL_APP"), out: log, err: log)
       log.close
       wait_for_server
       @response = nil
@@ -86,8 +86,8 @@ module Rieles
       FileUtils.rm_rf(@db_dir)
     end
 
-    # RIELES_DATABASE=postgres: each test gets a fresh database on the local server.
-    def postgres? = ENV.fetch("RIELES_DATABASE", "sqlite") == "postgres"
+    # SPINRAIL_DATABASE=postgres: each test gets a fresh database on the local server.
+    def postgres? = ENV.fetch("SPINRAIL_DATABASE", "sqlite") == "postgres"
 
     Upload = Struct.new(:path, :content_type)
 
@@ -140,13 +140,13 @@ module Rieles
 
     # posts(:first) -> the fixture row, with its id.
     def method_missing(name, *args)
-      table = Fixtures.rows(ENV.fetch("RIELES_APP"))[name.to_s]
+      table = Fixtures.rows(ENV.fetch("SPINRAIL_APP"))[name.to_s]
       return super unless table && args.size == 1
       table.fetch(args.first.to_s) { raise ArgumentError, "no #{name} fixture #{args.first.inspect}" }
     end
 
     def respond_to_missing?(name, include_private = false)
-      Fixtures.rows(ENV.fetch("RIELES_APP")).key?(name.to_s) || super
+      Fixtures.rows(ENV.fetch("SPINRAIL_APP")).key?(name.to_s) || super
     end
 
     def assert_body_includes(text)

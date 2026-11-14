@@ -1,4 +1,4 @@
-module Rieles
+module Spinrail
   # Turns `class Entry < ApplicationRecord` plus its table in db/schema.rb
   # into a plain class: typed accessors, a query relation, validations,
   # callbacks, associations and persistence, all spelled out because spinel
@@ -28,7 +28,7 @@ module Rieles
       @file = file
       @schema = schema
       source = File.read(file)
-      klass = Rieles.parse(source, file).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
+      klass = Spinrail.parse(source, file).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
       raise CompileError, "#{file}: expected a class" unless klass
       @name = klass.constant_path.slice
       @parent = klass.superclass&.slice || "ApplicationRecord"
@@ -76,9 +76,9 @@ module Rieles
 
     # before_save :x, if: :y -> "x if y"
     def guarded_calls(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       guard = guard(node, kw)
-      args.map { |a| guard ? "#{Rieles.literal(a)} if #{guard}" : Rieles.literal(a).to_s }
+      args.map { |a| guard ? "#{Spinrail.literal(a)} if #{guard}" : Spinrail.literal(a).to_s }
     end
 
     # if:/unless: take method names; on: :create or :update.
@@ -92,7 +92,7 @@ module Rieles
         parts << "#{neg}#{kw[key].unescaped}"
       end
       if kw[:on]
-        on = Rieles.literal(kw[:on])
+        on = Spinrail.literal(kw[:on])
         fail!(node, "on: takes :create or :update") unless %i[create update].include?(on)
         parts << (on == :create ? "!persisted?" : "persisted?")
       end
@@ -100,9 +100,9 @@ module Rieles
     end
 
     def association(node)
-      args, kw = Rieles.call_args(node)
-      name = Rieles.literal(args.first).to_s
-      opts = kw.transform_values { |v| Rieles.literal(v) }
+      args, kw = Spinrail.call_args(node)
+      name = Spinrail.literal(args.first).to_s
+      opts = kw.transform_values { |v| Spinrail.literal(v) }
       unknown = opts.keys - %i[class_name foreign_key dependent optional]
       fail!(node, "unsupported #{node.name} option #{unknown.first}") if unknown.any?
       singular = node.name == :has_many ? Inflector.singularize(name) : name
@@ -121,8 +121,8 @@ module Rieles
     # scope :published, -> { where(published: true) } becomes a relation
     # method (so scopes chain) and a class method.
     def scope(node)
-      args, = Rieles.call_args(node)
-      name = Rieles.literal(args[0]).to_s
+      args, = Spinrail.call_args(node)
+      name = Spinrail.literal(args[0]).to_s
       lambda = args[1]
       fail!(node, "scope :name, -> { ... }") unless lambda.is_a?(Prism::LambdaNode)
       params = lambda.parameters&.parameters&.requireds&.map(&:name) || []
@@ -132,9 +132,9 @@ module Rieles
 
     # enum :status, { draft: 0, published: 1 } (or enum status: {...}).
     def enum(node)
-      args, kw = Rieles.call_args(node)
-      name, values = args[0] ? [Rieles.literal(args[0]).to_s, args[1]] : [kw.keys.first.to_s, kw.values.first]
-      mapping = Rieles.literal(values)
+      args, kw = Spinrail.call_args(node)
+      name, values = args[0] ? [Spinrail.literal(args[0]).to_s, args[1]] : [kw.keys.first.to_s, kw.values.first]
+      mapping = Spinrail.literal(values)
       mapping = mapping.each_with_index.to_h { |v, i| [v, i] } if mapping.is_a?(Array)
       mapping = mapping.to_h { |k, v| [k.to_s, v] }
       index = @table.columns.index { |c| c.name == name } or fail!(node, "enum :#{name} needs an integer column #{name}")
@@ -158,11 +158,11 @@ module Rieles
     end
 
     def validates(node)
-      args, kw = Rieles.call_args(node)
+      args, kw = Spinrail.call_args(node)
       @guard = guard(node, kw.slice(:if, :unless, :on))
       kw = kw.reject { |k, _| %i[if unless on].include?(k) }
       args.each do |arg|
-        attr = Rieles.literal(arg).to_s
+        attr = Spinrail.literal(arg).to_s
         assoc = @associations.find { |a| a.kind == :belongs_to && a.name == attr }
         if assoc
           kw.each_key { |k| fail!(node, "only presence is supported on #{attr}") unless k == :presence }
@@ -193,15 +193,15 @@ module Rieles
     def validation(node, column, kind, value_node)
       attr = column.name
       ivar = "@#{attr}"
-      value = value_node.is_a?(Prism::HashNode) ? value_node.elements.to_h { |a| [Rieles.literal(a.key), a.value] } : {}
-      message = value[:message] && Rieles.literal(value[:message])
+      value = value_node.is_a?(Prism::HashNode) ? value_node.elements.to_h { |a| [Spinrail.literal(a.key), a.value] } : {}
+      message = value[:message] && Spinrail.literal(value[:message])
       add = ->(cond, key, text, count = "") { @validations << [attr, guarded(cond), message ? [nil, message, ""] : [key, text, count.to_s]] }
       case kind
       when :presence
         if column.string?
-          add.("#{column.null ? "#{ivar}.nil? || " : ''}#{ivar}.strip.empty?", "blank", "can't be blank") if Rieles.literal(value_node)
+          add.("#{column.null ? "#{ivar}.nil? || " : ''}#{ivar}.strip.empty?", "blank", "can't be blank") if Spinrail.literal(value_node)
         elsif column.null
-          add.("#{ivar}.nil?", "blank", "can't be blank") if Rieles.literal(value_node)
+          add.("#{ivar}.nil?", "blank", "can't be blank") if Spinrail.literal(value_node)
         else
           fail!(node, "presence on a NOT NULL #{column.type} column is always true; declare it null: true")
         end
@@ -212,7 +212,7 @@ module Rieles
           minimum: ["<", "too_short", "is too short (minimum is %{count} characters)"],
           is: ["!=", "wrong_length", "is the wrong length (should be %{count} characters)"] }.each do |key, (op, i18n, msg)|
           next unless value[key]
-          n = Rieles.literal(value[key])
+          n = Spinrail.literal(value[key])
           add.("#{ivar}.length #{op} #{n}", i18n, msg, n)
         end
       when :numericality
@@ -303,16 +303,16 @@ module Rieles
       binds = cols.each_with_index.map { |c, i| c.bind(i + 1, "@#{c.name}") }
       binds += extra.each_with_index.map { |e, i| e.sub("%d", (cols.size + i + 1).to_s) }
       [
-        "t0 = Rieles.clock",
-        "db = Rieles.prepare(#{sql.inspect}, true)",
+        "t0 = Spinrail.clock",
+        "db = Spinrail.prepare(#{sql.inspect}, true)",
         *binds,
-        "Rieles.write(db, #{"#{@name} #{label}".inspect}, #{sql.inspect}, t0)"
+        "Spinrail.write(db, #{"#{@name} #{label}".inspect}, #{sql.inspect}, t0)"
       ].join("\n")
     end
 
     def save_method
       timestamps = columns.select(&:timestamp?).map(&:name)
-      stamp = timestamps.empty? ? "" : "now = Rieles.now\n"
+      stamp = timestamps.empty? ? "" : "now = Spinrail.now\n"
       insert_stamps = timestamps.map { |t| "db.bind_str(%d, now)" }
       create = [stamp + run_callbacks(:before_create), write_statement(insert_sql, "Create", writable, insert_stamps),
                 "@id = db.last_rowid", *timestamps.map { |t| "@#{t} = now" }, run_callbacks(:after_create)]
@@ -428,7 +428,7 @@ module Rieles
       assign = assignable.map { |c| "@#{c.name} = #{c.name}" } + secure_assign
       from_row = columns.each_with_index.map { |c, i| "#{c.name}: #{c.read(i)}" }
       checks = (@validations + required_associations + secure_validations).map do |attr, cond, (key, text, count)|
-        message = key ? "Rieles.message(#{key.inspect}, #{text.inspect}, #{count.inspect})" : text.inspect
+        message = key ? "Spinrail.message(#{key.inspect}, #{text.inspect}, #{count.inspect})" : text.inspect
         "@errors.add(:#{attr}, #{message}) if #{cond}"
       end
       plucks = columns.map { |c| "def self.pluck_#{c.name} = all.pluck_#{c.name}" }
@@ -442,7 +442,7 @@ module Rieles
           def initialize(#{kwargs})
         #{indent(columns.map { |c| "@#{c.name} = #{c.name}" }, 4)}
         #{indent((@secure_password ? ["@password = \"\"", *secure_assign] : []) + @extra_virtual.map { |v| "@#{v} = #{v}" }, 4)}
-            @errors = Rieles::Errors.new(#{Inflector.underscore(@name).inspect})
+            @errors = Spinrail::Errors.new(#{Inflector.underscore(@name).inspect})
         #{indent(@associations.map { |a| "@preloaded_#{a.name} = false" }, 4)}
           end
 
@@ -477,7 +477,7 @@ module Rieles
 
           def self.find(id)
             record = #{@name}.where(id: id.to_s.to_i).first
-            raise Rieles::RecordNotFound, "Couldn't find #{@name} with 'id'=" + id.to_s unless record
+            raise Spinrail::RecordNotFound, "Couldn't find #{@name} with 'id'=" + id.to_s unless record
             record
           end
 
@@ -494,7 +494,7 @@ module Rieles
           end
 
           def self.transaction
-            Rieles.transaction { yield }
+            Spinrail.transaction { yield }
           end
 
         #{indent(enum_methods, 2)}
@@ -519,7 +519,7 @@ module Rieles
         #{indent(save_method, 2)}
 
           def save!
-            raise Rieles::RecordInvalid, "Validation failed: " + @errors.full_messages.join(", ") unless save
+            raise Spinrail::RecordInvalid, "Validation failed: " + @errors.full_messages.join(", ") unless save
             true
           end
 
@@ -637,16 +637,16 @@ module Rieles
         <<~RUBY
           def pluck_#{c.name}
             return @records.map { |r| r.#{c.name} } if @loaded
-            t0 = Rieles.clock
+            t0 = Spinrail.clock
             statement = sql(#{"#{@table.name}.#{c.name}".inspect})
-            db = Rieles.prepare(statement, false)
+            db = Spinrail.prepare(statement, false)
             bind_all(db)
             values = []
             while db.step == 1
               values << #{c.read(0)}
             end
             db.finalize
-            Rieles.log.sql_binds(#{"#{@name} Pluck".inspect}, statement, t0, @binds)
+            Spinrail.log.sql_binds(#{"#{@name} Pluck".inspect}, statement, t0, @binds)
             values
           end
         RUBY
@@ -934,9 +934,9 @@ module Rieles
 
           def group_count(name)
             raise ArgumentError, "unknown column " + name unless #{@name}::COLUMNS.include?(name)
-            t0 = Rieles.clock
+            t0 = Spinrail.clock
             statement = "SELECT #{@table.name}." + name + ", COUNT(*) FROM #{@table.name}" + joins_clause + where_clause + " GROUP BY #{@table.name}." + name
-            db = Rieles.prepare(statement, false)
+            db = Spinrail.prepare(statement, false)
             bind_all(db)
             counts = { "" => 0 }
             counts.delete("")
@@ -944,7 +944,7 @@ module Rieles
               counts[db.col_str(0)] = db.col_int(1)
             end
             db.finalize
-            Rieles.log.sql_binds(#{"#{@name} Count".inspect}, statement, t0, @binds)
+            Spinrail.log.sql_binds(#{"#{@name} Count".inspect}, statement, t0, @binds)
             counts
           end
 
@@ -971,15 +971,15 @@ module Rieles
 
           def to_a
             return @records if @loaded
-            t0 = Rieles.clock
+            t0 = Spinrail.clock
             statement = sql(#{select_list.inspect})
-            db = Rieles.prepare(statement, false)
+            db = Spinrail.prepare(statement, false)
             bind_all(db)
             while db.step == 1
               @records << #{@name}.from_row(db)
             end
             db.finalize
-            Rieles.log.sql_binds(#{"#{@name} Load".inspect}, statement, t0, @binds)
+            Spinrail.log.sql_binds(#{"#{@name} Load".inspect}, statement, t0, @binds)
             @loaded = true
             @include_names.each { |name| #{@name}.preload_association(@records, name) }
             @records
@@ -1006,13 +1006,13 @@ module Rieles
           def count
             return @records.length if @loaded
             return to_a.length if @limit_value >= 0 || @offset_value >= 0
-            t0 = Rieles.clock
+            t0 = Spinrail.clock
             statement = "SELECT COUNT(" + (@distinct ? "DISTINCT #{@table.name}.id" : "*") + ") FROM #{@table.name}" + joins_clause + where_clause
-            db = Rieles.prepare(statement, false)
+            db = Spinrail.prepare(statement, false)
             bind_all(db)
             n = db.step == 1 ? db.col_int(0) : 0
             db.finalize
-            Rieles.log.sql_binds(#{"#{@name} Count".inspect}, statement, t0, @binds)
+            Spinrail.log.sql_binds(#{"#{@name} Count".inspect}, statement, t0, @binds)
             n
           end
 
@@ -1023,7 +1023,7 @@ module Rieles
 
           def update_all(changes)
             raise ArgumentError, "update_all doesn't support joins" unless @join_names.empty?
-            t0 = Rieles.clock
+            t0 = Spinrail.clock
             sets = []
             values = []
             changes.each do |column, value|
@@ -1033,7 +1033,7 @@ module Rieles
               values << sql_value(name, value.to_s)
             end
             statement = "UPDATE #{@table.name} SET " + sets.join(", ") + where_clause
-            db = Rieles.prepare(statement, false)
+            db = Spinrail.prepare(statement, false)
             i = 0
             while i < values.length
               db.bind_str(i + 1, values[i])
@@ -1044,18 +1044,18 @@ module Rieles
               db.bind_str(values.length + j + 1, @binds[j])
               j += 1
             end
-            Rieles.write(db, #{"#{@name} Update All".inspect}, statement, t0)
+            Spinrail.write(db, #{"#{@name} Update All".inspect}, statement, t0)
           end
 
         #{indent(scope_methods, 2)}
 
           def delete_all
             raise ArgumentError, "delete_all doesn't support joins" unless @join_names.empty?
-            t0 = Rieles.clock
+            t0 = Spinrail.clock
             statement = "DELETE FROM #{@table.name}" + where_clause
-            db = Rieles.prepare(statement, false)
+            db = Spinrail.prepare(statement, false)
             bind_all(db)
-            Rieles.write(db, #{"#{@name} Delete All".inspect}, statement, t0)
+            Spinrail.write(db, #{"#{@name} Delete All".inspect}, statement, t0)
           end
 
         #{indent(plucks, 2)}

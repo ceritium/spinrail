@@ -1,4 +1,4 @@
-module Rieles
+module Spinrail
   # null: true columns hold nil; the rest are NOT NULL with a default.
   Column = Struct.new(:name, :type, :default, :null) do
     def integer? = type == :integer
@@ -115,7 +115,7 @@ module Rieles
       @file = file
       @tables = tables || {}
       @indexes = indexes
-      walk(Rieles.parse(File.read(file), file)) unless tables
+      walk(Spinrail.parse(File.read(file), file)) unless tables
     end
 
     # The schema the migrations in db/migrate build.
@@ -132,8 +132,8 @@ module Rieles
 
     # create_table :name do |t| ... end -> Table
     def self.table_from(node, file)
-      args, = Rieles.call_args(node)
-      name = Rieles.literal(args.first).to_s
+      args, = Spinrail.call_args(node)
+      name = Spinrail.literal(args.first).to_s
       columns = [Column.new("id", :integer, nil, false)]
       body = node.block&.body&.body || []
       body.each do |call|
@@ -145,11 +145,11 @@ module Rieles
           next
         end
         type = TYPES.fetch(call.name) { raise CompileError, "#{file}:#{call.location.start_line}: unsupported column type t.#{call.name}" }
-        col_args, kw = Rieles.call_args(call)
-        col_name = Rieles.literal(col_args.first).to_s
+        col_args, kw = Spinrail.call_args(call)
+        col_name = Spinrail.literal(col_args.first).to_s
         col_name += "_id" if %i[references belongs_to].include?(call.name)
-        default = kw[:default] ? Rieles.literal(kw[:default]) : nil
-        null = kw[:null] ? Rieles.literal(kw[:null]) == true : false
+        default = kw[:default] ? Spinrail.literal(kw[:default]) : nil
+        null = kw[:null] ? Spinrail.literal(kw[:null]) == true : false
         columns << Column.new(col_name, type, default, null)
       end
       Table.new(name, columns)
@@ -162,9 +162,9 @@ module Rieles
         table = Schema.table_from(node, @file)
         @tables[table.name] = table
       elsif node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == :add_index
-        args, kw = Rieles.call_args(node)
-        @indexes << { table: Rieles.literal(args[0]).to_s, columns: Array(Rieles.literal(args[1])).map(&:to_s),
-                      unique: kw[:unique] && Rieles.literal(kw[:unique]) }
+        args, kw = Spinrail.call_args(node)
+        @indexes << { table: Spinrail.literal(args[0]).to_s, columns: Array(Spinrail.literal(args[1])).map(&:to_s),
+                      unique: kw[:unique] && Spinrail.literal(kw[:unique]) }
       else
         node.compact_child_nodes.each { |child| walk(child) }
       end

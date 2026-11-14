@@ -1,4 +1,4 @@
-class FeaturesTest < Rieles::ModelTest
+class FeaturesTest < Spinrail::ModelTest
   def setup
     @author = Author.create(name: "Ana", email: "ana@example.com")
   end

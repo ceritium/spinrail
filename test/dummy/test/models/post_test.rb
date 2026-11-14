@@ -1,4 +1,4 @@
-class PostTest < Rieles::ModelTest
+class PostTest < Spinrail::ModelTest
   def setup
     @author = Author.create(name: "Ana", email: "ana@example.com")
   end
@@ -15,7 +15,7 @@ class PostTest < Rieles::ModelTest
   end
 
   def test_find_raises_for_missing_records
-    assert_raises(Rieles::RecordNotFound) do
+    assert_raises(Spinrail::RecordNotFound) do
       Post.find(12345)
     end
   end
