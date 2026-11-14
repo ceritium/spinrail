@@ -11,6 +11,8 @@ module Rieles
     TEP = File.join(VENDOR, "tep/bin/tep")
 
     COMMANDS = {
+      "new" => "Create an app: rieles new PATH",
+      "generate" => "model|controller|scaffold NAME [field:type ...] (alias g)",
       "server" => "Build if needed and start the server (-p PORT, default 3000)",
       "build" => "Compile the app into a native binary (-o OUTPUT)",
       "routes" => "List the routes",
@@ -18,7 +20,7 @@ module Rieles
       "clean" => "Remove the binary, tmp/, log/ and the development database",
       "setup" => "Clone and build spinel + tep into vendor/ (build and server do it on demand)"
     }.freeze
-    ALIASES = { "s" => "server", "b" => "build", "r" => "routes", "t" => "test" }.freeze
+    ALIASES = { "s" => "server", "b" => "build", "r" => "routes", "t" => "test", "g" => "generate" }.freeze
 
     def initialize(argv, app_dir = Dir.pwd)
       @argv = argv.dup
@@ -29,6 +31,8 @@ module Rieles
       command = ALIASES.fetch(@argv.first, @argv.first)
       @argv.shift
       case command
+      when "new" then Generators.new(File.expand_path(@argv.first || abort("rieles: new PATH"))).new_app
+      when "generate" then Generators.new(@app).generate(@argv[0], @argv[1], @argv[2..] || [])
       when "server" then server
       when "build" then build(option("-o") || binary, force: true)
       when "routes" then routes

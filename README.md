@@ -41,6 +41,17 @@ checks that `render` passes exactly the view's exposures.
 
 ## Try it
 
+New app:
+
+```sh
+bin/rieles new ~/code/blog
+cd ~/code/blog
+bin/rieles generate scaffold Article title:string body:text published:boolean
+bin/rieles server
+```
+
+The example:
+
 ```sh
 cd examples/guestbook
 bin/rieles server   # http://localhost:3000; first run builds ../../../vendor (~1 min)
