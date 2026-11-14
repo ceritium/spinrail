@@ -130,10 +130,16 @@ Roughly in priority order within each section.
 - [x] Tests: fixtures, `assert_select`, cookies/session across requests.
 - [x] Model tests (`test/models`): compiled into a test build of the binary, one
       rolled-back transaction per test, Minitest assertions lowered at build time.
-- [ ] CI.
+- [x] CI (self-hosted runner).
 - [x] Package as a gem (`gem build spinrail.gemspec`); the toolchain goes to
       `SPINRAIL_VENDOR` or `~/.cache/spinrail/vendor` outside a checkout.
 - [ ] Publish the gem (name, license and ownership to decide).
+- [ ] Compiled dependencies through spin (spinel's package manager): tep and
+      spinel_kit as git deps in a `spin.toml` with `spin.lock`, `spin flags` for the
+      `-I`/`--link` list instead of cloning them into `vendor/`; spinel itself stays
+      pinned in `toolchain.mk`. Then `spinrail new` writes an app `spin.toml` for its
+      runtime deps (and `allocator = "jemalloc"`). The Gemfile stays for the CRuby CLI.
+      Check first whether `tep build` takes spin's flags.
 
 ## Mailers
 
