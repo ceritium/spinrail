@@ -3,6 +3,7 @@ require_relative "helper"
 class LoweringTest < CompilerTest
   def test_params
     assert_equal %(param("id")), lower("params[:id]")
+    assert_equal %(param("post[author][name]")), lower("params[:post][:author][:name]")
     assert_equal %(params.require_key("post").permit_keys(["title", "body"])), lower("params.require(:post).permit(:title, :body)")
     assert_equal %(params.require_key("post").permit_keys(["title"])), lower("params.expect(post: [:title])")
   end

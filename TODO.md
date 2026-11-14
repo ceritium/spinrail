@@ -67,8 +67,11 @@ Roughly in priority order within each section.
 - [x] Turbo Streams: `format.turbo_stream`, `render turbo_stream:` (one or a list),
       `turbo_stream.append/prepend/replace/update/remove/before/after` with a
       partial or HTML.
-- [ ] File uploads: tep skips multipart file parts, and its FFI strings aren't
-      NUL-safe, so binary uploads need upstream work.
+- [x] File uploads (tep fork): `f.file_field` makes `form_with` multipart,
+      `request.files["post[avatar]"]` (`original_filename`, `content_type`,
+      `read`, `size`), `fixture_file_upload` in tests. Held in memory; no
+      Active Storage.
+- [x] Nested params reads: `params[:post][:title]`.
 - [x] JSON request bodies become params (`{"post": {"title": ...}}` -> `post[title]`).
 - [x] PATCH/PUT/DELETE from HTML forms (`_method` override).
 - [x] Only public methods are actions.

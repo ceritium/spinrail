@@ -73,7 +73,7 @@ module Rieles
       hidden_field: "hidden", date_field: "date", url_field: "url", search_field: "search",
       telephone_field: "tel", color_field: "color"
     }.freeze
-    BUILDER = (FIELDS.keys + %i[label text_area textarea check_box checkbox select collection_select submit]).freeze
+    BUILDER = (FIELDS.keys + %i[label text_area textarea check_box checkbox select collection_select file_field submit]).freeze
 
     def visit_call_node(node)
       check_n_plus_one(node)
@@ -127,6 +127,8 @@ module Rieles
       elsif params_lookup?(node)
         key = Rieles.literal(node.arguments.arguments.first).to_s
         @rw.replace(node) { "param(#{key.inspect})" }
+      elsif (path = nested_params_path(node))
+        @rw.replace(node) { "param(#{(path.first + path.drop(1).map { |k| "[#{k}]" }.join).inspect})" }
       elsif @ctx.action? && local?(node.receiver, :response) && node.name == :render
         lower_action_render(node)
       elsif @ctx.action? && local?(node.receiver, :response) && node.name == :redirect_to
@@ -454,7 +456,11 @@ module Rieles
       end
       scope = kw[:scope] ? Rieles.literal(kw[:scope]).to_s : model ? model_scope(model) : ""
       @forms << { var: var, scope: scope, model: model }
-      attrs = html_attrs(kw.reject { |k, _| %i[model scope url method local].include?(k) })
+      attrs = html_attrs(kw.reject { |k, _| %i[model scope url method local multipart].include?(k) })
+      # A file field makes the form multipart, as in Rails.
+      if (kw[:multipart] && Rieles.literal(kw[:multipart]) == true) || file_field?(node.block)
+        attrs = "#{attrs} + \" enctype=\\\"multipart/form-data\\\"\""
+      end
       @rw.replace(node) do
         m = model && @rw.slice(model)
         url = if kw[:url] then @rw.slice(kw[:url])
@@ -468,6 +474,11 @@ module Rieles
         body = node.block.body ? @rw.slice(node.block.body) : ""
         "out << form_open(#{url}, #{method}, #{attrs})\n#{body}\nout << \"</form>\""
       end
+    end
+
+    def file_field?(node)
+      return true if node.is_a?(Prism::CallNode) && node.name == :file_field
+      node.compact_child_nodes.any? { |child| file_field?(child) }
     end
 
     def model_scope(model)
@@ -529,6 +540,7 @@ module Rieles
         text = args[1] ? @rw.slice(args[1]) : Inflector.humanize(attr.to_s).inspect
         "form_label(#{scope}, #{attr.inspect}, #{text}, #{attrs})"
       when :text_area, :textarea then "form_textarea(#{scope}, #{attr.inspect}, #{value.(".to_s")}, #{attrs})"
+      when :file_field then "form_file(#{scope}, #{attr.inspect}, #{attrs})"
       when :check_box, :checkbox then "form_check_box(#{scope}, #{attr.inspect}, #{value.("")}, #{attrs})"
       when :select
         fail!(node, "f.select(:attr, choices)") unless args[1]
@@ -766,6 +778,17 @@ module Rieles
     def record_ivar_write(node)
       fail!(node, "templates can't assign instance variables") if @ctx.view?
       @ctx.assign(node.name.to_s.delete_prefix("@"))
+    end
+
+    # params[:post][:title] -> the form name "post[title]".
+    def nested_params_path(node)
+      return nil unless node.is_a?(Prism::CallNode) && node.name == :[] && node.arguments&.arguments&.size == 1
+      key = node.arguments.arguments.first
+      return nil unless key.is_a?(Prism::SymbolNode) || key.is_a?(Prism::StringNode)
+      recv = node.receiver
+      return [Rieles.literal(recv.arguments.arguments.first).to_s, key.unescaped] if recv.is_a?(Prism::CallNode) && params_lookup?(recv)
+      inner = recv.is_a?(Prism::CallNode) && nested_params_path(recv)
+      inner && inner + [key.unescaped]
     end
 
     def params_lookup?(node)

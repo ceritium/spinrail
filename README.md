@@ -124,14 +124,15 @@ to the server.
   `destroy` and their `!` forms, `transaction`; validations (`presence`,
   `length`, `numericality`, `format`, `inclusion`, `exclusion`, `uniqueness`,
   `validate :method`); callbacks; `belongs_to`, `has_many`, `has_one`.
-- Controllers: `params[:x]`, strong params, `render :action, status:`,
+- Controllers: `params[:x]`, `params[:post][:title]`, strong params,
+  `request.files["post[avatar]"]` for uploads, `render :action, status:`,
   `render plain:`, `render json:`, `head`, `render view: Views::Stats::Show,
   exposure: value`, `redirect_to path, status:, notice:`, implicit render;
   `before_action`/`after_action`/`skip_*`, `rescue_from`, `session`, `flash`,
   CSRF protection, `_method` override.
 - Views: layout with `yield`, partials (`render "entry", entry: entry`),
   `<%= %>` escapes, `<%== %>` and `raw` don't, `form_with` and field
-  helpers, `link_to`, `button_to`, `csrf_meta_tags`, `pluralize`.
+  helpers (`file_field` makes the form multipart), `link_to`, `button_to`, `csrf_meta_tags`, `pluralize`.
 - Request log: Rails-style by default (filtered params, SQL, rendered
   templates, timings); one line per request with `RIELES_LOG_FORMAT=logfmt`
   or `json`. Each response carries `X-Request-Id`.

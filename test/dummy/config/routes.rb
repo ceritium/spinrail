@@ -24,6 +24,8 @@ Rieles.routes.draw do
   post "/signups", to: Actions::Signups::Create
   get "/bare", to: "bare#show"
   get "/plain", to: "plain#show"
+  get "/uploads/new", to: "uploads#new"
+  post "/uploads", to: "uploads#create"
   get "/models/seed", to: "models#seed"
   get "/models/query", to: "models#query"
   get "/models/validations", to: "models#validations"

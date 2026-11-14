@@ -2,6 +2,7 @@ require "minitest/autorun"
 require "json"
 require "net/http"
 require "socket"
+require "stringio"
 require "tmpdir"
 require "uri"
 require_relative "../rieles"
@@ -88,6 +89,15 @@ module Rieles
     # RIELES_DATABASE=postgres: each test gets a fresh database on the local server.
     def postgres? = ENV.fetch("RIELES_DATABASE", "sqlite") == "postgres"
 
+    Upload = Struct.new(:path, :content_type)
+
+    # A file to send as a multipart part; relative paths are under
+    # test/fixtures/files, as in Rails.
+    def fixture_file_upload(path, content_type = "application/octet-stream")
+      full = File.absolute_path?(path) ? path : File.join(Dir.pwd, "test/fixtures/files", path)
+      Upload.new(full, content_type)
+    end
+
     def get(path, headers: {}) = request(Net::HTTP::Get, path, nil, headers)
     def post(path, params: {}, headers: {}, json: nil) = request(Net::HTTP::Post, path, params, headers, json)
     def put(path, params: {}, headers: {}, json: nil) = request(Net::HTTP::Put, path, params, headers, json)
@@ -159,6 +169,11 @@ module Rieles
       if json
         req.body = JSON.generate(json)
         req["Content-Type"] = "application/json"
+      elsif params&.values&.any?(Upload)
+        req.set_form(params.map do |k, v|
+          next [k.to_s, v.to_s] unless v.is_a?(Upload)
+          [k.to_s, StringIO.new(File.binread(v.path)), { filename: File.basename(v.path), content_type: v.content_type }]
+        end, "multipart/form-data")
       elsif params
         req.set_form_data(params.transform_keys(&:to_s))
       end

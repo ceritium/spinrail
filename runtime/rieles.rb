@@ -1,10 +1,15 @@
 # Compiled into every app by spinel. Everything app-specific (models,
 # path helpers, views) is generated around these classes at build time.
 
-# Rails' name for it; tep's request.ip is the peer address.
+# Rails' names; tep's request.ip is the peer address.
 module Tep
   class Request
     def remote_ip = @remote_host
+  end
+
+  class UploadedFile
+    def original_filename = filename
+    def content_type = type
   end
 end
 
@@ -1374,6 +1379,10 @@ module Rieles
     def form_input(type, scope, attribute, value, attrs)
       "<input type=\"" + type + "\" name=\"" + field_name(scope, attribute) + "\" id=\"" + field_id(scope, attribute) +
         "\" value=\"" + h(value) + "\"" + attrs + ">"
+    end
+
+    def form_file(scope, attribute, attrs)
+      "<input type=\"file\" name=\"" + field_name(scope, attribute) + "\" id=\"" + field_id(scope, attribute) + "\"" + attrs + ">"
     end
 
     def form_textarea(scope, attribute, value, attrs)
