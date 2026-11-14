@@ -463,6 +463,7 @@ module Rieles
           end
 
           def to_param = @id.to_s
+          def cache_key = #{"#{@table.name}/".inspect} + @id.to_s#{@table.column("updated_at") ? ' + "-" + @updated_at' : ''}
           def dom_id = @id > 0 ? #{"#{Inflector.underscore(@name)}_".inspect} + @id.to_s : #{"new_#{Inflector.underscore(@name)}".inspect}
           def persisted? = @id > 0
           def new_record? = @id == 0

@@ -36,6 +36,7 @@ Rieles.routes.draw do
   get "/models/big", to: "models#big"
   get "/models/joins", to: "models#joins"
   get "/models/shout", to: "models#shout"
+  get "/models/cached", to: "models#cached"
   get "/models/signed", to: "models#signed"
   get "/models/scopes", to: "models#scopes"
   get "/models/formats", to: "models#formats"

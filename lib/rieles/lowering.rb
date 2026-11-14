@@ -127,6 +127,10 @@ module Rieles
         @rw.replace(node) { "@res.set_status(#{arg.is_a?(Prism::SymbolNode) ? status_code(arg) : @rw.slice(arg)})" }
       elsif @ctx.action? && node.receiver.nil? && node.name == :halt
         lower_halt(node)
+      elsif rails_cache_call?(node)
+        lower_rails_cache(node)
+      elsif @ctx.view? && node.receiver.nil? && node.name == :cache && node.block
+        lower_fragment_cache(node)
       elsif job_call?(node)
         arg = node.arguments&.arguments&.first
         value = arg ? "(#{@rw.slice(arg)}).to_s" : '""'
@@ -287,6 +291,42 @@ module Rieles
         end
       end
       true
+    end
+
+    # Rails.cache.fetch/read/write/delete/clear
+    def rails_cache_call?(node)
+      recv = node.receiver
+      recv.is_a?(Prism::CallNode) && recv.name == :cache && recv.receiver.is_a?(Prism::ConstantReadNode) &&
+        recv.receiver.name == :Rails && %i[fetch read write delete clear exist?].include?(node.name)
+    end
+
+    def lower_rails_cache(node)
+      args, kw = Rieles.call_args(node)
+      ttl = kw[:expires_in] ? "(#{@rw.slice(kw[:expires_in])})" : "0"
+      @rw.replace(node) do
+        key = args[0] ? "(#{@rw.slice(args[0])}).cache_key" : '""'
+        case node.name
+        when :fetch then "Rieles.cache_fetch(#{key}, #{ttl}) { #{node.block&.body ? @rw.slice(node.block.body) : '""'} }"
+        when :read then "Rieles.cache.read(#{key})"
+        when :exist? then "!Rieles.cache.read(#{key}).nil?"
+        when :write then "Rieles.cache.write(#{key}, (#{@rw.slice(args[1])}).to_s, #{ttl})"
+        when :delete then "Rieles.cache.delete(#{key})"
+        when :clear then "Rieles.cache.clear"
+        end
+      end
+    end
+
+    # <% cache @post do %>...<% end %>: the block's markup is stored under
+    # the key (a string, or a record's cache_key) and reused.
+    def lower_fragment_cache(node)
+      args, kw = Rieles.call_args(node)
+      ttl = kw[:expires_in] ? "(#{@rw.slice(kw[:expires_in])})" : "0"
+      @rw.replace(node) do
+        key = "\"views/\" + (#{@rw.slice(args[0])}).cache_key"
+        body = node.block.body ? @rw.slice(node.block.body) : ""
+        "rieles_fragment = Rieles.cache.read(#{key})\nif rieles_fragment.nil?\n  rieles_outer = out\n  out = +\"\"\n" \
+          "#{body}\n  rieles_fragment = Rieles.cache.write(#{key}, out, #{ttl})\n  out = rieles_outer\nend\nout << rieles_fragment"
+      end
     end
 
     # WelcomeJob.perform_later(x): jobs take one argument, passed as a String.

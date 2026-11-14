@@ -44,6 +44,7 @@ end
 class String
   def to_json = Tep::Json.quote(self)
   def to_param = self
+  def cache_key = self
   # Helpers that end in html_safe are emitted raw; the build decides.
   def html_safe = self
 end
@@ -51,6 +52,14 @@ end
 class Integer
   def to_json = to_s
   def to_param = to_s
+  def seconds = self
+  def minutes = self * 60
+  def hours = self * 3600
+  def days = self * 86400
+  alias second seconds
+  alias minute minutes
+  alias hour hours
+  alias day days
 end
 
 class Float
@@ -876,6 +885,50 @@ module Rieles
         $stdout.flush
       end
     end
+  end
+
+  # Rails.cache: an in-memory store per process (like MemoryStore), so
+  # each worker has its own. expires_in 0 means no expiry.
+  class Cache
+    def initialize
+      @values = Tep.str_hash
+      @expires = { "" => 0 }
+    end
+
+    def read(key)
+      expires = @expires.fetch(key, 0)
+      if expires > 0 && Time.now.to_i >= expires
+        delete(key)
+        return nil
+      end
+      @values[key]
+    end
+
+    def write(key, value, expires_in)
+      @values[key] = value
+      @expires[key] = expires_in > 0 ? Time.now.to_i + expires_in : 0
+      value
+    end
+
+    def delete(key)
+      @values.delete(key)
+      @expires.delete(key)
+    end
+
+    def clear
+      @values = Tep.str_hash
+      @expires = { "" => 0 }
+    end
+  end
+
+  CACHE = Cache.new
+
+  def self.cache = CACHE
+
+  def self.cache_fetch(key, expires_in)
+    cached = CACHE.read(key)
+    return cached unless cached.nil?
+    CACHE.write(key, yield, expires_in)
   end
 
   def self.humanize(attribute)

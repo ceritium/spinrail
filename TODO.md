@@ -113,6 +113,13 @@ Roughly in priority order within each section.
       `RIELES_VENDOR` or `~/.cache/rieles/vendor` outside a checkout.
 - [ ] Publish the gem (name, license and ownership to decide).
 
+## Caching
+
+- [x] `Rails.cache.fetch/read/write/delete/clear` with `expires_in` (in memory, per
+      process), fragment caching `<% cache @post do %>`, `cache_key`, `5.minutes`.
+- [ ] A shared store (SQLite table) so workers see the same cache.
+- [ ] Sub-second `updated_at`, so two writes in one second get new cache keys.
+
 ## Jobs
 
 - [x] `app/jobs` with `perform_later`/`perform_now`, a SQLite queue claimed under

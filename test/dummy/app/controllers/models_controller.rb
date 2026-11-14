@@ -181,6 +181,15 @@ class ModelsController < ApplicationController
     render plain: "queued"
   end
 
+  def cached
+    Rails.cache.delete("count") if params[:reset] == "1"
+    count = Rails.cache.fetch("count", expires_in: 5.minutes) { Post.count.to_s }
+    @post = Post.find_by(title: "First")
+    @count = count
+    @live = Post.count.to_s
+    @post.update(body: "touched " + params[:touch]) unless params[:touch].empty?
+  end
+
   def authors
     render plain: Author.order(id: :asc).pluck(:name).join(",")
   end
