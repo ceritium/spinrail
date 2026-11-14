@@ -47,3 +47,8 @@ is easy to revisit.
 - Spinel segfaulted (exit 139, in unrelated requests) when a subclass of
   Rieles::Controller redefined initialize with a different arity; mailers
   now share a ViewContext base instead. Worth a minimal repro for matz/spinel?
+- tep bakes `set :public_dir, './public'` as an absolute path from the
+  build directory, so a binary built elsewhere looks in the wrong place
+  (hit by the spinelgems mirror; worked around by building in its final
+  path). Fix in the fork by keeping relative paths relative to the cwd at
+  run time, or leave upstream's behaviour?
