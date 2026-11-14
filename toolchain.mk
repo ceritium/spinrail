@@ -1,8 +1,9 @@
 # Shared spinel + tep toolchain, cloned and built into <repo>/vendor.
 # tep is a fork (upstream main plus fixes not yet proposed upstream), built
-# and tested against spinel 2026.10.25. Bump TEP_REF to a new fixes-N tag
+# and tested against spinel at SPINEL_REF. Bump TEP_REF to a new fixes-N tag
 # to pick up fork changes; setup moves vendor/tep to it.
-SPINEL_REF    := 2026.10.25
+# A matz/spinel commit (or tag); setup moves vendor/spinel to it.
+SPINEL_REF    := d92e57a85d630fcec42a30906181fded1ce500f9
 TEP_REPO      ?= https://github.com/ceritium/tep
 TEP_REF       ?= fixes-1
 SPINELKIT_REF := v0.3.1
@@ -15,6 +16,7 @@ SPINEL_DIR     := $(VENDOR)/spinel
 TEP_DIR        := $(VENDOR)/tep
 SPINELKIT_DIR  := $(VENDOR)/spinelkit
 TEP            := $(TEP_DIR)/bin/tep
+SPINEL_STAMP   := $(SPINEL_DIR)/.built-$(SPINEL_REF)
 
 export SPINEL := $(SPINEL_DIR)/spinel
 export SPINELKIT_DIR
@@ -31,12 +33,17 @@ SQLITE_O := $(TEP_DIR)/native/sqlite/tep_sqlite.o
 
 .PHONY: setup tep-ref
 
-setup: $(SPINEL) tep-ref $(SPHTTP_O) $(SQLITE_O) $(SPINELKIT_DIR)/spinel_kit.rb
+setup: $(SPINEL_STAMP) tep-ref $(SPHTTP_O) $(SQLITE_O) $(SPINELKIT_DIR)/spinel_kit.rb
 
-$(SPINEL):
-	[ -d $(SPINEL_DIR) ] || $(CLONE) $(SPINEL_REF) https://github.com/matz/spinel $(SPINEL_DIR)
+$(SPINEL): $(SPINEL_STAMP)
+
+$(SPINEL_STAMP):
+	[ -d $(SPINEL_DIR)/.git ] || git init --quiet $(SPINEL_DIR)
+	cd $(SPINEL_DIR) && git fetch --quiet --depth 1 https://github.com/matz/spinel $(SPINEL_REF) && \
+	  git -c advice.detachedHead=false checkout --quiet FETCH_HEAD
 	$(MAKE) -C $(SPINEL_DIR) deps
 	$(MAKE) -C $(SPINEL_DIR) -j$(JOBS)
+	rm -f $(SPINEL_DIR)/.built-* && touch $@
 
 $(TEP):
 	$(CLONE) $(TEP_REF) $(TEP_REPO) $(TEP_DIR)
