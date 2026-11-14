@@ -5,10 +5,6 @@ is easy to revisit.
 
 - Name: "rieles" is a working name.
 - Default branch: `master` or `main`?
-- Columns are NOT NULL with a default unless `null: true`, the opposite of
-  Rails (nullable unless `null: false`). Nullable works now; flip the
-  default? It would make `post.title.length` raise on unset titles, as in
-  Rails.
 - `presence` on a NOT NULL integer/float/boolean column is a compile error
   (it could never fail). Keep it strict?
 - Timestamps are set in Ruby (`Time.now`, local time, `%Y-%m-%d %H:%M:%S`),
@@ -27,8 +23,8 @@ is easy to revisit.
   binds don't carry column names yet). Fine for development?
 - tep fixes live in a private fork, ceritium/tep: a branch per fix
   off v0.12.0, merged into `rieles` and tagged `rieles-N` (toolchain.mk's
-  TEP_REF). Nothing proposed upstream yet. CI can't clone it until a
-  TEP_TOKEN secret (read access to the fork) exists.
+  TEP_REF). Nothing proposed upstream yet. CI reads it with a deploy key
+  (TEP_DEPLOY_KEY).
 - Fork branches so far: fix/sqlite-per-handle-cursor (threads, text over
   64 KB) and fix/threaded-runtime (a tep app using Thread got 400 on every
   request: non-blocking accepted sockets, and sp_ffi_bin_len is
@@ -36,8 +32,11 @@ is easy to revisit.
   scheduled server left connections unanswered in bursts: each connection
   fiber closed over the accept loop's shared `client`),
   fix/prefork-idle-keepalive (tep#277), fix/stale-prebuilt-objects (bin/tep
-  linked a helper .o older than its .c) and fix/reason-phrases (your
-  tep#278, cherry-picked). Candidates for upstream PRs.
+  linked a helper .o older than its .c), fix/reason-phrases (your
+  tep#278, cherry-picked), fix/sqlite-null (bind_null, col_null?),
+  fix/sqlite-rowid-64 (last_rowid past 2^31) and fix/pg-long-values (PG
+  values cut at 64 KB, binds capped at 256 KB in total). Candidates for
+  upstream PRs.
 - Default production builds to the prefork server? The scheduled one no
   longer drops connections in bursts (fixed in the fork).
 - The gemspec says MIT and lists you as author; the repo has no LICENSE

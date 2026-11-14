@@ -255,18 +255,8 @@ module Rieles
     def assignable = columns.reject { |c| c.name == "id" }
     def select_sql = "SELECT #{select_list} FROM #{@table.name}"
 
-    # Column names, then "x IS NULL" for each nullable one.
     # Qualified with the table so joins can't make them ambiguous.
-    def select_list
-      q = ->(name) { "#{@table.name}.#{name}" }
-      (columns.map { |c| q.(c.name) } + columns.select(&:null).map { |c| "#{q.(c.name)} IS NULL" }).join(", ")
-    end
-
-    def null_flag(column)
-      nullable = columns.select(&:null)
-      i = nullable.index(column)
-      i && columns.size + i
-    end
+    def select_list = columns.map { |c| "#{@table.name}.#{c.name}" }.join(", ")
     def relation = "#{@name}Relation"
 
     def param_assignments
@@ -289,11 +279,11 @@ module Rieles
 
     def insert_sql
       cols = writable + columns.select(&:timestamp?)
-      "INSERT INTO #{@table.name} (#{cols.map(&:name).join(', ')}) VALUES (#{cols.map(&:placeholder).join(', ')})"
+      "INSERT INTO #{@table.name} (#{cols.map(&:name).join(', ')}) VALUES (#{(["?"] * cols.size).join(', ')})"
     end
 
     def update_sql
-      sets = writable.map { |c| "#{c.name} = #{c.placeholder}" }
+      sets = writable.map { |c| "#{c.name} = ?" }
       sets << "updated_at = ?" if @table.column("updated_at")
       "UPDATE #{@table.name} SET #{sets.join(', ')} WHERE id = ?"
     end
@@ -436,7 +426,7 @@ module Rieles
       kwargs = (columns.map { |c| "#{c.name}: #{c.default_literal}" } + virtual.map { |v| "#{v}: \"\"" }).join(", ")
       update_kwargs = (assignable.map { |c| "#{c.name}: @#{c.name}" } + virtual.map { |v| "#{v}: \"\"" }).join(", ")
       assign = assignable.map { |c| "@#{c.name} = #{c.name}" } + secure_assign
-      from_row = columns.each_with_index.map { |c, i| "#{c.name}: #{c.read(i, null_flag(c))}" }
+      from_row = columns.each_with_index.map { |c, i| "#{c.name}: #{c.read(i)}" }
       checks = (@validations + required_associations + secure_validations).map do |attr, cond, (key, text, count)|
         message = key ? "Rieles.message(#{key.inspect}, #{text.inspect}, #{count.inspect})" : text.inspect
         "@errors.add(:#{attr}, #{message}) if #{cond}"
@@ -648,12 +638,12 @@ module Rieles
           def pluck_#{c.name}
             return @records.map { |r| r.#{c.name} } if @loaded
             t0 = Rieles.clock
-            statement = sql(#{(c.null ? "#{@table.name}.#{c.name}, #{@table.name}.#{c.name} IS NULL" : "#{@table.name}.#{c.name}").inspect})
+            statement = sql(#{"#{@table.name}.#{c.name}".inspect})
             db = Rieles.prepare(statement, false)
             bind_all(db)
             values = []
             while db.step == 1
-              values << #{c.read(0, c.null ? 1 : nil)}
+              values << #{c.read(0)}
             end
             db.finalize
             Rieles.log.sql_binds(#{"#{@name} Pluck".inspect}, statement, t0, @binds)

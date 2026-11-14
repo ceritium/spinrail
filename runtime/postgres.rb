@@ -11,6 +11,8 @@ module Rieles
       @sql = ""
       @params = [""]
       @params.clear
+      @nulls = [0]
+      @nulls.clear
       @executed = false
       @row = -1
       @last_id = 0
@@ -44,8 +46,12 @@ module Rieles
       ok
     end
 
+    # tep keeps 64 live results per process; uncleared ones run it out.
     def run(sql)
-      @conn.exec(sql).ok?
+      result = @conn.exec(sql)
+      ok = result.ok?
+      result.clear
+      ok
     rescue StandardError
       false
     end
@@ -54,6 +60,7 @@ module Rieles
       @sql = translate(sql)
       @params = [""]
       @params.clear
+      @nulls.clear
       @executed = false
       @row = -1
       true
@@ -72,14 +79,24 @@ module Rieles
 
     def bind_int(index, value) = bind_str(index, value.to_s)
 
+    # @params holds Strings only, so step writes these slots as a NULL literal.
+    def bind_null(index)
+      bind_str(index, "")
+      @nulls << index
+    end
+
     # Runs on the first call; then 1 per row and 0 at the end, -1 on error.
     def step
       unless @executed
         @executed = true
         insert = @sql.start_with?("INSERT INTO")
+        params = [""]
+        params.clear
+        @params.each_with_index { |value, i| params << value unless @nulls.include?(i + 1) }
         sql = numbered(@sql) + (insert && !@sql.include?("RETURNING") ? " RETURNING *" : "")
+        @result.clear
         begin
-          @result = @conn.exec_params(sql, @params)
+          @result = @conn.exec_params(sql, params)
         rescue StandardError => e
           @error = e.class.name + ": " + @conn.error_message
           return -1
@@ -98,6 +115,7 @@ module Rieles
     end
 
     def col_str(i) = @result.getvalue(@row, i)
+    def col_null?(i) = @result.getisnull(@row, i)
 
     # Booleans (x IS NULL) come back as t/f.
     def col_int(i)
@@ -109,13 +127,16 @@ module Rieles
 
     def last_error = @error
 
-    def finalize = 0
+    def finalize
+      @result.clear
+      0
+    end
     def last_rowid = @last_id
 
     def translate(sql)
       return table_info(sql) if sql.start_with?("PRAGMA table_info(")
       out = sql.sub("INTEGER PRIMARY KEY", "BIGSERIAL PRIMARY KEY").gsub(" REAL", " DOUBLE PRECISION")
-               .gsub("char(1)", "chr(1)").gsub(" LIMIT -1", " LIMIT ALL").sub("BEGIN IMMEDIATE", "BEGIN")
+               .gsub(" LIMIT -1", " LIMIT ALL").sub("BEGIN IMMEDIATE", "BEGIN")
       if out.start_with?("INSERT OR REPLACE INTO rieles_cache")
         out = out.sub("INSERT OR REPLACE INTO", "INSERT INTO") +
               " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at"
@@ -129,16 +150,22 @@ module Rieles
         table + "'"
     end
 
-    # ? -> $1, $2, ... outside quoted literals.
+    # ? -> $1, $2, ... outside quoted literals; NULL for bind_null slots.
     def numbered(sql)
       out = +""
+      slot = 0
       n = 0
       quoted = false
       sql.each_char do |c|
         quoted = !quoted if c == "'"
         if c == "?" && !quoted
-          n += 1
-          out << "$" + n.to_s
+          slot += 1
+          if @nulls.include?(slot)
+            out << "NULL"
+          else
+            n += 1
+            out << "$" + n.to_s
+          end
         else
           out << c
         end

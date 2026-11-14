@@ -118,7 +118,9 @@ to the server.
   `member`, `collection`), `namespace`, `get/post/... "path", to:`; `_path`
   and `_url` helpers.
 - Models: columns from `create_table` (`string`, `text`, `integer`, `float`,
-  `boolean`, `datetime`, `references`, `timestamps`, `default:`); `all`,
+  `boolean`, `datetime`, `references`, `timestamps`, `default:`). Unlike
+  Rails, columns are NOT NULL with a zero default (`""`, `0`, `false`), so
+  readers never return nil; `null: true` opts in. `all`,
   `where`, `where.not`, `order`, `limit`, `offset`, `first`, `last`, `count`,
   `exists?`, `pluck`, `find`, `find_by`, `create`, `save`, `update`,
   `destroy` and their `!` forms, `transaction`; validations (`presence`,

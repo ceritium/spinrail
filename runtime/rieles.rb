@@ -324,10 +324,6 @@ module Rieles
     ENV.fetch("DATABASE_PATH", "./db/development.sqlite3")
   end
 
-  # Bound in place of nil; the SQL wraps nullable placeholders in NULLIF.
-  NULL_STR = 1.chr
-  NULL_INT = -9007199254740991
-
   class RecordInvalid < StandardError; end
   class ParameterMissing < StandardError; end
 

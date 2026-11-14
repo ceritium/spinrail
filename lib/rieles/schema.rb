@@ -1,7 +1,5 @@
 module Rieles
-  # null: true columns hold nil. Tep::SQLite reads NULL as "" and can't bind
-  # it, so reads select "col IS NULL" too and writes go through NULLIF with
-  # a sentinel (Rieles::NULL_STR / NULL_INT).
+  # null: true columns hold nil; the rest are NOT NULL with a default.
   Column = Struct.new(:name, :type, :default, :null) do
     def integer? = type == :integer
     def boolean? = type == :boolean
@@ -28,16 +26,10 @@ module Rieles
       end
     end
 
-    def placeholder
-      return "?" unless null
-      integer? || boolean? ? "NULLIF(?, -9007199254740991)" : "NULLIF(?, char(1))"
-    end
-
-    # Ruby expression reading column i of the current row; null_flag is the
-    # index of its "IS NULL" column.
-    def read(i, null_flag = nil)
+    # Ruby expression reading column i of the current row.
+    def read(i)
       value = read_value(i)
-      null_flag ? "(db.col_int(#{null_flag}) == 1 ? nil : #{value})" : value
+      null ? "(db.col_null?(#{i}) ? nil : #{value})" : value
     end
 
     def read_value(i)
@@ -51,12 +43,7 @@ module Rieles
 
     def bind(i, value)
       return bind_value(i, value) unless null
-      case type
-      when :integer then "db.bind_int(#{i}, #{value}.nil? ? Rieles::NULL_INT : #{value})"
-      when :boolean then "db.bind_int(#{i}, #{value}.nil? ? Rieles::NULL_INT : (#{value} ? 1 : 0))"
-      when :float then "db.bind_str(#{i}, #{value}.nil? ? Rieles::NULL_STR : #{value}.to_s)"
-      else "db.bind_str(#{i}, #{value}.nil? ? Rieles::NULL_STR : #{value})"
-      end
+      "(#{value}.nil? ? db.bind_null(#{i}) : #{bind_value(i, value)})"
     end
 
     def bind_value(i, value)
