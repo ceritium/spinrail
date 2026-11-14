@@ -96,6 +96,9 @@ module Rieles
         lower_field(node)
       elsif @ctx.view? && node.receiver.nil? && node.name == :link_to && node.block
         lower_link_block(node)
+      elsif @ctx.view? && node.receiver.nil? && node.name == :paginate && node.arguments&.arguments&.size == 1
+        arg = node.arguments.arguments.first
+        @rw.replace(node) { "pagination_links((#{@rw.slice(arg)}).current_page, (#{@rw.slice(arg)}).total_pages)" }
       elsif @ctx.view? && node.receiver.nil? && node.name == :dom_id && node.arguments&.arguments&.size == 1
         arg = node.arguments.arguments.first
         @rw.replace(node) { "(#{@rw.slice(arg)}).dom_id" }

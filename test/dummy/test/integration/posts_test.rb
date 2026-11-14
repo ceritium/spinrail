@@ -57,6 +57,16 @@ class PostsTest < Rieles::IntegrationTest
     assert_body_includes "published=false"
   end
 
+  def test_pagination
+    get "/posts"
+    assert_select "ul a.post", count: 2
+    assert_select "nav.pagination span.current", "1"
+    assert_select "nav.pagination a[rel=next][href='?page=2']"
+    get "/posts?page=2"
+    assert_select "ul a.post", "Third"
+    assert_select "nav.pagination a[rel=prev][href='?page=1']"
+  end
+
   def test_destroy_from_button_to
     get "/posts"
     assert_body_includes '<a href="/posts/1" class="post" data-id="1">First</a>'
@@ -66,5 +76,6 @@ class PostsTest < Rieles::IntegrationTest
     follow_redirect!
     assert_body_includes "Post deleted"
     refute_body_includes ">First<"
+    assert_select "ul a.post", count: 2
   end
 end

@@ -1374,6 +1374,20 @@ module Rieles
       form_open(url, method, " class=\"button_to\"") + "<button type=\"submit\"" + attrs + ">" + h(text) + "</button></form>"
     end
 
+    # <%= paginate @posts %>: previous/next links and page numbers as ?page=N.
+    def pagination_links(current, total)
+      return "" if total <= 1
+      html = "<nav class=\"pagination\">"
+      html = html + "<a rel=\"prev\" href=\"?page=" + (current - 1).to_s + "\">&lsaquo; Prev</a> " if current > 1
+      page = 1
+      while page <= total
+        html = html + (page == current ? "<span class=\"current\">" + page.to_s + "</span> " : "<a href=\"?page=" + page.to_s + "\">" + page.to_s + "</a> ")
+        page += 1
+      end
+      html = html + "<a rel=\"next\" href=\"?page=" + (current + 1).to_s + "\">Next &rsaquo;</a>" if current < total
+      html + "</nav>"
+    end
+
     # "style" -> /style.css; absolute paths and URLs are kept.
     def asset_path(source, extension)
       return source if source.start_with?("/") || source.include?("://")

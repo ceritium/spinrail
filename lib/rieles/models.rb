@@ -477,6 +477,7 @@ module Rieles
           def self.with_includes(names) = all.with_includes(names)
           def self.with_joins(names) = all.with_joins(names)
           def self.distinct = all.distinct
+          def self.page(number) = all.page(number)
           def self.where_qualified(column, value) = all.where_qualified(column, value)
           def self.group_count(name) = all.group_count(name)
         #{indent(join_sql_method, 2)}
@@ -663,7 +664,7 @@ module Rieles
       <<~RUBY
         class #{relation}
           attr_reader :wheres, :binds, :ordering, :raw_order, :limit_value, :offset_value, :scope_columns, :scope_values,
-                      :include_names, :join_names
+                      :include_names, :join_names, :page_number, :per_page
 
           def initialize
             @wheres = []
@@ -672,6 +673,8 @@ module Rieles
             @scope_values = []
             @include_names = []
             @join_names = []
+            @page_number = 0
+            @per_page = 25
             @distinct = false
             @ordering = []
             @raw_order = ""
@@ -688,6 +691,8 @@ module Rieles
             @scope_values = other.scope_values.dup
             @include_names = other.include_names.dup
             @join_names = other.join_names.dup
+            @page_number = other.page_number
+            @per_page = other.per_page
             @distinct = other.distinct?
             @ordering = other.ordering.dup
             @raw_order = other.raw_order
@@ -698,6 +703,38 @@ module Rieles
 
           def spawn = #{relation}.new.restore(self)
           def all = spawn
+
+          # page(params[:page]).per(10): 25 per page unless per says otherwise.
+          def page(number)
+            relation = spawn
+            n = number.to_s.to_i
+            relation.set_page(n < 1 ? 1 : n, @per_page)
+            relation
+          end
+
+          def per(n)
+            relation = spawn
+            relation.set_page(@page_number < 1 ? 1 : @page_number, n)
+            relation
+          end
+
+          def set_page(number, size)
+            @page_number = number
+            @per_page = size
+            @limit_value = size
+            @offset_value = (number - 1) * size
+          end
+
+          def current_page = @page_number < 1 ? 1 : @page_number
+
+          def total_pages
+            unpaged = spawn
+            unpaged.set_limit(-1)
+            unpaged.set_offset(-1)
+            total = unpaged.count
+            pages = (total + @per_page - 1) / @per_page
+            pages < 1 ? 1 : pages
+          end
         #{indent(enum_relation_methods, 2)}
           def distinct? = @distinct
 

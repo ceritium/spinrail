@@ -17,6 +17,7 @@ Roughly in priority order within each section.
 - [x] Column types: boolean (`published?`), float/decimal, `default:`.
 - [x] Building through associations: `post.comments.create(...)`, `.new`, `.build`.
 - [x] `scope :name, ->(args) { ... }` (chainable), `update_all`.
+- [x] Pagination: `page(n).per(k)`, `current_page`, `total_pages`, `<%= paginate @posts %>`.
 - [x] Eager loading: `includes`/`preload` run one query per association.
 - [x] `joins(:assoc)` with `where(table: { column: value })`, `group(:col).count`.
 - [ ] `left_joins`, `distinct`, `having`, nested includes (`includes(comments: :author)`).
