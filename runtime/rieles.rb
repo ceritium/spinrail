@@ -347,6 +347,110 @@ module Rieles
   class RecordInvalid < StandardError; end
   class ParameterMissing < StandardError; end
 
+  # A JSON request body flattened into form-style names: {"post": {"title":
+  # "x"}} -> "post[title]" => "x", arrays -> "ids[0]", null -> "".
+  class JsonParams
+    def initialize(text, into)
+      @s = text
+      @i = 0
+      @out = into
+    end
+
+    def parse
+      skip_ws
+      object("") if peek == "{"
+      @out
+    end
+
+    def peek = @i < @s.length ? @s[@i] : ""
+
+    def skip_ws
+      @i += 1 while @i < @s.length && (@s[@i] == " " || @s[@i] == "\n" || @s[@i] == "\t" || @s[@i] == "\r")
+    end
+
+    def object(prefix)
+      @i += 1
+      skip_ws
+      if peek == "}"
+        @i += 1
+        return
+      end
+      while @i < @s.length
+        skip_ws
+        key = string
+        skip_ws
+        @i += 1
+        skip_ws
+        value(prefix.empty? ? key : prefix + "[" + key + "]")
+        skip_ws
+        c = peek
+        @i += 1
+        break unless c == ","
+      end
+    end
+
+    def array(name)
+      @i += 1
+      skip_ws
+      if peek == "]"
+        @i += 1
+        return
+      end
+      n = 0
+      while @i < @s.length
+        skip_ws
+        value(name + "[" + n.to_s + "]")
+        n += 1
+        skip_ws
+        c = peek
+        @i += 1
+        break unless c == ","
+      end
+    end
+
+    def value(name)
+      c = peek
+      if c == "{"
+        object(name)
+      elsif c == "["
+        array(name)
+      elsif c == "\""
+        @out[name] = string
+      else
+        start = @i
+        @i += 1 while @i < @s.length && !",}] \n\t\r".include?(@s[@i])
+        literal = @s[start, @i - start]
+        @out[name] = literal == "null" ? "" : literal
+      end
+    end
+
+    def string
+      @i += 1
+      out = +""
+      while @i < @s.length && @s[@i] != "\""
+        c = @s[@i]
+        if c == "\\"
+          @i += 1
+          e = @s[@i]
+          if e == "n" then out << "\n"
+          elsif e == "t" then out << "\t"
+          elsif e == "r" then out << "\r"
+          elsif e == "u"
+            code = @s[@i + 1, 4].to_i(16)
+            out << (code < 128 ? code.chr : "?")
+            @i += 4
+          else out << e
+          end
+        else
+          out << c
+        end
+        @i += 1
+      end
+      @i += 1
+      out
+    end
+  end
+
   # params.require(:entry).permit(:name): reads "entry[name]" form fields.
   class Parameters
     attr_reader :source, :prefix, :permitted, :filtered

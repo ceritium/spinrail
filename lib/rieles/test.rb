@@ -1,4 +1,5 @@
 require "minitest/autorun"
+require "json"
 require "net/http"
 require "socket"
 require "tmpdir"
@@ -63,9 +64,9 @@ module Rieles
     end
 
     def get(path, headers: {}) = request(Net::HTTP::Get, path, nil, headers)
-    def post(path, params: {}, headers: {}) = request(Net::HTTP::Post, path, params, headers)
-    def put(path, params: {}, headers: {}) = request(Net::HTTP::Put, path, params, headers)
-    def patch(path, params: {}, headers: {}) = request(Net::HTTP::Patch, path, params, headers)
+    def post(path, params: {}, headers: {}, json: nil) = request(Net::HTTP::Post, path, params, headers, json)
+    def put(path, params: {}, headers: {}, json: nil) = request(Net::HTTP::Put, path, params, headers, json)
+    def patch(path, params: {}, headers: {}, json: nil) = request(Net::HTTP::Patch, path, params, headers, json)
     def delete(path, headers: {}) = request(Net::HTTP::Delete, path, nil, headers)
 
     def follow_redirect!
@@ -128,9 +129,14 @@ module Rieles
       uri.host ? uri.request_uri : location
     end
 
-    def request(klass, path, params, headers)
+    def request(klass, path, params, headers, json = nil)
       req = klass.new(path, headers)
-      req.set_form_data(params.transform_keys(&:to_s)) if params
+      if json
+        req.body = JSON.generate(json)
+        req["Content-Type"] = "application/json"
+      elsif params
+        req.set_form_data(params.transform_keys(&:to_s))
+      end
       req["Cookie"] = @cookies.map { |k, v| "#{k}=#{v}" }.join("; ") unless @cookies.empty?
       @response = Net::HTTP.start("127.0.0.1", @port, read_timeout: 5) { |http| http.request(req) }
       @response.get_fields("set-cookie")&.each do |line|

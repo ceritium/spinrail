@@ -655,6 +655,10 @@ module Rieles
     def method_override
       <<~RUBY
         before do
+          content_type = req.req_headers["content-type"]
+          if !content_type.nil? && content_type.include?("application/json") && req.raw_body.length > 0
+            Rieles::JsonParams.new(req.raw_body.dup.force_encoding("UTF-8"), req.params).parse
+          end
           if req.path.end_with?(".json")
             req.path = req.path.delete_suffix(".json")
             req.params["format"] = "json"

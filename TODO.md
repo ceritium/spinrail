@@ -55,6 +55,7 @@ Roughly in priority order within each section.
 - [x] `render json:` (literals encoded at build time, models and relations
       have `to_json`), `head :no_content`.
 - [x] `respond_to` with `format.html` / `format.json` (Accept or `?format=`).
+- [x] JSON request bodies become params (`{"post": {"title": ...}}` -> `post[title]`).
 - [x] PATCH/PUT/DELETE from HTML forms (`_method` override).
 - [x] Only public methods are actions.
 - [x] `rescue_from`; `RecordInvalid` answers 422.

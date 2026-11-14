@@ -23,6 +23,14 @@ class PostsTest < Rieles::IntegrationTest
     assert_body_includes "published=true rating=1.5 status=draft"
   end
 
+  def test_create_from_a_json_body
+    post "/posts", json: { post: { title: "From JSON", body: "line \"one\"\nline two", rating: 2.5, published: true, author_id: 2 } }
+    assert_redirected_to "/posts/4"
+    follow_redirect!
+    assert_body_includes "<h1>From JSON</h1>"
+    assert_body_includes "published=true rating=2.5"
+  end
+
   def test_invalid_create_rerenders_the_form
     post "/posts", params: { "post[title]" => "x", "post[author_id]" => "1" }
     assert_response :unprocessable_entity
