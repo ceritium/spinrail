@@ -9,13 +9,16 @@ module Rieles
     NUMBER = '/\A[+-]?\d+(\.\d+)?\z/'.freeze
     INTEGER = '/\A[+-]?\d+\z/'.freeze
     COMPARISONS = {
-      greater_than: ["<=", "must be greater than"],
-      greater_than_or_equal_to: ["<", "must be greater than or equal to"],
-      less_than: [">=", "must be less than"],
-      less_than_or_equal_to: [">", "must be less than or equal to"],
-      equal_to: ["!=", "must be equal to"],
-      other_than: ["==", "must be other than"]
+      greater_than: ["<=", "must be greater than %{count}"],
+      greater_than_or_equal_to: ["<", "must be greater than or equal to %{count}"],
+      less_than: [">=", "must be less than %{count}"],
+      less_than_or_equal_to: [">", "must be less than or equal to %{count}"],
+      equal_to: ["!=", "must be equal to %{count}"],
+      other_than: ["==", "must be other than %{count}"]
     }.freeze
+
+    # Default English messages, keyed like Rails' errors.messages.*, so
+    # config/locales can translate them.
 
     Association = Struct.new(:kind, :name, :class_name, :foreign_key, :dependent, :optional)
 
@@ -129,7 +132,7 @@ module Rieles
         assoc = @associations.find { |a| a.kind == :belongs_to && a.name == attr }
         if assoc
           kw.each_key { |k| fail!(node, "only presence is supported on #{attr}") unless k == :presence }
-          @validations << [attr, guarded("!#{assoc.class_name}.where(id: @#{assoc.foreign_key}).exists?"), "must exist"]
+          @validations << [attr, guarded("!#{assoc.class_name}.where(id: @#{assoc.foreign_key}).exists?"), ["required", "must exist", ""]]
           next
         end
         column = @table.column(attr) or fail!(node, "unknown attribute #{attr}")
@@ -145,31 +148,32 @@ module Rieles
       ivar = "@#{attr}"
       value = value_node.is_a?(Prism::HashNode) ? value_node.elements.to_h { |a| [Rieles.literal(a.key), a.value] } : {}
       message = value[:message] && Rieles.literal(value[:message])
-      add = ->(cond, msg) { @validations << [attr, guarded(cond), message || msg] }
+      add = ->(cond, key, text, count = "") { @validations << [attr, guarded(cond), message ? [nil, message, ""] : [key, text, count.to_s]] }
       case kind
       when :presence
         fail!(node, "presence only applies to string columns (#{attr} is #{column.type})") unless column.string?
-        add.("#{ivar}.strip.empty?", "can't be blank") if Rieles.literal(value_node)
+        add.("#{ivar}.strip.empty?", "blank", "can't be blank") if Rieles.literal(value_node)
       when :length
         fail!(node, "length only applies to string columns") unless column.string?
-        { maximum: [">", "is too long (maximum is %d characters)"], minimum: ["<", "is too short (minimum is %d characters)"],
-          is: ["!=", "is the wrong length (should be %d characters)"] }.each do |key, (op, msg)|
+        { maximum: [">", "too_long", "is too long (maximum is %{count} characters)"],
+          minimum: ["<", "too_short", "is too short (minimum is %{count} characters)"],
+          is: ["!=", "wrong_length", "is the wrong length (should be %{count} characters)"] }.each do |key, (op, i18n, msg)|
           next unless value[key]
           n = Rieles.literal(value[key])
-          add.("#{ivar}.length #{op} #{n}", format(msg, n))
+          add.("#{ivar}.length #{op} #{n}", i18n, msg, n)
         end
       when :numericality
         numericality(column, value, add)
       when :format
         fail!(node, "format only applies to string columns") unless column.string?
-        add.("!#{ivar}.match?(#{value[:with].slice})", "is invalid") if value[:with]
-        add.("#{ivar}.match?(#{value[:without].slice})", "is invalid") if value[:without]
+        add.("!#{ivar}.match?(#{value[:with].slice})", "invalid", "is invalid") if value[:with]
+        add.("#{ivar}.match?(#{value[:without].slice})", "invalid", "is invalid") if value[:without]
       when :inclusion
-        add.("!(#{value.fetch(:in).slice}).include?(#{ivar})", "is not included in the list")
+        add.("!(#{value.fetch(:in).slice}).include?(#{ivar})", "inclusion", "is not included in the list")
       when :exclusion
-        add.("(#{value.fetch(:in).slice}).include?(#{ivar})", "is reserved")
+        add.("(#{value.fetch(:in).slice}).include?(#{ivar})", "exclusion", "is reserved")
       when :uniqueness
-        add.("#{@name}.where(#{attr}: #{ivar}).where_not(id: @id).exists?", "has already been taken")
+        add.("#{@name}.where(#{attr}: #{ivar}).where_not(id: @id).exists?", "taken", "has already been taken")
       else fail!(node, "unsupported validation #{kind}")
       end
     end
@@ -180,14 +184,14 @@ module Rieles
       guard = ""
       if column.string?
         pattern = value[:only_integer] ? INTEGER : NUMBER
-        add.("!#{ivar}.match?(#{pattern})", value[:only_integer] ? "must be an integer" : "is not a number")
+        add.("!#{ivar}.match?(#{pattern})", *(value[:only_integer] ? ["not_an_integer", "must be an integer"] : ["not_a_number", "is not a number"]))
         number = "#{ivar}.to_f"
         guard = "#{ivar}.match?(#{pattern}) && "
       end
       COMPARISONS.each do |key, (op, msg)|
         next unless value[key]
         limit = value[key].slice
-        add.("#{guard}#{number} #{op} #{limit}", "#{msg} #{limit}")
+        add.("#{guard}#{number} #{op} #{limit}", key.to_s, msg, limit)
       end
     end
 
@@ -337,7 +341,7 @@ module Rieles
     # belongs_to is required unless optional: true, as in Rails 5+.
     def required_associations
       @associations.select { |a| a.kind == :belongs_to && !a.optional && @validations.none? { |v| v[0] == a.name } }
-                   .map { |a| [a.name, "!#{a.class_name}.where(id: @#{a.foreign_key}).exists?", "must exist"] }
+                   .map { |a| [a.name, "!#{a.class_name}.where(id: @#{a.foreign_key}).exists?", ["required", "must exist", ""]] }
     end
 
     def user_methods
@@ -351,8 +355,9 @@ module Rieles
       update_kwargs = assignable.map { |c| "#{c.name}: @#{c.name}" }.join(", ")
       assign = assignable.map { |c| "@#{c.name} = #{c.name}" }
       from_row = columns.each_with_index.map { |c, i| "#{c.name}: #{c.read(i)}" }
-      checks = (@validations + required_associations).map do |attr, cond, msg|
-        "@errors.add(:#{attr}, #{msg.inspect}, #{"#{Inflector.humanize(attr)} #{msg}".inspect}) if #{cond}"
+      checks = (@validations + required_associations).map do |attr, cond, (key, text, count)|
+        message = key ? "Rieles.message(#{key.inspect}, #{text.inspect}, #{count.inspect})" : text.inspect
+        "@errors.add(:#{attr}, #{message}) if #{cond}"
       end
       plucks = columns.map { |c| "def self.pluck_#{c.name} = all.pluck_#{c.name}" }
       predicates = columns.select(&:boolean?).map { |c| "def #{c.name}? = @#{c.name}" }
@@ -364,7 +369,7 @@ module Rieles
 
           def initialize(#{kwargs})
         #{indent(columns.map { |c| "@#{c.name} = #{c.name}" }, 4)}
-            @errors = Rieles::Errors.new
+            @errors = Rieles::Errors.new(#{Inflector.underscore(@name).inspect})
         #{indent(@associations.map { |a| "@preloaded_#{a.name} = false" }, 4)}
           end
 

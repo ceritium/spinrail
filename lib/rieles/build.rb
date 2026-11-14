@@ -99,7 +99,10 @@ module Rieles
       end
 
       def partial_method(key, locals, where) = @build.use_partial(key, locals, where)
+      attr_accessor :i18n_scope
+
       def path_helper?(name) = @build.routes.helpers.key?(name)
+      def current_def = @current
       def layout?(name) = @build.templates.key?("layouts/#{name}")
       def model?(name) = @build.model_names.include?(name)
     end
@@ -164,6 +167,7 @@ module Rieles
         "Tep.session_secret = ENV.fetch(\"SECRET_KEY_BASE\", #{local_secret.inspect})",
         *(Dir.exist?(path("public")) ? ["set :public_dir, \"public\""] : []),
         File.read(RUNTIME),
+        translations,
         application_record,
         *Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }
           .map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Model.new(f, schema).to_ruby}" },
@@ -179,6 +183,22 @@ module Rieles
         *routes.routes.map { |r| route_block(r, controllers) },
         not_found_block
       ].join("\n")
+    end
+
+    # config/locales/*.yml flattened to "es.posts.index.title" => "...".
+    def translations
+      flat = {}
+      walk = lambda do |prefix, value|
+        if value.is_a?(Hash)
+          value.each { |k, v| walk.call(prefix.empty? ? k.to_s : "#{prefix}.#{k}", v) }
+        else
+          flat[prefix] = value.to_s
+        end
+      end
+      Dir[path("config/locales/*.yml")].sort.each { |f| walk.call("", YAML.safe_load_file(f) || {}) }
+      flat = { "" => "" } if flat.empty?
+      entries = flat.map { |k, v| "    #{k.inspect} => #{v.inspect}" }.join(",\n")
+      "module RielesTranslations\n  ALL = {\n#{entries}\n  }.freeze\nend\n"
     end
 
     # Development secret, kept across builds; production sets SECRET_KEY_BASE.
@@ -228,6 +248,7 @@ module Rieles
         ruby = Erb.compile(source, signature, layout: t.layout?, raw: raw,
                                               log_as: t.partial? ? nil : rel(t.path).delete_prefix("app/views/"))
         ctx = Context.new(self, t.dir, view: true, ivars: t.page?)
+        ctx.i18n_scope = "#{t.dir.tr('/', '.')}.#{t.name.delete_prefix('_')}"
         lowered = Lowering.lower(ruby, rel(t.path), ctx)
         t.exposures = ctx.exposures.keys.sort
         [t, lowered]
@@ -631,6 +652,7 @@ module Rieles
         #{route.verb} #{route.path.inspect} do
           request_id = Rieles.request_id(req)
           res.headers["X-Request-Id"] = request_id
+          Rieles.set_locale("")
           Rieles.log.start(req.verb, req.path, #{label.inspect}, request_id, req.params)
           c = #{klass}.new(req, res)
           begin

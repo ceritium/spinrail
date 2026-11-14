@@ -81,7 +81,9 @@ module Rieles
         @forms.pop
         return
       end
-      if @ctx.controller? && node.receiver.nil? && node.name == :respond_to && node.block
+      if i18n_call?(node)
+        lower_i18n(node)
+      elsif @ctx.controller? && node.receiver.nil? && node.name == :respond_to && node.block
         lower_respond_to(node)
       elsif @ctx.view? && node.receiver.nil? && %i[content_for provide content_for?].include?(node.name)
         lower_content_for(node)
@@ -346,6 +348,39 @@ module Rieles
         v = node.name == :password_field ? '""' : value.(".to_s")
         "form_input(#{FIELDS.fetch(node.name).inspect}, #{scope}, #{attr.inspect}, #{v}, #{attrs})"
       end
+    end
+
+    def i18n_call?(node)
+      i18n = node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :I18n
+      return %i[t translate locale locale=].include?(node.name) if i18n
+      node.receiver.nil? && %i[t translate].include?(node.name) && node.arguments
+    end
+
+    # t("key"), t(".lazy") (scoped to the template, or controller.action),
+    # t("key", name: value), I18n.locale and I18n.locale = "es".
+    def lower_i18n(node)
+      case node.name
+      when :locale then return @rw.replace(node) { "Rieles.locale" }
+      when :locale= then return @rw.replace(node) { "Rieles.set_locale((#{@rw.slice(node.arguments.arguments.first)}).to_s)" }
+      end
+      args, kw = Rieles.call_args(node)
+      key_node = args.first or fail!(node, "t needs a key")
+      literal = key_node.is_a?(Prism::StringNode) || key_node.is_a?(Prism::SymbolNode)
+      static = literal && (key_node.unescaped.start_with?(".") ? "#{lazy_scope(node)}#{key_node.unescaped}" : key_node.unescaped)
+      @rw.replace(node) do
+        key = static ? static.inspect : "(#{@rw.slice(key_node)}).to_s"
+        if kw.empty?
+          "Rieles.t(#{key})"
+        else
+          "Rieles.t_with(#{key}, #{kw.keys.map(&:to_s).inspect}, [#{kw.values.map { |v| "(#{@rw.slice(v)}).to_s" }.join(', ')}])"
+        end
+      end
+    end
+
+    def lazy_scope(node)
+      return @ctx.i18n_scope if @ctx.i18n_scope
+      return "#{@ctx.dir.tr('/', '.')}.#{@ctx.current_def}" if @ctx.controller? && @ctx.current_def
+      fail!(node, "lazy lookup t(\".key\") only works in templates and controller actions")
     end
 
     # respond_to do |format| format.html { } format.json { } end -> if/else

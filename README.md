@@ -117,6 +117,8 @@ to the server.
   templates, timings); one line per request with `RIELES_LOG_FORMAT=logfmt`
   or `json`. Each response carries `X-Request-Id`.
 - Static files in `public/` and assets in `app/assets/`.
+- i18n: `config/locales/*.yml`, `t(".title")`, `t("greeting", name: x)`,
+  `I18n.locale = params[:locale]`, translated validation messages.
 
 ## Configuration
 

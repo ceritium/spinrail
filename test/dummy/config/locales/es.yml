@@ -1,0 +1,14 @@
+es:
+  greeting: "¡Hola, %{name}!"
+  i18n:
+    show:
+      title: "Traducciones"
+      saved: "Guardado"
+  errors:
+    messages:
+      blank: "no puede estar en blanco"
+      too_short: "es demasiado corto (%{count} caracteres mínimo)"
+  activerecord:
+    attributes:
+      post:
+        title: "Título"

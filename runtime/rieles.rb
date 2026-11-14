@@ -464,6 +464,52 @@ module Rieles
     end
   end
 
+  # The request's locale; a worker serves one request at a time.
+  class LocaleState
+    attr_accessor :current
+
+    def initialize
+      @current = Rieles.default_locale
+    end
+  end
+
+  def self.default_locale = ENV.fetch("RIELES_DEFAULT_LOCALE", "en")
+
+  LOCALE = LocaleState.new
+
+  def self.locale = LOCALE.current
+
+  def self.set_locale(locale)
+    LOCALE.current = locale.empty? ? Rieles.default_locale : locale
+  end
+
+  def self.translate(key) = RielesTranslations::ALL[Rieles.locale + "." + key]
+
+  def self.t(key)
+    found = Rieles.translate(key)
+    found.nil? ? "translation missing: " + Rieles.locale + "." + key : found
+  end
+
+  def self.t_with(key, names, values)
+    text = Rieles.t(key)
+    i = 0
+    while i < names.length
+      text = text.gsub("%{" + names[i] + "}", values[i])
+      i += 1
+    end
+    text
+  end
+
+  def self.message(key, default, count)
+    found = Rieles.translate("errors.messages." + key)
+    (found.nil? ? default : found).gsub("%{count}", count)
+  end
+
+  def self.attribute_name(model, attribute)
+    found = Rieles.translate("activerecord.attributes." + model + "." + attribute)
+    found.nil? ? Rieles.humanize(attribute) : found
+  end
+
   def self.humanize(attribute)
     attribute.sub(/_id\z/, "").tr("_", " ").capitalize
   end
@@ -472,7 +518,8 @@ module Rieles
   end
 
   class Errors
-    def initialize
+    def initialize(model)
+      @model = model
       @attributes = []
       @messages = []
       @full_messages = []
@@ -482,7 +529,7 @@ module Rieles
       name = attribute.to_s
       full = full_message
       if full.empty?
-        full = name == "base" ? message : Rieles.humanize(name) + " " + message
+        full = name == "base" ? message : Rieles.attribute_name(@model, name) + " " + message
       end
       @attributes << name
       @messages << message
