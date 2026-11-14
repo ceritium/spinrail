@@ -87,7 +87,7 @@ Roughly in priority order within each section.
 - [x] `shallow`, `scope` (path, `module:`, `as:`), `concern`/`concerns:`,
       `form_with model: [@post, @comment]`.
 - [x] `.json` suffix on any path sets `format=json`.
-- [ ] Route `constraints`, globbing.
+- [x] Route globbing (`*path`) and `constraints: { id: /\d+/ }`.
 - [x] Path helpers that accept ids as well as records (`to_param`); `_url` helpers.
 
 ## Tooling

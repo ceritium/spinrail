@@ -19,6 +19,15 @@ class RoutesTest < Rieles::IntegrationTest
     assert_select "input[type=submit][value='Create Comment']"
   end
 
+  def test_globs_and_constraints
+    get "/files/docs/2026/report.pdf"
+    assert_equal "file docs/2026/report.pdf /files/a/b.txt", response.body
+    get "/numbers/42"
+    assert_equal "number 42", response.body
+    get "/numbers/forty"
+    assert_equal "word forty", response.body
+  end
+
   def test_collection_comes_before_member
     get "/posts/search"
     assert_equal "search /posts/search /posts/3/publish", response.body

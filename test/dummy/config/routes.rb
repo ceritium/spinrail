@@ -14,6 +14,9 @@ Rieles.routes.draw do
     resources :posts, only: [:index]
   end
   get "/home", to: "pages#home"
+  get "/files/*path", to: "pages#file", as: :files
+  get "/numbers/:n", to: "pages#number", constraints: { n: /\d+/ }
+  get "/numbers/:word", to: "pages#word"
   get "/i18n", to: "i18n#show"
   get "/report", to: Actions::Reports::Show
   post "/signups", to: Actions::Signups::Create

@@ -804,7 +804,8 @@ module Rieles
         #{handler_defs.join("\n\n").gsub(/^(?=.)/, "  ")}
         end
 
-        #{route.verb} #{route.path.inspect} do
+        #{route.verb} #{route.regex ? "%r{#{route.regex}}" : route.path.inspect} do
+        #{(route.captures || []).each_with_index.map { |c, i| "  req.params[#{c.inspect}] = req.params.fetch(#{(i + 1).to_s.inspect}, \"\")" }.join("\n")}
           request_id = Rieles.request_id(req)
           res.headers["X-Request-Id"] = request_id
           Rieles.set_locale("")

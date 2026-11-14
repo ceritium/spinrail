@@ -1,6 +1,8 @@
 module Rieles
   # controller is a path ("posts", "admin/posts"); nil for action classes.
-  Route = Struct.new(:verb, :path, :controller, :action)
+  # regex/captures: globs (*path) and constraints, served as tep regex
+  # routes whose numbered captures are copied to named params.
+  Route = Struct.new(:verb, :path, :controller, :action, :regex, :captures)
 
   # Reads config/routes.rb: root, resources/resource (nested, member,
   # collection), namespace and verb routes, plus their path helpers.
@@ -105,10 +107,16 @@ module Rieles
       fail!(node, "#{node.name} needs `to: \"controller#action\"`") unless kw[:to]
       controller, action = endpoint(node, kw[:to])
       full = "#{scope.path}#{path}"
-      add(node.name, full, controller, action)
+      constraints = kw[:constraints] ? kw[:constraints].elements.to_h { |e| [Rieles.literal(e.key).to_s, e.value] } : {}
+      if full.include?("*") || constraints.any?
+        regex, captures = route_regex(node, full, constraints)
+        @routes << Route.new(node.name, full, controller, action.to_s, regex, captures)
+      else
+        add(node.name, full, controller, action)
+      end
       name = kw[:as] ? Rieles.literal(kw[:as]).to_s : path.delete_prefix("/").tr("/-", "__")
-      return if name.empty? || name.include?(":")
-      params = full.scan(/:(\w+)/).flatten
+      return if name.empty? || name.match?(/[:*]/)
+      params = full.scan(/[:*](\w+)/).flatten
       helper("#{scope.helper}#{name}", params, path_expr(full))
     end
 
@@ -227,8 +235,32 @@ module Rieles
 
     # "/posts/:post_id/comments/:id" -> "/posts/" + post_id.to_param + ...
     def path_expr(path)
-      parts = path.split(/(:\w+)/).reject(&:empty?)
-      parts.map { |p| p.start_with?(":") ? "#{p[1..]}.to_param" : p.inspect }.join(" + ")
+      parts = path.split(/([:*]\w+)/).reject(&:empty?)
+      parts.map { |p| p.match?(/\A[:*]\w/) ? "#{p[1..]}.to_param" : p.inspect }.join(" + ")
+    end
+
+    # "/files/*path" -> \A/files/(.+)\z; ":id" with constraints: { id: /\d+/ }.
+    def route_regex(node, path, constraints)
+      captures = []
+      source = path.split(/([:*]\w+)/).reject(&:empty?).map do |part|
+        if part.start_with?("*")
+          captures << part[1..]
+          "(.+)"
+        elsif part.start_with?(":")
+          name = part[1..]
+          captures << name
+          pattern = constraints[name]
+          if pattern && !pattern.is_a?(Prism::RegularExpressionNode)
+            fail!(node, "constraints take regex literals")
+          end
+          "(#{pattern ? pattern.unescaped : '[^/]+'})"
+        else
+          Regexp.escape(part)
+        end
+      end.join
+      unknown = constraints.keys - captures
+      fail!(node, "constraint for unknown segment :#{unknown.first}") if unknown.any?
+      ["\\A#{source}\\z", captures]
     end
 
     # "entries#index" is a controller action; Actions::Stats::Show an action
