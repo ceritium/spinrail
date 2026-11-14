@@ -86,8 +86,8 @@ Roughly in priority order within each section.
 - [ ] Line mapping for templates and models.
 - [x] Unit tests for the compiler (`rake unit`; `rake` also runs both apps).
 - [x] Framework request tests in `test/dummy` (`bin/rieles test` there).
-- [ ] Tests: model tests without HTTP, fixtures, `assert_select` on HTML,
-      cookies/session across requests.
+- [x] Tests: fixtures, `assert_select`, cookies/session across requests.
+- [ ] Model tests without HTTP (models only exist inside the binary).
 - [ ] CI.
 - [ ] Package as a gem or spin package; stop requiring `TEP` in the environment.
 

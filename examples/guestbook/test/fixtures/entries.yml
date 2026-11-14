@@ -1,0 +1,7 @@
+hello:
+  name: Ana
+  body: Hello from a fixture
+
+second:
+  name: Bea
+  body: Another one

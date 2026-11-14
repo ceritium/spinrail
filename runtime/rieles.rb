@@ -446,6 +446,14 @@ module Rieles
     end
   end
 
+  # Statements separated by ";\n" (test fixtures), run once at boot.
+  def self.run_sql_file(path)
+    db = Rieles.db
+    File.read(path).split(";\n").each do |statement|
+      db.exec(statement) unless statement.strip.empty?
+    end
+  end
+
   def self.humanize(attribute)
     attribute.sub(/_id\z/, "").tr("_", " ").capitalize
   end

@@ -547,6 +547,8 @@ module Rieles
           end
           db = Rieles.db
         #{statements.join("\n")}
+          boot_sql = ENV.fetch("RIELES_BOOT_SQL", "")
+          Rieles.run_sql_file(boot_sql) unless boot_sql.empty?
         #{seeds ? "  if ENV.fetch(\"RIELES_SEED\", \"\") == \"1\"\n    RielesSeeds.run\n    puts \"rieles: seeded\"\n    exit(0)\n  end" : ""}
         end
       RUBY

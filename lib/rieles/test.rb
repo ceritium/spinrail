@@ -3,9 +3,81 @@ require "net/http"
 require "socket"
 require "tmpdir"
 require "uri"
+require "yaml"
+require "zlib"
 require_relative "../rieles"
+require_relative "test_html"
 
 module Rieles
+  # test/fixtures/<table>.yml, as in Rails: labels get stable ids
+  # (CRC32, like ActiveRecord's), `author: ana` sets author_id, and missing
+  # columns take their schema default. Loaded as SQL when the server boots.
+  module Fixtures
+    Row = Struct.new(:attributes) do
+      def id = attributes["id"]
+      def [](name) = attributes[name.to_s]
+      def method_missing(name, *) = attributes.key?(name.to_s) ? attributes[name.to_s] : super
+      def respond_to_missing?(name, priv = false) = attributes.key?(name.to_s) || super
+    end
+
+    module_function
+
+    def identify(label) = Zlib.crc32(label.to_s) % (2**30 - 1)
+
+    def rows(app)
+      @rows ||= {}
+      @rows[app] ||= begin
+        schema = Schema.new(File.join(app, "db/schema.rb"))
+        Dir[File.join(app, "test/fixtures/*.yml")].sort.to_h do |file|
+          table_name = File.basename(file, ".yml")
+          table = schema.table(table_name) or raise "test/fixtures/#{table_name}.yml: no such table"
+          data = YAML.safe_load_file(file) || {}
+          [table_name, data.to_h { |label, attrs| [label.to_s, Row.new(row(table, label, attrs || {}))] }]
+        end
+      end
+    end
+
+    def row(table, label, attrs)
+      now = Time.now.strftime("%Y-%m-%d %H:%M:%S")
+      values = { "id" => identify(label) }
+      attrs.each do |key, value|
+        key = key.to_s
+        if !table.column(key) && table.column("#{key}_id")
+          values["#{key}_id"] = identify(value)
+        else
+          raise "fixture #{label}: #{table.name} has no column #{key}" unless table.column(key)
+          values[key] = value
+        end
+      end
+      table.columns.each do |c|
+        next if values.key?(c.name)
+        values[c.name] = c.timestamp? ? now : (c.default.nil? ? { integer: 0, boolean: false, float: 0.0, string: "" }.fetch(c.type) : c.default)
+      end
+      values
+    end
+
+    def load(app, tables)
+      selected = tables.include?("all") ? rows(app) : rows(app).slice(*tables)
+      missing = tables - ["all"] - selected.keys
+      raise "no test/fixtures/#{missing.first}.yml" if missing.any?
+      selected.map do |table, labelled|
+        labelled.values.map do |r|
+          names = r.attributes.keys
+          "INSERT INTO #{table} (#{names.join(', ')}) VALUES (#{names.map { |n| sql(r.attributes[n]) }.join(', ')});\n"
+        end.join
+      end.join
+    end
+
+    def sql(value)
+      case value
+      when true then "1"
+      when false then "0"
+      when Numeric then value.to_s
+      else "'#{value.to_s.gsub("'", "''")}'"
+      end
+    end
+  end
+
   # Request tests run in CRuby against the compiled binary over HTTP. Each
   # test gets its own server and an empty database, so tests don't leak.
   class IntegrationTest < Minitest::Test
@@ -16,6 +88,13 @@ module Rieles
     # Rails turns CSRF checks off in tests; a test class can turn them on.
     def self.forgery_protection! = @forgery_protection = true
     def self.forgery_protection? = @forgery_protection == true
+
+    # fixtures :all or fixtures :posts, :authors (test/fixtures/<table>.yml).
+    def self.fixtures(*tables) = @fixture_tables = tables.map(&:to_s)
+
+    def self.fixture_tables
+      @fixture_tables || (superclass.respond_to?(:fixture_tables) ? superclass.fixture_tables : [])
+    end
 
     # Extra environment for the server, e.g. server_env "RIELES_LOG_LEVEL" => "info".
     def self.server_env(vars = nil)
@@ -32,6 +111,11 @@ module Rieles
       env = { "DATABASE_PATH" => database_path, "RIELES_LOG_FORMAT" => "dev",
               "RIELES_ENV" => "test", "RIELES_FORGERY_PROTECTION" => self.class.forgery_protection? ? "1" : "0" }
       env.merge!(self.class.server_env)
+      fixtures_sql = Fixtures.load(ENV.fetch("RIELES_APP"), self.class.fixture_tables)
+      unless fixtures_sql.empty?
+        File.write(File.join(@db_dir, "fixtures.sql"), fixtures_sql)
+        env["RIELES_BOOT_SQL"] = File.join(@db_dir, "fixtures.sql")
+      end
       @pid = Process.spawn(env, ENV.fetch("RIELES_BINARY"), "-p", @port.to_s,
                            chdir: ENV.fetch("RIELES_APP"), out: log, err: log)
       log.close
@@ -72,6 +156,31 @@ module Rieles
     def assert_redirected_to(path)
       assert_response :redirect
       assert_equal path, local_path(response["Location"])
+    end
+
+    # assert_select "ul li.item", "First", count: 2 (text is a String or Regexp)
+    def assert_select(selector, text = nil, count: nil, minimum: nil)
+      nodes = TestHTML.select(TestHTML.parse(response.body), selector)
+      nodes = nodes.select { |n| text.is_a?(Regexp) ? n.text.match?(text) : n.text.strip == text.to_s } if text
+      if count
+        assert_equal count, nodes.size, "Expected #{count} matches for #{selector.inspect}#{text ? " with #{text.inspect}" : ''}"
+      elsif minimum
+        assert_operator nodes.size, :>=, minimum, "Expected at least #{minimum} matches for #{selector.inspect}"
+      else
+        refute_empty nodes, "Expected #{selector.inspect}#{text ? " with #{text.inspect}" : ''} in:\n#{response.body}"
+      end
+      nodes
+    end
+
+    # posts(:first) -> the fixture row, with its id.
+    def method_missing(name, *args)
+      table = Fixtures.rows(ENV.fetch("RIELES_APP"))[name.to_s]
+      return super unless table && args.size == 1
+      table.fetch(args.first.to_s) { raise ArgumentError, "no #{name} fixture #{args.first.inspect}" }
+    end
+
+    def respond_to_missing?(name, include_private = false)
+      Fixtures.rows(ENV.fetch("RIELES_APP")).key?(name.to_s) || super
     end
 
     def assert_body_includes(text)

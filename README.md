@@ -86,7 +86,12 @@ request tests of `test/dummy` and the guestbook).
 
 Helpers: `get/post/put/patch/delete`, `response`, `follow_redirect!`,
 `assert_response` (status, `:success`, `:redirect`, `:not_found`...),
-`assert_redirected_to`, `assert_body_includes`.
+`assert_redirected_to`, `assert_select "ul li.item", "Text", count: 2`,
+`assert_body_includes`, `cookies`. `fixtures :all` (or table names) loads
+`test/fixtures/<table>.yml` into each test's database; `entries(:hello)`
+returns the row, with Rails-style stable ids and `author: ana` references.
+`forgery_protection!` turns CSRF checks on; `server_env` passes variables
+to the server.
 
 ## Supported so far
 
