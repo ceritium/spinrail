@@ -107,6 +107,11 @@ module Rieles
         lower_action_render(node)
       elsif @ctx.action? && local?(node.receiver, :response) && node.name == :redirect_to
         lower_redirect(node)
+      elsif @ctx.action? && local?(node.receiver, :response) && node.name == :status=
+        arg = node.arguments.arguments.first
+        @rw.replace(node) { "@res.set_status(#{arg.is_a?(Prism::SymbolNode) ? status_code(arg) : @rw.slice(arg)})" }
+      elsif @ctx.action? && node.receiver.nil? && node.name == :halt
+        lower_halt(node)
       elsif node.receiver.nil? && @ctx.controller? && CONTROLLER_DSL.include?(node.name)
         @rw.replace(node) { "" }
       elsif node.receiver.nil? && node.block.nil?
@@ -448,7 +453,19 @@ module Rieles
       @ctx.record_response(nil, where(node))
       @rw.replace(node) do
         values = view.exposures.map { |e| @rw.slice(kw.fetch(e.to_sym)) }
-        "render_view(ApplicationView.new(self).#{view.method_name}(#{values.join(', ')}), 200)"
+        "render_view(ApplicationView.new(self).#{view.method_name}(#{values.join(', ')}), @res.status)"
+      end
+    end
+
+    # halt 401 / halt 422, "body": respond and leave the method.
+    def lower_halt(node)
+      args, = Rieles.call_args(node)
+      fail!(node, "halt takes a status and an optional body") unless (1..2).cover?(args.size)
+      code = status_code(args[0])
+      @ctx.record_response(nil, where(node))
+      @rw.replace(node) do
+        body = args[1] ? "(#{@rw.slice(args[1])}).to_s" : "Tep.reason(#{code})"
+        "return render_plain(#{body}, #{code})"
       end
     end
 

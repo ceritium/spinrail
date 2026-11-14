@@ -14,6 +14,7 @@ Rieles.routes.draw do
     resources :posts, only: [:index]
   end
   get "/home", to: "pages#home"
+  get "/report", to: Actions::Reports::Show
   get "/bare", to: "bare#show"
   get "/plain", to: "plain#show"
   get "/models/seed", to: "models#seed"

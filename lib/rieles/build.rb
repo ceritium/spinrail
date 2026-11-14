@@ -29,7 +29,9 @@ module Rieles
 
     # Hanami-style: Views::Stats::Show (`expose :a, :b`) plus
     # app/templates/stats/show.html.erb, whose locals are the exposures.
-    ActionView = Struct.new(:key, :class_name, :exposures, :template_path) do
+    # exposures are what the action passes; computed ones (expose :x do |a| ...)
+    # are derived from them in the template method; defs become view methods.
+    ActionView = Struct.new(:key, :class_name, :exposures, :template_path, :computed, :methods) do
       def method_name = "template_#{key.tr('.', '_')}"
     end
 
@@ -222,8 +224,13 @@ module Rieles
       defs += @action_views.values.map do |v|
         signature = "#{v.method_name}(#{v.exposures.join(', ')})"
         ruby = Erb.compile(File.read(v.template_path), signature, log_as: rel(v.template_path).delete_prefix("app/"))
+        derived = v.computed.map { |n, body| "  #{n} = begin\n#{body.gsub(/^\s*/, '    ')}\n  end\n" }.join
+        ruby = ruby.sub(/\A(def [^\n]*\n)/) { "#{$1}#{derived}" }
         ctx = Context.new(self, File.dirname(v.key.tr('.', '/')), view: true, ivars: false)
         Lowering.lower(ruby, rel(v.template_path), ctx)
+      end
+      defs += @action_views.values.flat_map(&:methods).map do |source|
+        Lowering.lower(source, "app/views", Context.new(self, "application", view: true, ivars: false)) + "\n"
       end
       <<~RUBY
         #{SOURCE_MARK}generated app/views
@@ -262,15 +269,30 @@ module Rieles
     def load_action_views
       Dir[path("app/views/**/*.rb")].sort.to_h do |file|
         klass, name, key = namespaced_class(file, "Views")
-        exposures = (klass.body&.body || []).flat_map do |stmt|
-          unless stmt.is_a?(Prism::CallNode) && stmt.name == :expose && stmt.receiver.nil?
-            raise CompileError, "#{rel(file)}:#{stmt.location.start_line}: view classes only support `expose` for now"
+        exposures = []
+        computed = []
+        methods = []
+        (klass.body&.body || []).each do |stmt|
+          if stmt.is_a?(Prism::DefNode)
+            methods << stmt.slice.gsub(/^ {#{stmt.location.start_column}}/, "")
+            next
           end
-          Rieles.call_args(stmt).first.map { |a| Rieles.literal(a).to_s }
+          unless stmt.is_a?(Prism::CallNode) && stmt.name == :expose && stmt.receiver.nil?
+            raise CompileError, "#{rel(file)}:#{stmt.location.start_line}: view classes support `expose` and methods"
+          end
+          names = Rieles.call_args(stmt).first.map { |a| Rieles.literal(a).to_s }
+          if stmt.block
+            params = stmt.block.parameters&.parameters&.requireds&.map { |p| p.name.to_s } || []
+            unknown = params - exposures - computed.map(&:first)
+            raise CompileError, "#{rel(file)}:#{stmt.location.start_line}: #{unknown.first} is not exposed" if unknown.any?
+            computed << [names.first, stmt.block.body ? stmt.block.body.slice : "nil"]
+          else
+            exposures.concat(names)
+          end
         end
         template = path("app/templates/#{key.tr('.', '/')}.html.erb")
         raise CompileError, "#{rel(file)}: missing #{rel(template)}" unless File.exist?(template)
-        [key, ActionView.new(key, name, exposures, template)]
+        [key, ActionView.new(key, name, exposures, template, computed, methods)]
       end
     end
 
