@@ -115,6 +115,16 @@ class ModelsController < ApplicationController
     render :helpers, layout: "bare"
   end
 
+  def eager
+    first = Post.find_by(title: "First")
+    Comment.create(post_id: first.id, body: "c1")
+    Comment.create(post_id: first.id, body: "c2")
+    lines = Post.order(id: :asc).includes(:comments, :author).to_a.map do |post|
+      post.title + ":" + post.author.name + ":" + post.comments.count.to_s + ":" + post.comments.pluck(:body).join("|")
+    end
+    render plain: lines.join("\n")
+  end
+
   def authors
     render plain: Author.order(id: :asc).pluck(:name).join(",")
   end

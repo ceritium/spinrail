@@ -420,8 +420,9 @@ module Rieles
         when :pluck then "#{prefix.call}pluck_#{arg.unescaped}"
         when :order then "#{prefix.call}order_sql(#{@rw.slice(arg)})"
         when :exists? then "#{prefix.call}where(#{@rw.slice(arg)}).exists?"
-        # Accepted for compatibility; associations load lazily (N+1).
-        when :includes, :preload, :eager_load then @rw.slice(recv)
+        when :includes, :preload, :eager_load
+          names = node.arguments.arguments.map { |a| Rieles.literal(a).to_s }
+          "#{prefix.call}with_includes(#{names.inspect})"
         end
       end
     end

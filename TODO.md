@@ -17,7 +17,8 @@ Roughly in priority order within each section.
 - [x] Column types: boolean (`published?`), float/decimal, `default:`.
 - [x] Building through associations: `post.comments.create(...)`, `.new`, `.build`.
 - [x] `scope :name, ->(args) { ... }` (chainable), `update_all`.
-- [ ] Eager loading (`includes` is accepted but loads lazily), `joins`, `group`.
+- [x] Eager loading: `includes`/`preload` run one query per association.
+- [ ] `joins`, `group`, nested includes (`includes(comments: :author)`).
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
 - [ ] Halting callbacks with `throw :abort`.
 - [ ] Nullable columns. Today every column is `NOT NULL` with a default,

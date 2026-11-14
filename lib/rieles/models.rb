@@ -287,16 +287,46 @@ module Rieles
       RUBY
     end
 
+    # Readers use what includes(...) preloaded, else query.
     def association_methods
       @associations.map do |a|
         case a.kind
         when :belongs_to
-          "def #{a.name} = #{a.class_name}.find_by(id: @#{a.foreign_key})\n\n" \
-            "def #{a.name}=(record)\n  @#{a.foreign_key} = record.id\nend"
-        when :has_many then "def #{a.name} = #{a.class_name}.where(#{a.foreign_key}: @id)"
-        when :has_one then "def #{a.name} = #{a.class_name}.find_by(#{a.foreign_key}: @id)"
+          "def #{a.name} = @preloaded_#{a.name} ? @#{a.name}_record : #{a.class_name}.find_by(id: @#{a.foreign_key})\n\n" \
+            "def #{a.name}=(record)\n  @#{a.foreign_key} = record.id\nend\n\n" \
+            "def preload_set_#{a.name}(record)\n  @#{a.name}_record = record\n  @preloaded_#{a.name} = true\nend"
+        when :has_many
+          "def #{a.name}\n  relation = #{a.class_name}.where(#{a.foreign_key}: @id)\n" \
+            "  @preloaded_#{a.name} ? relation.with_records(@#{a.name}_records) : relation\nend\n\n" \
+            "def preload_set_#{a.name}(records)\n  @#{a.name}_records = records\n  @preloaded_#{a.name} = true\nend"
+        when :has_one
+          "def #{a.name} = @preloaded_#{a.name} ? @#{a.name}_record : #{a.class_name}.find_by(#{a.foreign_key}: @id)\n\n" \
+            "def preload_set_#{a.name}(record)\n  @#{a.name}_record = record\n  @preloaded_#{a.name} = true\nend"
         end
       end
+    end
+
+    # One query per included association for the whole batch.
+    def preload_method
+      branches = @associations.map do |a|
+        case a.kind
+        when :belongs_to
+          "if name == #{a.name.inspect}\n" \
+            "  found = #{a.class_name}.all.where_in(\"id\", records.map { |r| r.#{a.foreign_key}.to_s }.uniq).to_a\n" \
+            "  records.each { |r| r.preload_set_#{a.name}(found.find { |f| f.id == r.#{a.foreign_key} }) }"
+        when :has_many
+          "if name == #{a.name.inspect}\n" \
+            "  found = #{a.class_name}.all.where_in(#{a.foreign_key.inspect}, records.map { |r| r.id.to_s }).to_a\n" \
+            "  records.each { |r| r.preload_set_#{a.name}(found.select { |f| f.#{a.foreign_key} == r.id }) }"
+        when :has_one
+          "if name == #{a.name.inspect}\n" \
+            "  found = #{a.class_name}.all.where_in(#{a.foreign_key.inspect}, records.map { |r| r.id.to_s }).to_a\n" \
+            "  records.each { |r| r.preload_set_#{a.name}(found.find { |f| f.#{a.foreign_key} == r.id }) }"
+        end
+      end
+      raise_line = "raise ArgumentError, #{"#{@name} has no association ".inspect} + name"
+      body = branches.empty? ? raise_line : branches.join("\nels") + "\nelse\n  #{raise_line}\nend"
+      "def self.preload_association(records, name)\n#{indent(body, 2)}\nend"
     end
 
     # belongs_to is required unless optional: true, as in Rails 5+.
@@ -330,6 +360,7 @@ module Rieles
           def initialize(#{kwargs})
         #{indent(columns.map { |c| "@#{c.name} = #{c.name}" }, 4)}
             @errors = Rieles::Errors.new
+        #{indent(@associations.map { |a| "@preloaded_#{a.name} = false" }, 4)}
           end
 
           def self.from_row(db)
@@ -350,6 +381,8 @@ module Rieles
           def self.delete_all = all.delete_all
           def self.find_by(conditions) = all.where(conditions).first
           def self.update_all(changes) = all.update_all(changes)
+          def self.with_includes(names) = all.with_includes(names)
+        #{indent(preload_method, 2)}
         #{indent(@scopes.map { |n, ps, _| sig = ps.empty? ? '' : "(#{ps.join(', ')})"; "def self.#{n}#{sig} = all.#{n}#{sig}" }, 2)}
         #{indent(plucks, 2)}
 
@@ -495,6 +528,7 @@ module Rieles
       plucks = columns.each_with_index.map do |c, _|
         <<~RUBY
           def pluck_#{c.name}
+            return @records.map { |r| r.#{c.name} } if @loaded
             t0 = Rieles.clock
             statement = sql(#{c.name.inspect})
             db = Rieles.prepare(statement, false)
@@ -511,13 +545,15 @@ module Rieles
       end
       <<~RUBY
         class #{relation}
-          attr_reader :wheres, :binds, :ordering, :raw_order, :limit_value, :offset_value, :scope_columns, :scope_values
+          attr_reader :wheres, :binds, :ordering, :raw_order, :limit_value, :offset_value, :scope_columns, :scope_values,
+                      :include_names
 
           def initialize
             @wheres = []
             @binds = []
             @scope_columns = []
             @scope_values = []
+            @include_names = []
             @ordering = []
             @raw_order = ""
             @limit_value = -1
@@ -531,6 +567,7 @@ module Rieles
             @binds = other.binds.dup
             @scope_columns = other.scope_columns.dup
             @scope_values = other.scope_values.dup
+            @include_names = other.include_names.dup
             @ordering = other.ordering.dup
             @raw_order = other.raw_order
             @limit_value = other.limit_value
@@ -544,6 +581,35 @@ module Rieles
             relation = spawn
             conditions.each { |column, value| relation.add_where(column.to_s, value.to_s, "=") }
             relation
+          end
+
+          def where_in(name, values)
+            raise ArgumentError, "unknown column " + name unless #{@name}::COLUMNS.include?(name)
+            relation = spawn
+            relation.add_where_in(name, values)
+            relation
+          end
+
+          def add_where_in(name, values)
+            @wheres << name + " IN (" + values.map { |_| "?" }.join(", ") + ")"
+            values.each { |v| @binds << v }
+          end
+
+          def with_includes(names)
+            relation = spawn
+            relation.add_includes(names)
+            relation
+          end
+
+          def add_includes(names)
+            names.each { |n| @include_names << n }
+          end
+
+          # An association reader hands over what includes(...) preloaded.
+          def with_records(records)
+            @records = records
+            @loaded = true
+            self
           end
 
           def where_not(conditions)
@@ -695,6 +761,7 @@ module Rieles
             db.finalize
             Rieles.log.sql(#{"#{@name} Load".inspect}, statement, t0)
             @loaded = true
+            @include_names.each { |name| #{@name}.preload_association(@records, name) }
             @records
           end
 

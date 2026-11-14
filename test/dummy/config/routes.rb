@@ -25,6 +25,7 @@ Rieles.routes.draw do
   get "/models/bang", to: "models#bang"
   get "/models/scoped", to: "models#scoped"
   get "/models/authors", to: "models#authors"
+  get "/models/eager", to: "models#eager"
   get "/models/scopes", to: "models#scopes"
   get "/models/formats", to: "models#formats"
   get "/models/cookie", to: "models#cookie"
