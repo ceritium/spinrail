@@ -34,14 +34,15 @@ class GeneratorsTest < CompilerTest
     refute File.exist?(File.join(root, "a/nested/.git"))
   end
 
-  def test_model_fields_take_nullable_and_index_modifiers
+  def test_model_fields_take_not_null_and_index_modifiers
     dir = File.join(Dir.mktmpdir("spinrail-mod"), "app")
     (@dirs ||= []) << File.dirname(dir)
     Spinrail::Generators.new(dir, StringIO.new).new_app(git: false, bundle: false)
-    Spinrail::Generators.new(dir, StringIO.new).generate("model", "User", %w[name email_address:string?:uniq bio:text? role:integer:index])
+    Spinrail::Generators.new(dir, StringIO.new).generate("model", "User", %w[name email_address:string!:uniq bio:text role:integer:index team:references])
     schema = File.read(File.join(dir, "db/schema.rb"))
-    assert_includes schema, "t.string :email_address, null: true"
-    assert_includes schema, "t.text :bio, null: true"
+    assert_includes schema, "t.string :email_address, null: false"
+    assert_includes schema, "t.text :bio\n"
+    assert_includes schema, "t.references :team, null: false"
     assert_includes schema, "add_index :users, [:email_address], unique: true"
     assert_includes schema, "add_index :users, [:role]\n"
     tables = Spinrail::Schema.new(File.join(dir, "db/schema.rb"))

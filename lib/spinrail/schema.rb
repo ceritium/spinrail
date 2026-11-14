@@ -1,5 +1,6 @@
 module Spinrail
-  # null: true columns hold nil; the rest are NOT NULL with a default.
+  # Columns hold nil unless declared null: false, as in Rails; NOT NULL ones
+  # get a zero default so their readers keep a single type.
   Column = Struct.new(:name, :type, :default, :null) do
     def integer? = type == :integer
     def boolean? = type == :boolean
@@ -101,7 +102,6 @@ module Spinrail
     end
   end
 
-  # Columns are NOT NULL with a default unless declared `null: true`.
   class Schema
     TYPES = {
       string: :string, text: :string, datetime: :string, date: :string, time: :string,
@@ -149,7 +149,7 @@ module Spinrail
         col_name = Spinrail.literal(col_args.first).to_s
         col_name += "_id" if %i[references belongs_to].include?(call.name)
         default = kw[:default] ? Spinrail.literal(kw[:default]) : nil
-        null = kw[:null] ? Spinrail.literal(kw[:null]) == true : false
+        null = kw[:null] ? Spinrail.literal(kw[:null]) != false : true
         columns << Column.new(col_name, type, default, null)
       end
       Table.new(name, columns)

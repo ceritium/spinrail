@@ -60,8 +60,8 @@ bin/spinrail generate scaffold Article title:string body:text published:boolean
 bin/spinrail server
 ```
 
-Fields are `name:type`, as in Rails, plus `:index` or `:uniq`. Columns are
-NOT NULL by default; `bio:text?` makes one nullable.
+Fields are `name:type`, as in Rails, plus `:index` or `:uniq`. `name:string!`
+writes `null: false`; references get it anyway, as in Rails.
 
 The example:
 
@@ -121,9 +121,10 @@ to the server.
   `member`, `collection`), `namespace`, `get/post/... "path", to:`; `_path`
   and `_url` helpers.
 - Models: columns from `create_table` (`string`, `text`, `integer`, `float`,
-  `boolean`, `datetime`, `references`, `timestamps`, `default:`). Unlike
-  Rails, columns are NOT NULL with a zero default (`""`, `0`, `false`), so
-  readers never return nil; `null: true` opts in. `all`,
+  `boolean`, `datetime`, `references`, `timestamps`, `default:`). Columns
+  are nullable unless `null: false`, as in Rails. A `null: false` column gets a
+  zero default (`""`, `0`, `false`) and its reader never returns nil, which
+  spinel compiles to a single type; declare it wherever nil can't happen. `all`,
   `where`, `where.not`, `order`, `limit`, `offset`, `first`, `last`, `count`,
   `exists?`, `pluck`, `find`, `find_by`, `create`, `save`, `update`,
   `destroy` and their `!` forms, `transaction`; validations (`presence`,

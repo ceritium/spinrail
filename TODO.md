@@ -23,7 +23,10 @@ Roughly in priority order within each section.
 - [ ] `left_joins`, `distinct`, `having`, nested includes (`includes(comments: :author)`).
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
 - [x] Halting before_* callbacks with `throw :abort`.
-- [x] Nullable columns with `null: true` (nil in Ruby, `where(x: nil)` is `IS NULL`).
+- [x] Nullable columns, the default as in Rails (nil in Ruby, `where(x: nil)` is
+      `IS NULL`); `null: false` ones have a single type.
+- [ ] `null: false` without a default should reject a missing value instead of
+      storing `""`/`0`.
 - [x] Text values of any length (fixed in the tep fork).
 - [x] Columns added to `db/schema.rb` are added to existing tables at boot.
 - [x] Migrations in `db/migrate` (`create_table`, `add/remove/rename_column`,

@@ -5,12 +5,13 @@ module Spinrail
   class Generators
     TYPES = %w[string text integer bigint float decimal boolean datetime date time references].freeze
 
-    # name:type[?][:index|:uniq]; `?` makes the column nullable, since
-    # spinrail columns are NOT NULL by default.
+    # name:type[!][:index|:uniq]; `!` makes the column null: false, which
+    # gives its reader a single type. References are null: false, as in Rails.
     Field = Struct.new(:name, :type, :null, :index) do
       def references? = type == "references"
       def column = references? ? "#{name}_id" : name
-      def definition = "t.#{type} :#{name}#{null ? ', null: true' : ''}"
+      def options = null ? "" : ", null: false"
+      def definition = "t.#{type} :#{name}#{options}"
       def add_index(table) = "add_index :#{table}, [:#{column}]#{index == 'uniq' ? ', unique: true' : ''}"
       def input
         case type
@@ -122,11 +123,11 @@ module Spinrail
       args.map do |arg|
         name, type, index = arg.split(":", 3)
         type = "string" if type.nil? || type.empty?
-        null = type.end_with?("?")
-        type = type.delete_suffix("?")
+        required = type.end_with?("!")
+        type = type.delete_suffix("!")
         abort "spinrail: unknown type #{type} (#{TYPES.join(', ')})" unless TYPES.include?(type)
         abort "spinrail: unknown modifier :#{index} (index, uniq)" if index && !%w[index uniq].include?(index)
-        Field.new(name, type, null, index)
+        Field.new(name, type, !required && type != "references", index)
       end
     end
 
@@ -150,7 +151,7 @@ module Spinrail
       body = case Inflector.underscore(name)
              when /\Aadd_\w+_to_(\w+)\z/
                table = $1
-               fields.map { |f| "    add_column :#{table}, :#{f.column}, :#{f.references? ? 'integer' : f.type}#{f.null ? ', null: true' : ''}" } +
+               fields.map { |f| "    add_column :#{table}, :#{f.column}, :#{f.references? ? 'integer' : f.type}#{f.options}" } +
                  fields.select(&:index).map { |f| "    #{f.add_index(table)}" }
              when /\Aremove_\w+_from_(\w+)\z/ then fields.map { |f| "    remove_column :#{$1}, :#{f.column}" }
              when /\Acreate_(\w+)\z/
@@ -166,7 +167,7 @@ module Spinrail
     # Rails 8's generator, in spinrail terms: User with has_secure_password,
     # a SessionsController, and require_authentication everywhere else.
     def authentication
-      model("user", fields(%w[email_address:string password_digest:string]))
+      model("user", fields(%w[email_address:string! password_digest:string!]))
       user = File.join(@app, "app/models/user.rb")
       File.write(user, "class User < ApplicationRecord\n  has_secure_password\n  validates :email_address, presence: true, uniqueness: true\nend\n")
       add_route("resource :session, only: [:new, :create, :destroy]")

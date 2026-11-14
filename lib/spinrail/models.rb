@@ -203,7 +203,7 @@ module Spinrail
         elsif column.null
           add.("#{ivar}.nil?", "blank", "can't be blank") if Spinrail.literal(value_node)
         else
-          fail!(node, "presence on a NOT NULL #{column.type} column is always true; declare it null: true")
+          fail!(node, "presence on a NOT NULL #{column.type} column is always true")
         end
       when :length
         fail!(node, "length only applies to string columns") unless column.string?

@@ -6,7 +6,7 @@ class SchemaTest < CompilerTest
       Spinrail::Schema.define do
         create_table :posts do |t|
           t.references :author
-          t.boolean :published, default: true
+          t.boolean :published, default: true, null: false
           t.float :rating
           t.string :title, default: "x"
           t.timestamps
@@ -16,7 +16,9 @@ class SchemaTest < CompilerTest
     table = Spinrail::Schema.new(File.join(dir, "db/schema.rb")).table("posts")
     assert_equal %w[id author_id published rating title created_at updated_at], table.columns.map(&:name)
     assert_includes table.create_sql, "published INTEGER NOT NULL DEFAULT 1"
-    assert_includes table.create_sql, "title TEXT NOT NULL DEFAULT 'x'"
+    assert_includes table.create_sql, "title TEXT DEFAULT 'x'"
+    assert_includes table.create_sql, "rating REAL,"
+    assert table.column("rating").null
     assert_equal "true", table.column("published").default_literal
   end
 

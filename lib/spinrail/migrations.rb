@@ -127,7 +127,7 @@ module Spinrail
     def column(name, type, kw)
       opts = kw.transform_values { |v| Spinrail.literal(v) }
       kind = Schema::TYPES.fetch(type.to_sym) { raise CompileError, "#{@file}: unsupported column type #{type}" }
-      Column.new(name, kind, opts[:default], opts[:null] == true)
+      Column.new(name, kind, opts[:default], opts[:null] != false)
     end
 
     def table!(node, name)
@@ -141,7 +141,7 @@ module Spinrail
     def column_options(column)
       opts = []
       opts << "default: #{column.default.inspect}" unless column.default.nil?
-      opts << "null: true" if column.null
+      opts << "null: false" unless column.null
       opts.empty? ? "" : ", #{opts.join(', ')}"
     end
 
