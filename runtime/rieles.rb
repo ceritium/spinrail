@@ -338,6 +338,12 @@ module Rieles
   NULL_STR = 1.chr
   NULL_INT = -9007199254740991
 
+  # Tep::SQLite copies text into 64 KB buffers; a full one was cut.
+  def self.column_text(value)
+    raise StatementInvalid, "text value longer than 64 KB was truncated by Tep::SQLite" if value.bytesize >= 65535
+    value
+  end
+
   class RecordInvalid < StandardError; end
   class ParameterMissing < StandardError; end
 

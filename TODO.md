@@ -22,8 +22,8 @@ Roughly in priority order within each section.
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
 - [x] Halting before_* callbacks with `throw :abort`.
 - [x] Nullable columns with `null: true` (nil in Ruby, `where(x: nil)` is `IS NULL`).
-- [ ] Text columns are cut at 64 KB: tep's C bridge copies each value into a
-      fixed buffer. Raise or fix upstream.
+- [ ] Text values over 64 KB: tep's C bridge copies each into a fixed buffer.
+      Reading one now raises instead of returning it cut; fix upstream.
 - [x] Columns added to `db/schema.rb` are added to existing tables at boot.
 - [ ] Migrations in `db/migrate` (renames, drops, data changes) with a schema version.
 - [x] `db/seeds.rb` (`rieles db:seed`, `rieles db:reset`).

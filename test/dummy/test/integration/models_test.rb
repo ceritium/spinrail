@@ -98,6 +98,14 @@ class SeedsTest < Rieles::IntegrationTest
   end
 end
 
+class BigTextTest < Rieles::IntegrationTest
+  def test_reading_a_value_over_64_kb_fails_loudly
+    get "/models/seed"
+    get "/models/big"
+    assert_response 500
+  end
+end
+
 class NullableTest < Rieles::IntegrationTest
   def test_nullable_columns
     get "/models/seed"

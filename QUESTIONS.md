@@ -25,3 +25,5 @@ is easy to revisit.
   or keep db/schema.rb as the only source of truth?
 - SQL bind values are logged at debug level without filtering (the
   binds don't carry column names yet). Fine for development?
+- Tep::SQLite cuts text values at 64 KB (fixed C buffer). Open an issue/PR
+  upstream? Rieles raises on such reads meanwhile.

@@ -155,6 +155,12 @@ class ModelsController < ApplicationController
     render plain: lines.join("\n")
   end
 
+  def big
+    post = Post.find_by(title: "First")
+    post.update(body: "x" * 70000)
+    render plain: Post.find(post.id).body.length.to_s
+  end
+
   def authors
     render plain: Author.order(id: :asc).pluck(:name).join(",")
   end
