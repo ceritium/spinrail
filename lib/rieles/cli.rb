@@ -5,9 +5,13 @@ module Rieles
   # `rieles <command>` run from an app's root (apps carry a bin/rieles
   # that does that). The toolchain lives in <repo>/vendor, see toolchain.mk.
   class CLI
-    REPO = File.expand_path("../../..", __dir__)
+    TOOLCHAIN = File.expand_path("../../toolchain.mk", __dir__)
+    # In a checkout, <repo>/vendor; as a gem, RIELES_VENDOR or ~/.cache/rieles.
+    CHECKOUT_VENDOR = File.expand_path("../../../vendor", __dir__)
     FRAMEWORK = File.expand_path("../..", __dir__)
-    VENDOR = File.join(REPO, "vendor")
+    VENDOR = ENV.fetch("RIELES_VENDOR") do
+      File.exist?(File.expand_path("../../../.git", __dir__)) ? CHECKOUT_VENDOR : File.join(Dir.home, ".cache/rieles/vendor")
+    end
     TEP = File.join(VENDOR, "tep/bin/tep")
 
     COMMANDS = {
@@ -205,7 +209,8 @@ module Rieles
     end
 
     def setup
-      system("make", "-s", "-C", REPO, "-f", "toolchain.mk", "setup") or abort "rieles: toolchain setup failed"
+      FileUtils.mkdir_p(VENDOR)
+      system("make", "-s", "-f", TOOLCHAIN, "VENDOR=#{VENDOR}", "setup") or abort "rieles: toolchain setup failed"
     end
 
     def build(output, force: false)

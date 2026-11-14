@@ -41,6 +41,16 @@ checks that `render` passes exactly the view's exposures.
 
 ## Try it
 
+As a gem (the first build clones and compiles spinel and tep into
+`~/.cache/rieles/vendor`, or `RIELES_VENDOR`):
+
+```sh
+gem build rieles.gemspec && gem install rieles-0.1.0.gem
+rieles new ~/code/blog
+```
+
+From this checkout, `bin/rieles` works the same way and uses `../vendor`.
+
 New app:
 
 ```sh

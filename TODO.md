@@ -103,7 +103,9 @@ Roughly in priority order within each section.
 - [x] Tests: fixtures, `assert_select`, cookies/session across requests.
 - [ ] Model tests without HTTP (models only exist inside the binary).
 - [ ] CI.
-- [ ] Package as a gem or spin package; stop requiring `TEP` in the environment.
+- [x] Package as a gem (`gem build rieles.gemspec`); the toolchain goes to
+      `RIELES_VENDOR` or `~/.cache/rieles/vendor` outside a checkout.
+- [ ] Publish the gem (name, license and ownership to decide).
 
 ## Runtime
 

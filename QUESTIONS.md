@@ -30,3 +30,5 @@ is easy to revisit.
 - tep's scheduled server (our default, for Ctrl+C) drops connections under
   a burst of 40; the prefork server doesn't. Report upstream? Default
   production builds to prefork?
+- The gemspec says MIT and lists you as author; the repo has no LICENSE
+  yet. Confirm before publishing anything.

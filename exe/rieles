@@ -1,0 +1,4 @@
+#!/usr/bin/env ruby
+require "rieles"
+
+Rieles::CLI.new(ARGV).run

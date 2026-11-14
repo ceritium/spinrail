@@ -27,10 +27,9 @@ module Rieles
     def new_app
       abort "rieles: #{@app} already exists" if File.exist?(@app)
       name = File.basename(@app)
-      lib = Pathname.new(File.expand_path("..", __dir__)).relative_path_from(Pathname.new(File.join(File.expand_path(@app), "bin")))
       write "bin/rieles", <<~RUBY, mode: 0o755
         #!/usr/bin/env ruby
-        require_relative #{File.join(lib.to_s, "rieles").inspect}
+        #{framework_require}
 
         Rieles::CLI.new(ARGV, File.expand_path("..", __dir__)).run
       RUBY
@@ -84,6 +83,13 @@ module Rieles
     end
 
     private
+
+    # A checkout's apps point at it; a gem install's use the gem.
+    def framework_require
+      return 'require "rieles"' unless File.exist?(File.expand_path("../../../.git", __dir__))
+      lib = Pathname.new(File.expand_path("..", __dir__)).relative_path_from(Pathname.new(File.join(File.expand_path(@app), "bin")))
+      "require_relative #{File.join(lib.to_s, "rieles").inspect}"
+    end
 
     def fields(args)
       args.map do |arg|
