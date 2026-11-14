@@ -65,6 +65,11 @@ Roughly in priority order within each section.
 - [x] `render json:` (literals encoded at build time, models and relations
       have `to_json`), `head :no_content`.
 - [x] `respond_to` with `format.html` / `format.json` (Accept or `?format=`).
+- [x] Turbo Streams: `format.turbo_stream`, `render turbo_stream:` (one or a list),
+      `turbo_stream.append/prepend/replace/update/remove/before/after` with a
+      partial or HTML.
+- [ ] File uploads: tep skips multipart file parts, and its FFI strings aren't
+      NUL-safe, so binary uploads need upstream work.
 - [x] JSON request bodies become params (`{"post": {"title": ...}}` -> `post[title]`).
 - [x] PATCH/PUT/DELETE from HTML forms (`_method` override).
 - [x] Only public methods are actions.

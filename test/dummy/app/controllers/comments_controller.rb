@@ -15,7 +15,16 @@ class CommentsController < ApplicationController
 
   def create
     comment = Comment.create(post_id: @post.id, body: params[:body])
-    redirect_to post_comment_url(@post, comment)
+    respond_to do |format|
+      format.html { redirect_to post_comment_url(@post, comment) }
+      format.turbo_stream do
+        render turbo_stream: [
+          turbo_stream.append("comments", partial: "comments/comment", locals: { comment: comment }),
+          turbo_stream.update("count", @post.comments.count.to_s),
+          turbo_stream.remove("empty")
+        ]
+      end
+    end
   end
 
   private

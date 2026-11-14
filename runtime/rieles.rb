@@ -1158,6 +1158,21 @@ module Rieles
     # The best Accept-Language match among config/locales, or "".
     def locale_from_accept_language = Rieles.locale_from_header(@req.req_headers["accept-language"])
 
+    def wants_turbo_stream?
+      accept = @req.req_headers["accept"]
+      !accept.nil? && accept.include?("text/vnd.turbo-stream.html")
+    end
+
+    def render_turbo_stream(html, status)
+      @res.headers["Content-Type"] = "text/vnd.turbo-stream.html; charset=utf-8"
+      render_html(html, status)
+    end
+
+    def turbo_stream_tag(action, target, html)
+      return "<turbo-stream action=\"" + action + "\" target=\"" + h(target) + "\"></turbo-stream>" if action == "remove"
+      "<turbo-stream action=\"" + action + "\" target=\"" + h(target) + "\"><template>" + html + "</template></turbo-stream>"
+    end
+
     def wants_json?
       return Tep.param(@req, "format") == "json" unless Tep.param(@req, "format").empty?
       accept = @req.req_headers["accept"]

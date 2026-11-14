@@ -253,7 +253,10 @@ module Rieles
         asset_cache_headers,
         *routes.routes.map { |r| route_block(r, controllers) },
         not_found_block
-      ].join("\n")
+      ].join("\n").gsub(/__PARTIAL_LOCALS__(.+?)__/) do
+        locals = @partial_locals.fetch(Regexp.last_match(1), [])
+        locals.empty? ? "" : "(#{locals.join(', ')})"
+      end
     end
 
     # RIELES_DATABASE=postgres (at build time) swaps Tep::SQLite for the
@@ -356,11 +359,13 @@ module Rieles
         [t, lowered]
       end
       defs = methods.map do |t, ruby|
-        params = if t.partial? && t.strict then [t.strict]
-                 elsif t.partial? then @partial_locals.fetch(t.key, [])
-                 else t.exposures.map { |n| "iv_#{n}" }
-                 end
-        "#{SOURCE_MARK}erb #{rel(t.path)}\n" + ruby.sub("__SIGNATURE__", params.empty? ? "" : "(#{params.join(', ')})")
+        # A partial's locals are known once controllers and actions are read
+        # too (turbo_stream.append(..., locals:)); generate fills them in.
+        signature = if t.partial? && t.strict then "(#{t.strict})"
+                    elsif t.partial? then "__PARTIAL_LOCALS__#{t.key}__"
+                    else t.exposures.empty? ? "" : "(#{t.exposures.map { |n| "iv_#{n}" }.join(', ')})"
+                    end
+        "#{SOURCE_MARK}erb #{rel(t.path)}\n" + ruby.sub("__SIGNATURE__", signature)
       end
       defs += @action_views.values.map do |v|
         signature = "#{v.method_name}(#{v.exposures.join(', ')})"

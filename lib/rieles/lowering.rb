@@ -144,6 +144,8 @@ module Rieles
         @rw.replace(node) { "" }
       elsif mailer_call?(node)
         @rw.replace(node) { "#{node.receiver.slice}.new.#{node.name}#{node.arguments ? "(#{@rw.slice(node.arguments)})" : ''}" }
+      elsif turbo_stream_call?(node)
+        lower_turbo_stream(node)
       elsif job_call?(node)
         arg = node.arguments&.arguments&.first
         value = arg ? "(#{@rw.slice(arg)}).to_s" : '""'
@@ -593,15 +595,17 @@ module Rieles
     def lower_respond_to(node)
       var = node.block.parameters&.parameters&.requireds&.first&.name or fail!(node, "respond_to needs |format|")
       branches = (node.block.body&.body || []).map do |stmt|
-        unless stmt.is_a?(Prism::CallNode) && local?(stmt.receiver, var) && %i[html json].include?(stmt.name)
-          fail!(stmt, "respond_to supports format.html and format.json")
+        unless stmt.is_a?(Prism::CallNode) && local?(stmt.receiver, var) && %i[html json turbo_stream].include?(stmt.name)
+          fail!(stmt, "respond_to supports format.html, format.json and format.turbo_stream")
         end
         [stmt.name, stmt.block&.body]
       end
+      # Turbo Stream first: Turbo's Accept header also lists text/html.
+      tests = { turbo_stream: "wants_turbo_stream?", json: "wants_json?", html: "!wants_json?" }
+      branches = branches.sort_by { |format, _| tests.keys.index(format) }
       @rw.replace(node) do
         code = branches.map.with_index do |(format, body), i|
-          test = format == :json ? "wants_json?" : "!wants_json?"
-          "#{i.zero? ? 'if' : 'elsif'} #{test}\n#{body ? @rw.slice(body) : 'nil'}"
+          "#{i.zero? ? 'if' : 'elsif'} #{tests[format]}\n#{body ? @rw.slice(body) : 'nil'}"
         end
         code.join("\n") + "\nelse\nhead(406)\nend"
       end
@@ -821,6 +825,10 @@ module Rieles
           values = view.exposures.map { |e| @rw.slice(exposures.fetch(e.to_sym)) }
           "render_view(ApplicationView.new(self).#{view.method_name}(#{values.join(', ')}), #{status})"
         end
+      elsif kw[:turbo_stream]
+        @ctx.record_response(nil, where(node))
+        streams = kw[:turbo_stream].is_a?(Prism::ArrayNode) ? kw[:turbo_stream].elements : [kw[:turbo_stream]]
+        @rw.replace(node) { "render_turbo_stream(#{streams.map { |n| "(#{@rw.slice(n)})" }.join(' + ')}, #{status})" }
       elsif kw[:json]
         @ctx.record_response(nil, where(node))
         @rw.replace(node) { "render_json(#{json(kw[:json])}, #{status})" }
@@ -841,6 +849,38 @@ module Rieles
         @rw.replace(node) { layout.empty? ? "#{method}(#{status})" : "#{method}(#{status}, #{layout.inspect})" }
       else
         fail!(node, "unsupported render: `#{node.slice}`")
+      end
+    end
+
+    TURBO_ACTIONS = %i[append prepend replace update remove before after].freeze
+
+    # turbo_stream.append("entries", partial: "entries/entry", locals: { entry: @entry })
+    # or a string of HTML as the second argument.
+    def turbo_stream_call?(node)
+      TURBO_ACTIONS.include?(node.name) && bare?(node.receiver, :turbo_stream)
+    end
+
+    def lower_turbo_stream(node)
+      args, kw = Rieles.call_args(node)
+      fail!(node, "turbo_stream.#{node.name}(target, ...)") unless args.first
+      content = if node.name == :remove then nil
+                elsif kw[:partial]
+                  name = Rieles.literal(kw[:partial]).to_s
+                  dir, base = name.include?("/") ? [File.dirname(name), File.basename(name)] : [@ctx.dir, name]
+                  locals = kw[:locals] ? kw[:locals].elements.to_h { |e| [Rieles.literal(e.key), e.value] } : {}
+                  method, keywords = @ctx.partial_method("#{dir}/_#{base}", locals.keys, where(node))
+                  [method, keywords, locals]
+                elsif args[1] then args[1]
+                end
+      @rw.replace(node) do
+        html = case content
+               when nil then '""'
+               when Array
+                 method, keywords, locals = content
+                 "ApplicationView.new(self).#{method}(#{locals.map { |k, v| keywords ? "#{k}: #{@rw.slice(v)}" : @rw.slice(v) }.join(', ')})"
+               else "(#{@rw.slice(content)}).to_s"
+               end
+        "turbo_stream_tag(#{node.name.to_s.inspect}, (#{@rw.slice(args.first)}).to_s, #{html})"
       end
     end
 

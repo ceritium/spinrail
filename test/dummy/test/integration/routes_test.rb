@@ -13,6 +13,14 @@ class RoutesTest < Rieles::IntegrationTest
     assert_equal "comment 1 of 1", response.body
   end
 
+  def test_turbo_stream_response
+    post "/posts/1/comments", params: { body: "streamed" }, headers: { "Accept" => "text/vnd.turbo-stream.html, text/html" }
+    assert_equal "text/vnd.turbo-stream.html; charset=utf-8", response["Content-Type"]
+    assert_equal '<turbo-stream action="append" target="comments"><template><li id="comment_1">streamed</li></template></turbo-stream>' \
+                 '<turbo-stream action="update" target="count"><template>1</template></turbo-stream>' \
+                 '<turbo-stream action="remove" target="empty"></turbo-stream>', response.body
+  end
+
   def test_nested_form
     get "/posts/1/comments/new"
     assert_select "form[action='/posts/1/comments'] textarea#comment_body"
