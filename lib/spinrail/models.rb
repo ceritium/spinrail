@@ -69,6 +69,8 @@ module Spinrail
       elsif call == :has_secure_password
         fail!(stmt, "has_secure_password needs a password_digest column") unless @table.column("password_digest")
         @secure_password = true
+        _, kw = Spinrail.call_args(stmt)
+        @secure_password_validations = !(kw[:validations] && Spinrail.literal(kw[:validations]) == false)
       else
         @body << stmt.slice.gsub(/^ {#{stmt.location.start_column}}/, "")
       end
@@ -438,7 +440,7 @@ module Spinrail
           COLUMNS = #{columns.map(&:name).inspect}
           attr_accessor #{columns.map { |c| ":#{c.name}" }.join(', ')}
           attr_reader :errors
-        #{@extra_virtual.empty? ? '' : "  attr_accessor #{@extra_virtual.map { |v| ":#{v}" }.join(', ')}\n"}        #{@secure_password ? "  attr_reader :password\n  attr_accessor :password_confirmation\n\n  def password=(plain)\n    @password = plain\n    @password_digest = Tep::Password.hash(plain) unless plain.empty?\n  end\n\n  # true or false (Rails returns the record or false).\n  def authenticate(plain) = !@password_digest.empty? && Tep::Password.verify(plain, @password_digest)\n" : ""}
+        #{@extra_virtual.empty? ? '' : "  attr_accessor #{@extra_virtual.map { |v| ":#{v}" }.join(', ')}\n"}        #{@secure_password ? "  attr_reader :password\n  attr_accessor :password_confirmation\n\n  def password=(plain)\n    @password = plain\n    @password_digest = Tep::Password.hash(plain) unless plain.empty?\n  end\n\n  # true or false (Rails returns the record or false).\n  def authenticate(plain) = !@password_digest.to_s.empty? && Tep::Password.verify(plain, @password_digest)\n" : ""}
           def initialize(#{kwargs})
         #{indent(columns.map { |c| "@#{c.name} = #{c.name}" }, 4)}
         #{indent((@secure_password ? ["@password = \"\"", *secure_assign] : []) + @extra_virtual.map { |v| "@#{v} = #{v}" }, 4)}
@@ -603,8 +605,8 @@ module Spinrail
     end
 
     def secure_validations
-      return [] unless @secure_password
-      [["password", "@password_digest.empty?", ["blank", "can't be blank", ""]],
+      return [] unless @secure_password && @secure_password_validations
+      [["password", "@password_digest.to_s.empty?", ["blank", "can't be blank", ""]],
        ["password_confirmation", "!@password_confirmation.empty? && @password_confirmation != @password",
         ["confirmation", "doesn't match Password", ""]]]
     end

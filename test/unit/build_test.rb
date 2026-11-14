@@ -3,6 +3,15 @@ require_relative "helper"
 class BuildTest < CompilerTest
   def build(files) = Spinrail::Build.new(minimal_app(files)).send(:generate)
 
+  def test_secure_password_validations_can_be_turned_off
+    schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :password_digest\n end\nend\n"
+    on = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\n has_secure_password\nend\n")
+    off = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\n has_secure_password validations: false\nend\n")
+    assert_includes on, "@password_digest.to_s.empty?"
+    assert_includes off, "def authenticate(plain)"
+    refute_includes off, "can't be blank"
+  end
+
   def test_template_reading_an_unassigned_ivar
     error = assert_raises(Spinrail::CompileError) do
       build(
