@@ -3,6 +3,7 @@ require "fileutils"
 require "json"
 require "cgi"
 require "yaml"
+require "zlib"
 
 module Rieles
   class CompileError < StandardError; end

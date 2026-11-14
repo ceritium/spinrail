@@ -442,16 +442,69 @@ module Rieles
     true
   end
 
+  # A savepoint, so it also nests inside a model test's transaction.
   def self.transaction
     db = Rieles.db
-    db.exec("BEGIN")
+    db.exec("SAVEPOINT rieles_tx")
     begin
       result = yield
-      db.exec("COMMIT")
+      db.exec("RELEASE rieles_tx")
       result
     rescue StandardError => e
-      db.exec("ROLLBACK")
+      db.exec("ROLLBACK TO rieles_tx")
+      db.exec("RELEASE rieles_tx")
       raise e
+    end
+  end
+
+  # Raised by model test assertions; not a StandardError, so
+  # assert_raises(StandardError) can't swallow it.
+  class AssertionFailed < Exception; end
+
+  # Base of test/models/*_test.rb; assertions are lowered at build time
+  # to rieles_assert calls.
+  class ModelTest
+    def setup; end
+    def teardown; end
+
+    def rieles_assert(ok, where, message)
+      raise AssertionFailed, where + ": " + message unless ok
+    end
+
+    def flunk(message = "Flunked") = raise(AssertionFailed, message)
+  end
+
+  # Runs each test in a transaction that is rolled back afterwards.
+  class TestRunner
+    def initialize
+      @runs = 0
+      @failures = []
+      @filter = ENV.fetch("RIELES_TEST_NAME", "")
+    end
+
+    def run_case(name)
+      return unless @filter.empty? || name.include?(@filter)
+      @runs += 1
+      db = Rieles.db
+      db.exec("BEGIN")
+      begin
+        yield
+        print "."
+      rescue AssertionFailed => e
+        print "F"
+        @failures << "Failure: " + name + "\n  " + e.message
+      rescue StandardError => e
+        print "E"
+        @failures << "Error: " + name + "\n  " + e.class.name + ": " + e.message
+      end
+      db.exec("ROLLBACK")
+    end
+
+    def finish
+      puts ""
+      @failures.each { |f| puts "", f }
+      puts "", @runs.to_s + " model tests, " + @failures.length.to_s + " failures"
+      @failures.empty? ? 0 : 1
     end
   end
 

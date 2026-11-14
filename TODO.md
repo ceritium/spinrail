@@ -101,7 +101,8 @@ Roughly in priority order within each section.
 - [x] Unit tests for the compiler (`rake unit`; `rake` also runs both apps).
 - [x] Framework request tests in `test/dummy` (`bin/rieles test` there).
 - [x] Tests: fixtures, `assert_select`, cookies/session across requests.
-- [ ] Model tests without HTTP (models only exist inside the binary).
+- [x] Model tests (`test/models`): compiled into a test build of the binary, one
+      rolled-back transaction per test, Minitest assertions lowered at build time.
 - [ ] CI.
 - [x] Package as a gem (`gem build rieles.gemspec`); the toolchain goes to
       `RIELES_VENDOR` or `~/.cache/rieles/vendor` outside a checkout.

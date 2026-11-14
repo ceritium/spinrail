@@ -1,5 +1,6 @@
 require "optparse"
 require "open3"
+require "tmpdir"
 
 module Rieles
   # `rieles <command>` run from an app's root (apps carry a bin/rieles
@@ -155,19 +156,49 @@ module Rieles
       end
     end
 
+    # test/models runs inside a test build of the binary; everything else
+    # runs in CRuby against the app binary over HTTP.
     def test
       Dir.chdir(@app)
       files, options = @argv.partition { |a| a.end_with?(".rb") || File.directory?(a) }
       files = ["test"] if files.empty?
       files = files.flat_map { |f| f.end_with?(".rb") ? [f] : Dir[File.join(f, "**/*_test.rb")].sort }
       abort "rieles: no tests in test/" if files.empty?
-      build(binary) if stale?
+      model_files, request_files = files.partition { |f| f.start_with?("test/models/") }
       FileUtils.mkdir_p(File.join(@app, "log"))
       File.write(File.join(@app, "log/test.log"), "")
+      ok = model_files.empty? || model_tests(option_value(options, "-n"))
+      return exit(ok ? 0 : 1) if request_files.empty?
+      build(binary) if stale?
       env = { "RIELES_APP" => @app, "RIELES_BINARY" => binary }
-      loader = "files = ARGV.shift(#{files.size}); files.each { |f| require File.expand_path(f) }"
+      loader = "files = ARGV.shift(#{request_files.size}); files.each { |f| require File.expand_path(f) }"
       $stdout.flush
-      exec(env, RbConfig.ruby, "-I", File.join(FRAMEWORK, "lib"), "-r", "rieles/test", "-e", loader, *files, *options)
+      system(env, RbConfig.ruby, "-I", File.join(FRAMEWORK, "lib"), "-r", "rieles/test", "-e", loader, *request_files, *options)
+      exit(ok && $?.success? ? 0 : 1)
+    end
+
+    def option_value(options, flag)
+      i = options.index(flag)
+      i ? options[i + 1].to_s.delete_prefix("/").delete_suffix("/") : ""
+    end
+
+    def model_tests(filter)
+      test_binary = File.join(@app, "tmp", "#{File.basename(@app)}-test")
+      newest = (input_mtimes.values + Dir[File.join(@app, "test/**/*")].map { |f| File.mtime(f) }).max
+      compile(test_binary, tests: true) or abort "rieles: build failed" if !File.exist?(test_binary) || newest > File.mtime(test_binary)
+      Dir.mktmpdir("rieles-models") do |dir|
+        env = { "DATABASE_PATH" => File.join(dir, "test.sqlite3"), "RIELES_ENV" => "test", "RIELES_RUN_TESTS" => "1",
+                "RIELES_LOG_FILE" => File.join(@app, "log/test.log"), "RIELES_TEST_NAME" => filter }
+        require_relative "fixtures"
+        sql = Fixtures.load(@app, ["all"])
+        unless sql.empty?
+          File.write(File.join(dir, "fixtures.sql"), sql)
+          env["RIELES_BOOT_SQL"] = File.join(dir, "fixtures.sql")
+        end
+        puts "rieles: model tests"
+        $stdout.flush
+        system(env, test_binary)
+      end
     end
 
     def migrate
@@ -218,10 +249,10 @@ module Rieles
       compile(output) or abort "rieles: build failed (generated source: tmp/rieles/app.rb)"
     end
 
-    def compile(output)
+    def compile(output, tests: false)
       setup unless File.executable?(File.join(VENDOR, "spinel/spinel")) && File.exist?(TEP)
-      build = Build.new(@app)
-      source = build.write(File.join(@app, "tmp/rieles"))
+      build = Build.new(@app, tests: tests)
+      source = build.write(File.join(@app, tests ? "tmp/rieles-test" : "tmp/rieles"))
       build.warnings.uniq.each { |w| warn "warning: #{w}" }
       env = {
         "SPINEL" => File.join(VENDOR, "spinel/spinel"),

@@ -76,6 +76,10 @@ module Rieles
 
     def visit_call_node(node)
       check_n_plus_one(node)
+      if @ctx.test? && node.receiver.nil? && lower_test_call(node)
+        super
+        return
+      end
       if @ctx.view? && node.name == :form_with && node.receiver.nil? && node.block
         lower_form(node)
         super
@@ -222,6 +226,56 @@ module Rieles
         n.compact_child_nodes.each { |c| find.call(c) }
       end
       find.call(node.block)
+    end
+
+    ASSERTIONS = %i[assert refute assert_not assert_equal assert_not_equal refute_equal assert_nil refute_nil assert_not_nil
+                    assert_includes refute_includes assert_empty refute_empty assert_raises assert_difference
+                    assert_no_difference fixtures].freeze
+
+    # Minitest assertions become rieles_assert(ok, "file:line", message);
+    # posts(:first) becomes Post.find(<fixture id>).
+    def lower_test_call(node)
+      if @ctx.fixture_tables.include?(node.name.to_s) && node.arguments&.arguments&.size == 1
+        label = Rieles.literal(node.arguments.arguments.first).to_s
+        model = Inflector.camelize(Inflector.singularize(node.name.to_s))
+        id = Zlib.crc32(label) % (2**30 - 1)
+        @rw.replace(node) { "#{model}.find(#{id})" }
+        return true
+      end
+      return false unless ASSERTIONS.include?(node.name)
+      args, = Rieles.call_args(node)
+      at = where(node).inspect
+      s = ->(n) { "(#{@rw.slice(n)})" }
+      @rw.replace(node) do
+        case node.name
+        when :fixtures then ""
+        when :assert then "rieles_assert(#{s.(args[0])}, #{at}, #{args[1] ? s.(args[1]) : '"Expected a truthy value"'})"
+        when :refute, :assert_not then "rieles_assert(!#{s.(args[0])}, #{at}, #{args[1] ? s.(args[1]) : '"Expected a falsy value"'})"
+        when :assert_equal
+          "rieles_assert(#{s.(args[0])} == #{s.(args[1])}, #{at}, \"Expected \" + #{s.(args[0])}.inspect + \", got \" + #{s.(args[1])}.inspect)"
+        when :assert_not_equal, :refute_equal
+          "rieles_assert(#{s.(args[0])} != #{s.(args[1])}, #{at}, \"Expected something other than \" + #{s.(args[0])}.inspect)"
+        when :assert_nil then "rieles_assert(#{s.(args[0])}.nil?, #{at}, \"Expected nil, got \" + #{s.(args[0])}.inspect)"
+        when :refute_nil, :assert_not_nil then "rieles_assert(!#{s.(args[0])}.nil?, #{at}, \"Expected a value, got nil\")"
+        when :assert_includes
+          "rieles_assert(#{s.(args[0])}.include?(#{s.(args[1])}), #{at}, \"Expected \" + #{s.(args[0])}.inspect + \" to include \" + #{s.(args[1])}.inspect)"
+        when :refute_includes
+          "rieles_assert(!#{s.(args[0])}.include?(#{s.(args[1])}), #{at}, #{s.(args[0])}.inspect + \" includes \" + #{s.(args[1])}.inspect)"
+        when :assert_empty then "rieles_assert(#{s.(args[0])}.empty?, #{at}, \"Expected empty, got \" + #{s.(args[0])}.inspect)"
+        when :refute_empty then "rieles_assert(!#{s.(args[0])}.empty?, #{at}, \"Expected not empty\")"
+        when :assert_raises
+          body = node.block&.body ? @rw.slice(node.block.body) : ""
+          klass = args[0] ? @rw.slice(args[0]) : "StandardError"
+          "begin\n#{body}\nflunk(#{at} + \": expected #{klass} to be raised\")\nrescue #{klass}\nnil\nend"
+        when :assert_difference, :assert_no_difference
+          expr = Rieles.literal(args[0]).to_s
+          diff = node.name == :assert_no_difference ? 0 : (args[1] ? Rieles.literal(args[1]) : 1)
+          body = node.block&.body ? @rw.slice(node.block.body) : ""
+          "rieles_before = (#{expr})\n#{body}\nrieles_change = (#{expr}) - rieles_before\n" \
+            "rieles_assert(rieles_change == #{diff}, #{at}, \"#{expr} changed by \" + rieles_change.to_s + \", expected #{diff}\")"
+        end
+      end
+      true
     end
 
     def params_call?(node)

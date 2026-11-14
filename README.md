@@ -92,6 +92,13 @@ class EntriesTest < Rieles::IntegrationTest
 end
 ```
 
+Model tests in `test/models` (`class EntryTest < ActiveSupport::TestCase` or
+`Rieles::ModelTest`) are compiled into a separate test build of the binary,
+since models only exist there. Each test runs in a transaction that is
+rolled back; `assert`, `assert_equal`, `assert_nil`, `assert_includes`,
+`assert_empty`, `assert_raises`, `assert_difference` and fixture accessors
+are lowered at build time. `-n name` filters them.
+
 Framework tests: `rake unit` (compiler, no spinel) and `rake` (also the
 request tests of `test/dummy` and the guestbook).
 

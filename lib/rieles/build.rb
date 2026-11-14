@@ -64,9 +64,10 @@ module Rieles
     class Context
       attr_reader :dir, :exposures, :assigns, :responses
 
-      def initialize(build, dir, view:, ivars: true, action: nil, controller: false)
+      def initialize(build, dir, view:, ivars: true, action: nil, controller: false, test: false)
         @build = build
         @controller = controller
+        @test = test
         @dir = dir
         @view = view
         @ivars = ivars
@@ -78,6 +79,8 @@ module Rieles
       end
 
       def view? = @view
+      def test? = @test
+      def fixture_tables = @build ? @build.fixture_tables : []
       def controller? = @controller
       def action? = !@action.nil?
       def enter_def(name) = @current = name
@@ -126,6 +129,8 @@ module Rieles
       @model_names ||= Dir[path("app/models/*.rb")].map { |f| Inflector.camelize(File.basename(f, ".rb")) } - ["ApplicationRecord"]
     end
 
+    def fixture_tables = Dir[path("test/fixtures/*.yml")].map { |f| File.basename(f, ".yml") }
+
     # Non-fatal findings (possible N+1 queries), printed by the CLI.
     def warnings = @warnings ||= []
 
@@ -145,9 +150,11 @@ module Rieles
       end
     end
 
-    def initialize(app_dir)
+    # tests: compile test/models/*_test.rb in (the test binary).
+    def initialize(app_dir, tests: false)
       @app = File.expand_path(app_dir)
       @partial_locals = {}
+      @tests = tests
     end
 
     def routes = @routes ||= Routes.new(path("config/routes.rb"))
@@ -218,6 +225,7 @@ module Rieles
         application_controller_support,
         *controllers.map { |name, c| render_methods(name, c) }.compact,
         *@actions.values.map { |a| "#{SOURCE_MARK}#{a.file}\n#{a.source}" },
+        *(@tests ? model_tests.map { |t| "#{SOURCE_MARK}#{t[:file]}\n#{t[:source]}" } : []),
         seeds_class,
         schema_setup(schema),
         method_override,
@@ -621,6 +629,34 @@ module Rieles
 
     def migrations = @migrations ||= Migrations.new(path("db/migrate"))
 
+    # test/models/*_test.rb: class PostTest < Rieles::ModelTest (or
+    # ActiveSupport::TestCase) with test_* methods.
+    def model_tests
+      @model_tests ||= Dir[path("test/models/**/*_test.rb")].sort.map do |file|
+        source = File.read(file)
+        klass = Rieles.parse(source, rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) } or
+          raise CompileError, "#{rel(file)}: expected a test class"
+        name = klass.constant_path.slice
+        tests = (klass.body&.body || []).grep(Prism::DefNode).map(&:name).map(&:to_s).select { |n| n.start_with?("test_") }
+        header = klass.location.slice.lines.first
+        source = source.sub(header, "class #{name} < Rieles::ModelTest\n")
+        { file: rel(file), name: name, tests: tests,
+          source: Lowering.lower(source, rel(file), Context.new(self, "", view: false, test: true)) }
+      end
+    end
+
+    # RIELES_RUN_TESTS=1 runs every model test and exits with its status.
+    def test_runner
+      cases = model_tests.flat_map do |t|
+        t[:tests].map do |m|
+          "    runner.run_case(#{"#{t[:name]}##{m}".inspect}) do\n" \
+            "      test = #{t[:name]}.new\n      test.setup\n      test.#{m}\n      test.teardown\n    end"
+        end
+      end
+      "  if ENV.fetch(\"RIELES_RUN_TESTS\", \"\") == \"1\"\n    runner = Rieles::TestRunner.new\n" \
+        "#{cases.join("\n")}\n    exit(runner.finish)\n  end\n"
+    end
+
     # RIELES_ROLLBACK=1 undoes the latest applied migration and exits.
     def rollback_code
       branches = migrations.migrations.reverse.map do |m|
@@ -664,6 +700,7 @@ module Rieles
           boot_sql = ENV.fetch("RIELES_BOOT_SQL", "")
           Rieles.run_sql_file(boot_sql) unless boot_sql.empty?
         #{seeds ? "  if ENV.fetch(\"RIELES_SEED\", \"\") == \"1\"\n    RielesSeeds.run\n    puts \"rieles: seeded\"\n    exit(0)\n  end" : ""}
+        #{@tests ? test_runner : ''}
           Rieles::DB.close
         end
       RUBY
