@@ -4,7 +4,7 @@
 # rieles-N tag to pick up fork changes; setup moves vendor/tep to it.
 SPINEL_REF    := 2026.10.25
 TEP_REPO      ?= https://github.com/ceritium/tep
-TEP_REF       ?= rieles-4
+TEP_REF       ?= rieles-5
 SPINELKIT_REF := v0.3.1
 
 # VENDOR defaults to <repo>/vendor; the rieles CLI passes its own when

@@ -1,6 +1,13 @@
 # Compiled into every app by spinel. Everything app-specific (models,
 # path helpers, views) is generated around these classes at build time.
 
+# Rails' name for it; tep's request.ip is the peer address.
+module Tep
+  class Request
+    def remote_ip = @remote_host
+  end
+end
+
 # `render json:` calls to_json on whatever it gets; models and relations
 # generate theirs.
 class String
@@ -74,19 +81,21 @@ module Rieles
       @path = ""
       @action = ""
       @request_id = ""
+      @ip = ""
       @location = ""
       @error = ""
       @param_names = []
       @param_values = []
     end
 
-    def start(verb, path, action, request_id, params)
+    def start(verb, path, action, request_id, params, ip)
       reset
       @started = Rieles.clock
       @verb = verb
       @path = path
       @action = action
       @request_id = request_id
+      @ip = ip
       params.each do |name, value|
         @param_names << name
         @param_values << (filtered?(name) ? "[FILTERED]" : value.dup.force_encoding("UTF-8").scrub("?"))
@@ -198,7 +207,8 @@ module Rieles
   class DevLogger < Logger
     def on_start
       emit ""
-      emit "Started " + @verb + " " + @path.inspect + " at " + Time.now.strftime("%Y-%m-%d %H:%M:%S") + " [" + @request_id + "]"
+      emit "Started " + @verb + " " + @path.inspect + (@ip.empty? ? "" : " for " + @ip) + " at " +
+           Time.now.strftime("%Y-%m-%d %H:%M:%S") + " [" + @request_id + "]"
       emit "Processing by " + @action if @action.length > 0
       return if @param_names.empty?
       pairs = []
@@ -237,6 +247,7 @@ module Rieles
   class LogfmtLogger < Logger
     def on_finish(status, elapsed)
       line = "time=" + time + " request_id=" + value(@request_id) + " method=" + @verb + " path=" + value(@path)
+      line = line + " ip=" + value(@ip) unless @ip.empty?
       line = line + " action=" + value(@action) if @action.length > 0
       line = line + " status=" + status.to_s + " duration_ms=" + ms(elapsed) +
              " view_ms=" + ms(@view) + " db_ms=" + ms(@db)
@@ -256,6 +267,7 @@ module Rieles
     def on_finish(status, elapsed)
       fields = ["\"time\":" + str(time), "\"request_id\":" + str(@request_id),
                 "\"method\":" + str(@verb), "\"path\":" + str(@path)]
+      fields << "\"ip\":" + str(@ip) unless @ip.empty?
       fields << "\"action\":" + str(@action) if @action.length > 0
       fields << "\"status\":" + status.to_s
       fields << "\"duration_ms\":" + ms(elapsed)

@@ -30,6 +30,7 @@ class LogFileTest < Rieles::IntegrationTest
     assert_equal "req-1", entry["request_id"]
     assert_equal "SessionsController#show", entry["action"]
     assert_equal 200, entry["status"]
+    assert_equal "127.0.0.1", entry["ip"]
   end
 end
 

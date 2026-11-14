@@ -164,7 +164,7 @@ Roughly in priority order within each section.
       and info level in production, `SECRET_KEY_BASE` required there.
 - [x] Log levels (`RIELES_LOG_LEVEL`): SQL and rendered templates only at debug.
 - [x] Log: request id, also sent as `X-Request-Id` (an incoming one is kept).
-- [ ] Log: client IP (tep has no peer address yet).
+- [x] Log: client IP; `request.ip` / `request.remote_ip` (tep fork).
 - [ ] Log: backtraces for 500s. Blocked: spinel exceptions carry an empty backtrace.
 - [x] Log: configurable filtered params (`RIELES_FILTER_PARAMETERS`).
 - [x] Log: SQL bind values at debug level.

@@ -958,7 +958,7 @@ module Rieles
           request_id = Rieles.request_id(req)
           res.headers["X-Request-Id"] = request_id
           Rieles.set_locale("")
-          Rieles.log.start(req.verb, req.path, #{label.inspect}, request_id, req.params)
+          Rieles.log.start(req.verb, req.path, #{label.inspect}, request_id, req.params, req.ip)
           c = #{klass}.new(req, res)
           begin
             c.#{runner}
@@ -987,7 +987,7 @@ module Rieles
         not_found do
           request_id = Rieles.request_id(req)
           res.headers["X-Request-Id"] = request_id
-          Rieles.log.start(req.verb, req.path, "", request_id, req.params)
+          Rieles.log.start(req.verb, req.path, "", request_id, req.params, req.ip)
           c = ApplicationController.new(req, res)
           c.render_error(404, "Not found")
           Rieles.log.finish(res.status)
