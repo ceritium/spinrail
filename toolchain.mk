@@ -3,7 +3,7 @@
 # and tested against spinel at SPINEL_REF. Bump TEP_REF to a new fixes-N tag
 # to pick up fork changes; setup moves vendor/tep to it.
 # A matz/spinel commit (or tag); setup moves vendor/spinel to it.
-SPINEL_REF    := d92e57a85d630fcec42a30906181fded1ce500f9
+SPINEL_REF    := 2026.10.25
 TEP_REPO      ?= https://github.com/ceritium/tep
 TEP_REF       ?= fixes-1
 SPINELKIT_REF := v0.3.1
