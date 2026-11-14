@@ -6,3 +6,6 @@
 <p><%= number_to_currency(1234.5) %> <%= number_to_currency(-5, unit: "€", precision: 0) %></p>
 <p><%= time_ago_in_words(@post.created_at) %></p>
 <%= link_to post_path(@post), class: "card" do %><strong><%= @post.title %></strong><% end %>
+<%= stylesheet_link_tag "style", media: "all" %>
+<%= javascript_include_tag "https://cdn.example.com/x.js", defer: true %>
+<%= image_tag "logo.png", alt: "Logo" %>

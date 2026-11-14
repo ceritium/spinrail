@@ -1,5 +1,6 @@
 class Post < ApplicationRecord
   belongs_to :author
+  enum :kind, { article: 0, note: 1 }
   has_many :comments, dependent: :delete_all
 
   validates :title, presence: true, length: { minimum: 3, maximum: 50 }

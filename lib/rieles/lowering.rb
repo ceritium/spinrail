@@ -99,6 +99,9 @@ module Rieles
       elsif @ctx.view? && node.receiver.nil? && node.name == :dom_id && node.arguments&.arguments&.size == 1
         arg = node.arguments.arguments.first
         @rw.replace(node) { "(#{@rw.slice(arg)}).dom_id" }
+      elsif @ctx.view? && node.receiver.nil? && %i[stylesheet_link_tag javascript_include_tag image_tag].include?(node.name)
+        args, kw = Rieles.call_args(node)
+        @rw.replace(node) { "#{node.name}((#{@rw.slice(args.first)}).to_s, #{html_attrs(kw)})" }
       elsif @ctx.view? && node.receiver.nil? && %i[link_to button_to].include?(node.name) && node.block.nil?
         lower_link(node)
       elsif @ctx.action? && node.receiver.nil? && node.name == :params && node.block

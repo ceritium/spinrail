@@ -40,6 +40,8 @@ module Rieles
       @callbacks = Hash.new { |h, k| h[k] = [] }
       @associations = []
       @scopes = []
+      @enums = {}
+      @extra_virtual = []
       @body = []
       (klass.body&.body || []).each { |stmt| collect(stmt) }
     end
@@ -62,6 +64,8 @@ module Rieles
         association(stmt)
       elsif call == :scope
         scope(stmt)
+      elsif call == :enum
+        enum(stmt)
       elsif call == :has_secure_password
         fail!(stmt, "has_secure_password needs a password_digest column") unless @table.column("password_digest")
         @secure_password = true
@@ -126,6 +130,33 @@ module Rieles
       @scopes << [name, params, body]
     end
 
+    # enum :status, { draft: 0, published: 1 } (or enum status: {...}).
+    def enum(node)
+      args, kw = Rieles.call_args(node)
+      name, values = args[0] ? [Rieles.literal(args[0]).to_s, args[1]] : [kw.keys.first.to_s, kw.values.first]
+      mapping = Rieles.literal(values)
+      mapping = mapping.each_with_index.to_h { |v, i| [v, i] } if mapping.is_a?(Array)
+      mapping = mapping.to_h { |k, v| [k.to_s, v] }
+      index = @table.columns.index { |c| c.name == name } or fail!(node, "enum :#{name} needs an integer column #{name}")
+      fail!(node, "enum :#{name} needs an integer column") unless @table.columns[index].integer?
+      @table.columns[index] = EnumColumn.from(@table.columns[index], mapping)
+      @enums[name] = mapping
+      @validations << [name, "!#{mapping.keys.inspect}.include?(@#{name})", ["inclusion", "is not included in the list", ""]]
+    end
+
+    def enum_methods
+      @enums.flat_map do |column, mapping|
+        mapping.keys.flat_map do |value|
+          ["def #{value}? = @#{column} == #{value.inspect}", "def #{value}! = update(#{column}: #{value.inspect})"]
+        end + ["def self.#{Inflector.pluralize(column)} = #{mapping.inspect}"] +
+          mapping.keys.map { |value| "def self.#{value} = all.where(#{column}: #{value.inspect})" }
+      end
+    end
+
+    def enum_relation_methods
+      @enums.flat_map { |column, mapping| mapping.keys.map { |value| "def #{value} = where(#{column}: #{value.inspect})" } }
+    end
+
     def validates(node)
       args, kw = Rieles.call_args(node)
       @guard = guard(node, kw.slice(:if, :unless, :on))
@@ -138,8 +169,21 @@ module Rieles
           @validations << [attr, guarded("!#{assoc.class_name}.where(id: @#{assoc.foreign_key}).exists?"), ["required", "must exist", ""]]
           next
         end
+        rules = kw.dup
+        if rules.key?(:acceptance) && !@table.column(attr)
+          @extra_virtual << attr unless @extra_virtual.include?(attr)
+          @validations << [attr, guarded("@#{attr} != \"1\" && @#{attr} != \"true\""), ["accepted", "must be accepted", ""]]
+          rules.delete(:acceptance)
+          next if rules.empty?
+        end
         column = @table.column(attr) or fail!(node, "unknown attribute #{attr}")
-        kw.each { |kind, value_node| validation(node, column, kind, value_node) }
+        if rules.delete(:confirmation)
+          confirmation = "#{attr}_confirmation"
+          @extra_virtual << confirmation unless @extra_virtual.include?(confirmation)
+          @validations << [confirmation, guarded("!@#{confirmation}.empty? && @#{confirmation} != @#{attr}.to_s"),
+                           ["confirmation", "doesn't match #{Inflector.humanize(attr)}", ""]]
+        end
+        rules.each { |kind, value_node| validation(node, column, kind, value_node) }
       end
       @guard = nil
     end
@@ -239,7 +283,7 @@ module Rieles
     end
 
     # has_secure_password: password and password_confirmation aren't columns.
-    def virtual = @secure_password ? %w[password password_confirmation] : []
+    def virtual = (@secure_password ? %w[password password_confirmation] : []) + @extra_virtual
 
     def json_fields = columns.reject { |c| c.name == "password_digest" }.map { |c| "#{%("#{c.name}":).inspect} + @#{c.name}.to_json" }.join(%( + "," + ))
 
@@ -404,10 +448,10 @@ module Rieles
           COLUMNS = #{columns.map(&:name).inspect}
           attr_accessor #{columns.map { |c| ":#{c.name}" }.join(', ')}
           attr_reader :errors
-        #{@secure_password ? "  attr_reader :password\n  attr_accessor :password_confirmation\n\n  def password=(plain)\n    @password = plain\n    @password_digest = Tep::Password.hash(plain) unless plain.empty?\n  end\n\n  # true or false (Rails returns the record or false).\n  def authenticate(plain) = !@password_digest.empty? && Tep::Password.verify(plain, @password_digest)\n" : ""}
+        #{@extra_virtual.empty? ? '' : "  attr_accessor #{@extra_virtual.map { |v| ":#{v}" }.join(', ')}\n"}        #{@secure_password ? "  attr_reader :password\n  attr_accessor :password_confirmation\n\n  def password=(plain)\n    @password = plain\n    @password_digest = Tep::Password.hash(plain) unless plain.empty?\n  end\n\n  # true or false (Rails returns the record or false).\n  def authenticate(plain) = !@password_digest.empty? && Tep::Password.verify(plain, @password_digest)\n" : ""}
           def initialize(#{kwargs})
         #{indent(columns.map { |c| "@#{c.name} = #{c.name}" }, 4)}
-        #{indent(@secure_password ? ["@password = \"\"", *secure_assign] : [], 4)}
+        #{indent((@secure_password ? ["@password = \"\"", *secure_assign] : []) + @extra_virtual.map { |v| "@#{v} = #{v}" }, 4)}
             @errors = Rieles::Errors.new(#{Inflector.underscore(@name).inspect})
         #{indent(@associations.map { |a| "@preloaded_#{a.name} = false" }, 4)}
           end
@@ -462,6 +506,7 @@ module Rieles
             Rieles.transaction { yield }
           end
 
+        #{indent(enum_methods, 2)}
           def to_param = @id.to_s
           def cache_key = #{"#{@table.name}/".inspect} + @id.to_s#{@table.column("updated_at") ? ' + "-" + @updated_at' : ''}
           def dom_id = @id > 0 ? #{"#{Inflector.underscore(@name)}_".inspect} + @id.to_s : #{"new_#{Inflector.underscore(@name)}".inspect}
@@ -561,8 +606,9 @@ module Rieles
     def new_args = (assignable.map(&:name) + virtual).map { |n| "#{n}: #{n}" }.join(", ")
 
     def secure_assign
-      return [] unless @secure_password
-      ["self.password = password unless password.empty?", "@password_confirmation = password_confirmation"]
+      extra = @extra_virtual.map { |v| "@#{v} = #{v}" }
+      return extra unless @secure_password
+      ["self.password = password unless password.empty?", "@password_confirmation = password_confirmation"] + extra
     end
 
     def secure_validations
@@ -592,6 +638,10 @@ module Rieles
                      "return value unless #{booleans.map { |b| "name == #{b.inspect}" }.join(' || ')}\n" \
                        "value == \"true\" ? \"1\" : (value == \"false\" ? \"0\" : value)"
                    end
+      enum_values = @enums.map do |column, mapping|
+        "return #{EnumColumn.from(@table.column(column), mapping).to_int('value')}.to_s if name == #{column.inspect}"
+      end
+      bool_value = (enum_values + [bool_value]).join("\n")
       plucks = columns.each_with_index.map do |c, _|
         <<~RUBY
           def pluck_#{c.name}
@@ -648,6 +698,7 @@ module Rieles
 
           def spawn = #{relation}.new.restore(self)
           def all = spawn
+        #{indent(enum_relation_methods, 2)}
           def distinct? = @distinct
 
           def where(conditions)

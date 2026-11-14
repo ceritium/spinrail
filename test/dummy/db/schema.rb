@@ -15,7 +15,12 @@ Rieles::Schema.define do
     t.string :status, default: "draft"
     t.string :subtitle, null: true
     t.integer :priority, null: true
+    t.integer :kind, default: 0
     t.timestamps
+  end
+
+  create_table :newsletters do |t|
+    t.string :email
   end
 
   create_table :users do |t|

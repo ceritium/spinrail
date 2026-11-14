@@ -69,6 +69,40 @@ module Rieles
     end
   end
 
+  # enum :status, { draft: 0, published: 1 }: INTEGER in the database, the
+  # value's name (a String) in Ruby.
+  class EnumColumn < Column
+    attr_accessor :mapping
+
+    def self.from(column, mapping)
+      enum = new(column.name, :string, column.default, column.null)
+      enum.mapping = mapping
+      enum
+    end
+
+    def default_literal
+      name = mapping.key(default)
+      (name || mapping.keys.first).inspect
+    end
+
+    def sql_type
+      value = default.nil? ? mapping.values.first : default
+      null ? "INTEGER DEFAULT #{value}" : "INTEGER NOT NULL DEFAULT #{value}"
+    end
+
+    def read_value(i)
+      "(case db.col_int(#{i}) #{mapping.map { |k, v| "when #{v} then #{k.inspect}" }.join(' ')} else \"\" end)"
+    end
+
+    def bind_value(i, value)
+      "db.bind_int(#{i}, #{to_int(value)})"
+    end
+
+    def to_int(value)
+      "(case #{value} #{mapping.map { |k, v| "when #{k.inspect} then #{v}" }.join(' ')} else -1 end)"
+    end
+  end
+
   Table = Struct.new(:name, :columns) do
     def column(name) = columns.find { |c| c.name == name }
 

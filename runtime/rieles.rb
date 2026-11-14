@@ -1374,6 +1374,24 @@ module Rieles
       form_open(url, method, " class=\"button_to\"") + "<button type=\"submit\"" + attrs + ">" + h(text) + "</button></form>"
     end
 
+    # "style" -> /style.css; absolute paths and URLs are kept.
+    def asset_path(source, extension)
+      return source if source.start_with?("/") || source.include?("://")
+      "/" + (source.include?(".") ? source : source + extension)
+    end
+
+    def stylesheet_link_tag(source, attrs)
+      "<link rel=\"stylesheet\" href=\"" + h(asset_path(source, ".css")) + "\"" + attrs + ">"
+    end
+
+    def javascript_include_tag(source, attrs)
+      "<script src=\"" + h(asset_path(source, ".js")) + "\"" + attrs + "></script>"
+    end
+
+    def image_tag(source, attrs)
+      "<img src=\"" + h(asset_path(source, "")) + "\"" + attrs + ">"
+    end
+
     def csrf_meta_tags
       "<meta name=\"csrf-param\" content=\"authenticity_token\">\n" \
         "<meta name=\"csrf-token\" content=\"" + h(form_authenticity_token) + "\">"

@@ -35,6 +35,9 @@ Roughly in priority order within each section.
 - [x] `db/seeds.rb` (`rieles db:seed`, `rieles db:reset`).
 - [ ] PostgreSQL (tep ships an opt-in `PG` battery).
 
+- [x] `enum :status, { draft: 0, published: 1 }`: names in Ruby, integers in the
+      database; `draft?`, `draft!`, `Post.draft`, `Post.statuses`.
+- [x] `confirmation` and `acceptance` validations (virtual attributes).
 - [x] `has_secure_password` (PBKDF2 via `Tep::Password`); `authenticate` returns
       true/false instead of the record.
 
@@ -64,6 +67,8 @@ Roughly in priority order within each section.
 
 - [x] Helpers: `link_to`, `button_to`, `form_with` and field helpers.
 - [x] `truncate`, `simple_format`, `number_with_delimiter`, `dom_id`.
+- [x] `stylesheet_link_tag`, `javascript_include_tag`, `image_tag`.
+- [ ] Asset fingerprinting (digests in file names).
 - [x] `link_to` with a block, `collection_select`, `field_with_errors`,
       `number_to_currency`, `time_ago_in_words`.
 - [x] Helpers returning `.html_safe` are emitted raw (decided at build time).
