@@ -977,6 +977,14 @@ module Rieles
     CACHE.write(key, yield, expires_in)
   end
 
+  # Authorization: Basic base64(name:password), compared in constant time.
+  def self.basic_auth?(req, name, password)
+    header = req.req_headers["authorization"]
+    return false if header.nil? || !header.start_with?("Basic ")
+    encoded = header[6, header.length - 6].strip.tr("+/", "-_").delete("=")
+    Tep.timing_safe_eq(Crypto.sp_crypto_b64url_decode(encoded), name + ":" + password)
+  end
+
   def self.humanize(attribute)
     attribute.sub(/_id\z/, "").tr("_", " ").capitalize
   end

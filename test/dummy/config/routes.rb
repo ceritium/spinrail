@@ -11,6 +11,8 @@ Rieles.routes.draw do
   resource :profile, only: [:show]
   namespace :admin do
     root "posts#index"
+    get "/secret", to: "secrets#show"
+    get "/open", to: "secrets#open_door"
     resources :posts, only: [:index]
   end
   get "/home", to: "pages#home"

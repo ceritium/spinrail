@@ -502,10 +502,12 @@ module Rieles
         end
         ctx = Context.new(self, dir, view: false, controller: true)
         lowered = Lowering.lower(source, rel(file), ctx)
-        controllers[name] = controller_declarations(klass, rel(file)).merge(dir: dir, source: lowered, ctx: ctx, file: rel(file))
+        decl = controller_declarations(klass, rel(file))
+        lowered = lowered.sub(/\nend\s*\z/, "\n#{decl[:extra].join("\n")}end\n") unless decl[:extra].empty?
+        controllers[name] = decl.merge(dir: dir, source: lowered, ctx: ctx, file: rel(file))
       end
       controllers["ApplicationController"] ||= {
-        dir: "application", actions: [], filters: [], skips: [], rescues: [], arities: {}, forgery: nil,
+        dir: "application", actions: [], filters: [], skips: [], rescues: [], arities: {}, forgery: nil, extra: [],
         source: "class ApplicationController < Rieles::Controller\nend\n",
         ctx: Context.new(self, "application", view: false, controller: true), file: "app/controllers/application_controller.rb"
       }
@@ -515,7 +517,7 @@ module Rieles
     # Public methods are actions; filters and rescue_from are read here
     # and dropped from the generated class.
     def controller_declarations(klass, file)
-      decl = { actions: [], filters: [], skips: [], rescues: [], arities: {}, forgery: nil }
+      decl = { actions: [], filters: [], skips: [], rescues: [], arities: {}, forgery: nil, extra: [] }
       visible = true
       (klass.body&.body || []).each do |stmt|
         if stmt.is_a?(Prism::DefNode)
@@ -548,6 +550,18 @@ module Rieles
         when :layout
           decl[:layout] = Rieles.literal(args.first)
           decl[:layout] = decl[:layout].to_s if decl[:layout]
+        when :http_basic_authenticate_with
+          # A generated before filter comparing the Authorization header.
+          filter = "rieles_basic_auth_#{decl[:extra].size}"
+          only = kw[:only] && Array(Rieles.literal(kw[:only])).map(&:to_s)
+          except = kw[:except] && Array(Rieles.literal(kw[:except])).map(&:to_s)
+          user, password = kw[:name], kw[:password]
+          raise CompileError, "#{file}:#{stmt.location.start_line}: http_basic_authenticate_with needs name: and password:" unless user && password
+          decl[:filters] << Filter.new("before_action", filter, only, except)
+          decl[:arities][filter] = 0
+          decl[:extra] << "  def #{filter}\n    return if Rieles.basic_auth?(@req, (#{user.slice}).to_s, (#{password.slice}).to_s)\n" \
+                          "    @res.headers[\"WWW-Authenticate\"] = \"Basic realm=\\\"Application\\\"\"\n" \
+                          "    render_plain(\"HTTP Basic: Access denied.\\n\", 401)\n  end\n"
         when :skip_forgery_protection then decl[:forgery] = false
         when :protect_from_forgery then decl[:forgery] = true
         when :rescue_from

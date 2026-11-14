@@ -51,7 +51,8 @@ module Rieles
     # Class-level controller declarations; the build reads them, the
     # generated class doesn't need them.
     CONTROLLER_DSL = %i[before_action after_action skip_before_action skip_after_action
-                        rescue_from protect_from_forgery skip_forgery_protection layout].freeze
+                        rescue_from protect_from_forgery skip_forgery_protection layout
+                        http_basic_authenticate_with].freeze
 
     def self.lower(source, file, context)
       root = Rieles.parse(source, file)

@@ -55,4 +55,16 @@ class ControllersTest < Rieles::IntegrationTest
     assert_response :bad_request
     assert_equal "bad: nope", response.body
   end
+
+  def test_http_basic_auth
+    get "/admin/secret"
+    assert_response :unauthorized
+    assert_equal 'Basic realm="Application"', response["WWW-Authenticate"]
+    get "/admin/secret", headers: { "Authorization" => "Basic " + ["admin:wrong"].pack("m0") }
+    assert_response :unauthorized
+    get "/admin/secret", headers: { "Authorization" => "Basic " + ["admin:s3cret"].pack("m0") }
+    assert_equal "the secret", response.body
+    get "/admin/open"
+    assert_equal "open", response.body
+  end
 end

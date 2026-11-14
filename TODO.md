@@ -63,6 +63,7 @@ Roughly in priority order within each section.
 - [x] PATCH/PUT/DELETE from HTML forms (`_method` override).
 - [x] Only public methods are actions.
 - [x] `rescue_from`; `RecordInvalid` answers 422.
+- [x] `http_basic_authenticate_with name:, password:, only:/except:`.
 
 ## Views
 
