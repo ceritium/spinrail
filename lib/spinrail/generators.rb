@@ -3,11 +3,15 @@ require "pathname"
 module Spinrail
   # spinrail new / spinrail generate model|controller|scaffold.
   class Generators
-    TYPES = %w[string text integer float boolean datetime date references].freeze
+    TYPES = %w[string text integer bigint float decimal boolean datetime date time references].freeze
 
-    Field = Struct.new(:name, :type) do
+    # name:type[?][:index|:uniq]; `?` makes the column nullable, since
+    # spinrail columns are NOT NULL by default.
+    Field = Struct.new(:name, :type, :null, :index) do
       def references? = type == "references"
       def column = references? ? "#{name}_id" : name
+      def definition = "t.#{type} :#{name}#{null ? ', null: true' : ''}"
+      def add_index(table) = "add_index :#{table}, [:#{column}]#{index == 'uniq' ? ', unique: true' : ''}"
       def input
         case type
         when "text" then "text_area"
@@ -102,10 +106,13 @@ module Spinrail
 
     def fields(args)
       args.map do |arg|
-        name, type = arg.split(":", 2)
-        type ||= "string"
+        name, type, index = arg.split(":", 3)
+        type = "string" if type.nil? || type.empty?
+        null = type.end_with?("?")
+        type = type.delete_suffix("?")
         abort "spinrail: unknown type #{type} (#{TYPES.join(', ')})" unless TYPES.include?(type)
-        Field.new(name, type)
+        abort "spinrail: unknown modifier :#{index} (index, uniq)" if index && !%w[index uniq].include?(index)
+        Field.new(name, type, null, index)
       end
     end
 
@@ -115,8 +122,9 @@ module Spinrail
       if Dir.exist?(File.join(@app, "db/migrate"))
         migration("Create#{Inflector.camelize(table)}", fields)
       else
-        columns = fields.map { |f| "    t.#{f.type} :#{f.name}" } + ["    t.timestamps"]
-        insert_before_last_end("db/schema.rb", "  create_table :#{table} do |t|\n#{columns.join("\n")}\n  end\n")
+        columns = fields.map { |f| "    #{f.definition}" } + ["    t.timestamps"]
+        indexes = fields.select(&:index).map { |f| "  #{f.add_index(table)}\n" }.join
+        insert_before_last_end("db/schema.rb", "  create_table :#{table} do |t|\n#{columns.join("\n")}\n  end\n#{indexes}")
       end
       assocs = fields.select(&:references?).map { |f| "  belongs_to :#{f.name}\n" }.join
       write "app/models/#{Inflector.underscore(klass)}.rb", "class #{klass} < ApplicationRecord\n#{assocs}end\n"
@@ -126,11 +134,14 @@ module Spinrail
     def migration(name, fields)
       klass = Inflector.camelize(Inflector.underscore(name))
       body = case Inflector.underscore(name)
-             when /\Aadd_\w+_to_(\w+)\z/ then fields.map { |f| "    add_column :#{$1}, :#{f.column}, :#{f.references? ? 'integer' : f.type}" }
+             when /\Aadd_\w+_to_(\w+)\z/
+               table = $1
+               fields.map { |f| "    add_column :#{table}, :#{f.column}, :#{f.references? ? 'integer' : f.type}#{f.null ? ', null: true' : ''}" } +
+                 fields.select(&:index).map { |f| "    #{f.add_index(table)}" }
              when /\Aremove_\w+_from_(\w+)\z/ then fields.map { |f| "    remove_column :#{$1}, :#{f.column}" }
              when /\Acreate_(\w+)\z/
-               cols = fields.map { |f| "      t.#{f.type} :#{f.name}" } + ["      t.timestamps"]
-               ["    create_table :#{$1} do |t|", *cols, "    end"]
+               cols = fields.map { |f| "      #{f.definition}" } + ["      t.timestamps"]
+               ["    create_table :#{$1} do |t|", *cols, "    end", *fields.select(&:index).map { |f| "    #{f.add_index($1)}" }]
              else []
              end
       version = Time.now.strftime("%Y%m%d%H%M%S")

@@ -60,6 +60,9 @@ bin/spinrail generate scaffold Article title:string body:text published:boolean
 bin/spinrail server
 ```
 
+Fields are `name:type`, as in Rails, plus `:index` or `:uniq`. Columns are
+NOT NULL by default; `bio:text?` makes one nullable.
+
 The example:
 
 ```sh
