@@ -17,7 +17,7 @@ module Rieles
       tokens = tokenize(source)
       trim_code_lines(tokens)
       raw_call = raw.empty? ? nil : /\A(#{raw.map { |r| Regexp.escape(r) }.join('|')})\b/
-      body = tokens.map { |kind, text| emit(kind, text, layout, raw_call) }.join
+      body = tokens.map { |kind, text, line| tag_line(emit(kind, text, layout, raw_call), kind, line) }.join
       return "def #{signature}\n  out = +\"\"\n#{body}  out\nend\n" unless log_as
       "def #{signature}\n  rieles_t0 = Rieles.log.render_start\n  out = +\"\"\n#{body}" \
         "  Rieles.log.render_end(#{log_as.inspect}, rieles_t0)\n  out\nend\n"
@@ -33,13 +33,14 @@ module Rieles
           break
         end
         tokens << [:text, text[0...-2]]
+        line = s.string.byteslice(0, s.pos).count("\n") + 1
         kind = if s.scan(/==/) then :raw
                elsif s.scan(/=/) then :expr
                elsif s.scan(/#/) then :comment
                else :code
                end
         code = s.scan_until(/-?%>/) or raise CompileError, "unterminated <% tag"
-        tokens << [kind, code.sub(/-?%>\z/, "")]
+        tokens << [kind, code.sub(/-?%>\z/, ""), line]
       end
       tokens
     end
@@ -55,6 +56,12 @@ module Rieles
         before[1] = before[1].sub(/[ \t]*\z/, "") if before
         after[1] = after[1].sub(/\A[ \t]*\n/, "") if after
       end
+    end
+
+    # "# L12" after the code of a tag: build errors map back to the .erb line.
+    def tag_line(ruby, kind, line)
+      return ruby if kind == :text || ruby.empty?
+      ruby.sub(/\n\z/, " # L#{line}\n")
     end
 
     def emit(kind, text, layout, raw_call = nil)

@@ -26,7 +26,7 @@ class ErbTest < CompilerTest
   end
 
   def test_block_expressions_are_code
-    assert_includes compile("<%= form_with model: @post do |f| %><% end %>"), "  form_with model: @post do |f|\n"
+    assert_includes compile("<%= form_with model: @post do |f| %><% end %>"), "  form_with model: @post do |f| # L1\n"
   end
 
   def test_unterminated_tag

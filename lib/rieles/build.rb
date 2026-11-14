@@ -278,7 +278,7 @@ module Rieles
                  elsif t.partial? then @partial_locals.fetch(t.key, [])
                  else t.exposures.map { |n| "iv_#{n}" }
                  end
-        ruby.sub("__SIGNATURE__", params.empty? ? "" : "(#{params.join(', ')})")
+        "#{SOURCE_MARK}erb #{rel(t.path)}\n" + ruby.sub("__SIGNATURE__", params.empty? ? "" : "(#{params.join(', ')})")
       end
       defs += @action_views.values.map do |v|
         signature = "#{v.method_name}(#{v.exposures.join(', ')})"
@@ -286,7 +286,7 @@ module Rieles
         derived = v.computed.map { |n, body| "  #{n} = begin\n#{body.gsub(/^\s*/, '    ')}\n  end\n" }.join
         ruby = ruby.sub(/\A(def [^\n]*\n)/) { "#{$1}#{derived}" }
         ctx = Context.new(self, File.dirname(v.key.tr('.', '/')), view: true, ivars: false)
-        Lowering.lower(ruby, rel(v.template_path), ctx)
+        "#{SOURCE_MARK}erb #{rel(v.template_path)}\n" + Lowering.lower(ruby, rel(v.template_path), ctx)
       end
       defs += @action_views.values.flat_map(&:methods).map do |source|
         Lowering.lower(source, "app/views", Context.new(self, "application", view: true, ivars: false)) + "\n"

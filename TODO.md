@@ -94,7 +94,8 @@ Roughly in priority order within each section.
 - [x] `rieles server` rebuilds on change and swaps the binary once it compiles.
 - [x] Point spinel/C errors at the app file and line (controllers, actions, helpers;
       generated code names its source file).
-- [ ] Line mapping for templates and models.
+- [x] Build errors in templates point at the .erb file and line.
+- [ ] Line mapping for generated model code (today it names the model file).
 - [x] Unit tests for the compiler (`rake unit`; `rake` also runs both apps).
 - [x] Framework request tests in `test/dummy` (`bin/rieles test` there).
 - [x] Tests: fixtures, `assert_select`, cookies/session across requests.

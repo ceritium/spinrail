@@ -229,9 +229,14 @@ module Rieles
         next unless File.exist?(file)
         text = File.readlines(file)[line.to_i - 1]&.strip
         next if text.nil? || text.empty?
-        n = ours.index { |l| l.strip == text } or next
-        mark = n.downto(0).find { |i| ours[i].start_with?(Build::SOURCE_MARK) } or next
-        origin = ours[mark].delete_prefix(Build::SOURCE_MARK).strip
+        text = text.sub(/\s*# L\d+\z/, "")
+        n = ours.index { |l| l.sub(/\s*# L\d+\s*\z/, "").strip == text } or next
+        mark = n.downto(0).find { |i| ours[i].strip.start_with?(Build::SOURCE_MARK.strip) } or next
+        origin = ours[mark].strip.delete_prefix(Build::SOURCE_MARK.strip).strip
+        if origin.start_with?("erb ")
+          erb_line = ours[n][/# L(\d+)\s*\z/, 1]
+          next "  #{origin.delete_prefix('erb ')}#{erb_line ? ":#{erb_line}" : ''}: #{text.sub(/\s*# L\d+\z/, '')}"
+        end
         next "  in code generated from #{origin.delete_prefix('generated ')}: #{text}" if origin.start_with?("generated ")
         "  #{origin}:#{n - mark}: #{text}"
       end
