@@ -217,7 +217,7 @@ module Spinrail
       case node.name
       when :not then node.receiver.is_a?(Prism::CallNode) && node.receiver.name == :where && node.receiver.arguments.nil?
       when :pluck then args.size == 1 && args.first.is_a?(Prism::SymbolNode)
-      when :order then args.size == 1 && args.first.is_a?(Prism::StringNode)
+      when :order then (args.size == 1 && args.first.is_a?(Prism::StringNode)) || (args.any? && args.all? { |a| a.is_a?(Prism::SymbolNode) })
       when :exists? then args.size == 1
       when :includes, :preload, :eager_load then !node.receiver.nil?
       when :joins, :left_joins, :left_outer_joins then args.any? && args.all? { |a| a.is_a?(Prism::SymbolNode) }
@@ -749,6 +749,12 @@ module Spinrail
       end
     end
 
+    # order("sql") as is; order(:a, :b) as order(a: :asc, b: :asc).
+    def order_call(prefix, args)
+      return "#{prefix}order_sql(#{@rw.slice(args.first)})" if args.first.is_a?(Prism::StringNode)
+      "#{prefix}order(#{args.map { |a| "#{a.unescaped}: :asc" }.join(', ')})"
+    end
+
     def lower_query(node)
       recv = node.name == :not ? node.receiver.receiver : node.receiver
       prefix = -> { recv ? "#{@rw.slice(recv)}." : "" }
@@ -757,7 +763,7 @@ module Spinrail
         case node.name
         when :not then "#{prefix.call}where_not(#{@rw.slice(arg)})"
         when :pluck then "#{prefix.call}pluck_#{arg.unescaped}"
-        when :order then "#{prefix.call}order_sql(#{@rw.slice(arg)})"
+        when :order then order_call(prefix.call, node.arguments.arguments)
         when :exists? then "#{prefix.call}where(#{@rw.slice(arg)}).exists?"
         when :includes, :preload, :eager_load
           names = node.arguments.arguments.map { |a| Spinrail.literal(a).to_s }

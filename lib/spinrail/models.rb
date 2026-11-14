@@ -39,6 +39,7 @@ module Spinrail
       @custom_validations = []
       @callbacks = Hash.new { |h, k| h[k] = [] }
       @associations = []
+      @through = []
       @scopes = []
       @enums = {}
       @extra_virtual = []
@@ -105,6 +106,7 @@ module Spinrail
       args, kw = Spinrail.call_args(node)
       name = Spinrail.literal(args.first).to_s
       opts = kw.transform_values { |v| Spinrail.literal(v) }
+      return through(node, name, opts) if node.name == :has_many && opts[:through]
       unknown = opts.keys - %i[class_name foreign_key dependent optional]
       fail!(node, "unsupported #{node.name} option #{unknown.first}") if unknown.any?
       singular = node.name == :has_many ? Inflector.singularize(name) : name
@@ -120,6 +122,22 @@ module Spinrail
       @associations << Association.new(node.name, name, class_name, fk, dependent, opts[:optional])
     end
 
+    # has_many :users, through: :memberships: one hop over a has_many whose
+    # model holds user_id (or source:'s _id), as a subquery.
+    def through(node, name, opts)
+      unknown = opts.keys - %i[through source class_name]
+      fail!(node, "unsupported has_many through option #{unknown.first}") if unknown.any?
+      via = @associations.find { |a| a.kind == :has_many && a.name == opts[:through].to_s } or
+        fail!(node, "has_many :#{name} goes through :#{opts[:through]}, declare that has_many first")
+      source = (opts[:source] || Inflector.singularize(name)).to_s
+      join_table = @schema.table(Inflector.tableize(via.class_name))
+      fail!(node, "#{join_table.name} has no #{source}_id column") unless join_table.column("#{source}_id")
+      class_name = opts[:class_name] || Inflector.camelize(source)
+      fail!(node, "no table #{Inflector.tableize(class_name)} for #{class_name}") unless @schema.table(Inflector.tableize(class_name))
+      sql = "SELECT #{source}_id FROM #{join_table.name} WHERE #{via.foreign_key} = ?"
+      @through << "def #{name} = #{class_name}.all.where_subquery(\"id\", #{sql.inspect}, @id.to_s)"
+    end
+
     # scope :published, -> { where(published: true) } becomes a relation
     # method (so scopes chain) and a class method.
     def scope(node)
@@ -132,31 +150,55 @@ module Spinrail
       @scopes << [name, params, body]
     end
 
-    # enum :status, { draft: 0, published: 1 } (or enum status: {...}).
+    # enum :status, { draft: 0, published: 1 } (or enum status: {...}) on an
+    # integer column; on a string one each name maps to itself, as Campfire's
+    # %w[...].index_by(&:itself). prefix:/suffix: as in Rails.
+    Enum = Struct.new(:mapping, :string, :prefix, :suffix) do
+      def method_name(column, value)
+        affix = ->(a) { a == true ? column : a&.to_s }
+        [affix.(prefix), value, affix.(suffix)].compact.join("_")
+      end
+    end
+
     def enum(node)
       args, kw = Spinrail.call_args(node)
-      name, values = args[0] ? [Spinrail.literal(args[0]).to_s, args[1]] : [kw.keys.first.to_s, kw.values.first]
+      name, values = args[0] ? [Spinrail.literal(args[0]).to_s, args[1]] : [kw.keys.first.to_s, kw.delete(kw.keys.first)]
+      opts = kw.transform_values { |v| Spinrail.literal(v) }
+      unknown = opts.keys - %i[prefix suffix]
+      fail!(node, "unsupported enum option #{unknown.first}") if unknown.any?
       mapping = Spinrail.literal(values)
-      mapping = mapping.each_with_index.to_h { |v, i| [v, i] } if mapping.is_a?(Array)
-      mapping = mapping.to_h { |k, v| [k.to_s, v] }
-      index = @table.columns.index { |c| c.name == name } or fail!(node, "enum :#{name} needs an integer column #{name}")
-      fail!(node, "enum :#{name} needs an integer column") unless @table.columns[index].integer?
-      @table.columns[index] = EnumColumn.from(@table.columns[index], mapping)
-      @enums[name] = mapping
-      @validations << [name, "!#{mapping.keys.inspect}.include?(@#{name})", ["inclusion", "is not included in the list", ""]]
+      index = @table.columns.index { |c| c.name == name } or fail!(node, "enum :#{name} needs a column #{name}")
+      column = @table.columns[index]
+      string = column.type == :string || column.type == :text
+      fail!(node, "enum :#{name} needs an integer or string column") unless string || column.integer?
+      if string
+        mapping = mapping.to_h { |v| [v, v] } if mapping.is_a?(Array)
+        mapping = mapping.to_h { |k, v| [k.to_s, v.to_s] }
+        fail!(node, "enum :#{name} on a string column stores each name as itself") unless mapping.all? { |k, v| k == v }
+      else
+        mapping = mapping.each_with_index.to_h { |v, i| [v, i] } if mapping.is_a?(Array)
+        mapping = mapping.to_h { |k, v| [k.to_s, v] }
+        @table.columns[index] = EnumColumn.from(column, mapping)
+      end
+      @enums[name] = Enum.new(mapping, string, opts[:prefix], opts[:suffix])
+      allow_nil = string && column.null ? "!@#{name}.nil? && " : ""
+      @validations << [name, "#{allow_nil}!#{mapping.keys.inspect}.include?(@#{name})", ["inclusion", "is not included in the list", ""]]
     end
 
     def enum_methods
-      @enums.flat_map do |column, mapping|
-        mapping.keys.flat_map do |value|
-          ["def #{value}? = @#{column} == #{value.inspect}", "def #{value}! = update(#{column}: #{value.inspect})"]
-        end + ["def self.#{Inflector.pluralize(column)} = #{mapping.inspect}"] +
-          mapping.keys.map { |value| "def self.#{value} = all.where(#{column}: #{value.inspect})" }
+      @enums.flat_map do |column, enum|
+        enum.mapping.keys.flat_map do |value|
+          method = enum.method_name(column, value)
+          ["def #{method}? = @#{column} == #{value.inspect}", "def #{method}! = update(#{column}: #{value.inspect})"]
+        end + ["def self.#{Inflector.pluralize(column)} = #{enum.mapping.inspect}"] +
+          enum.mapping.keys.map { |value| "def self.#{enum.method_name(column, value)} = all.where(#{column}: #{value.inspect})" }
       end
     end
 
     def enum_relation_methods
-      @enums.flat_map { |column, mapping| mapping.keys.map { |value| "def #{value} = where(#{column}: #{value.inspect})" } }
+      @enums.flat_map do |column, enum|
+        enum.mapping.keys.map { |value| "def #{enum.method_name(column, value)} = where(#{column}: #{value.inspect})" }
+      end
     end
 
     def validates(node)
@@ -367,7 +409,7 @@ module Spinrail
 
     # Readers use what includes(...) preloaded, else query.
     def association_methods
-      @associations.map do |a|
+      @through + @associations.map do |a|
         case a.kind
         when :belongs_to
           "def #{a.name} = @preloaded_#{a.name} ? @#{a.name}_record : #{a.class_name}.find_by(id: @#{a.foreign_key})\n\n" \
@@ -641,8 +683,8 @@ module Spinrail
                      "return value unless #{booleans.map { |b| "name == #{b.inspect}" }.join(' || ')}\n" \
                        "value == \"true\" ? \"1\" : (value == \"false\" ? \"0\" : value)"
                    end
-      enum_values = @enums.map do |column, mapping|
-        "return #{EnumColumn.from(@table.column(column), mapping).to_int('value')}.to_s if name == #{column.inspect}"
+      enum_values = @enums.reject { |_, enum| enum.string }.map do |column, enum|
+        "return #{EnumColumn.from(@table.column(column), enum.mapping).to_int('value')}.to_s if name == #{column.inspect}"
       end
       bool_value = (enum_values + [bool_value]).join("\n")
       plucks = columns.each_with_index.map do |c, _|
@@ -939,6 +981,17 @@ module Spinrail
             relation
           end
 
+          def where_subquery(name, select, value)
+            relation = spawn
+            relation.add_where_subquery(name, select, value)
+            relation
+          end
+
+          def add_where_subquery(name, select, value)
+            @wheres << "#{@table.name}." + name + " IN (" + select + ")"
+            @binds << value
+          end
+
           def add_qualified(column, value)
             @wheres << column + " = ?"
             @binds << value
@@ -1001,6 +1054,8 @@ module Spinrail
             return to_a.first if @loaded
             limit(1).to_a.first
           end
+
+          def find_by(conditions) = where(conditions).first
 
           def last
             raise ArgumentError, "last needs an order by column, not SQL" if @raw_order.length > 0

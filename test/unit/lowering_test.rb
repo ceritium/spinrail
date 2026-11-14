@@ -28,6 +28,7 @@ class LoweringTest < CompilerTest
     assert_equal "Post.where_not(id: 1)", lower("Post.where.not(id: 1)")
     assert_equal "Post.all.pluck_title", lower("Post.all.pluck(:title)")
     assert_equal %(Post.order_sql("id DESC")), lower(%(Post.order("id DESC")))
+    assert_equal %(Post.order(created_at: :asc, id: :asc)), lower(%(Post.order(:created_at, :id)))
     assert_equal "Post.where(id: 1).exists?", lower("Post.exists?(id: 1)")
   end
 

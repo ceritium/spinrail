@@ -21,6 +21,12 @@ Roughly in priority order within each section.
 - [x] Eager loading: `includes`/`preload` run one query per association.
 - [x] `joins(:assoc)` with `where(table: { column: value })`, `group(:col).count`.
 - [ ] `left_joins`, `distinct`, `having`, nested includes (`includes(comments: :author)`).
+- [x] `has_many :users, through: :memberships` (one hop, as a subquery; no
+      `includes`/`joins` of it yet); `find_by` on relations; `order(:col)`.
+- [ ] Single-table inheritance: Campfire's `Rooms::Open < Room` is a `type`
+      column with predicates for now.
+- [ ] `datetime` columns read and take `Time` (they are strings today, as
+      `Spinrail.now` writes them).
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
 - [x] Halting before_* callbacks with `throw :abort`.
 - [x] Nullable columns, the default as in Rails (nil in Ruby, `where(x: nil)` is
@@ -45,7 +51,8 @@ Roughly in priority order within each section.
       they pass alone. The model test binary shares one connection.
 
 - [x] `enum :status, { draft: 0, published: 1 }`: names in Ruby, integers in the
-      database; `draft?`, `draft!`, `Post.draft`, `Post.statuses`.
+      database; `draft?`, `draft!`, `Post.draft`, `Post.statuses`. On a string
+      column each name stores itself; `prefix:`/`suffix:`.
 - [x] `confirmation` and `acceptance` validations (virtual attributes).
 - [x] `has_secure_password` (PBKDF2 via `Tep::Password`); `authenticate` returns
       true/false instead of the record.

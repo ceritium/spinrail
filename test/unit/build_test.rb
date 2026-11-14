@@ -18,6 +18,46 @@ class BuildTest < CompilerTest
     assert_includes ruby, %("#<User " + "id: " + @id.inspect + ", " + "name: " + @name.inspect + ", " + "password_digest: [FILTERED]" + ">")
   end
 
+  def test_string_enum_with_prefix
+    schema = "Spinrail::Schema.define do\n create_table :memberships do |t|\n t.string :involvement, default: \"mentions\"\n end\nend\n"
+    model = %(class Membership < ApplicationRecord\n enum :involvement, { nothing: "nothing", mentions: "mentions" }, prefix: :involved_in\nend\n)
+    ruby = build("db/schema.rb" => schema, "app/models/membership.rb" => model)
+    assert_includes ruby, %(def involved_in_mentions? = @involvement == "mentions")
+    assert_includes ruby, %(def self.involved_in_nothing = all.where(involvement: "nothing"))
+    assert_includes ruby, %(!@involvement.nil? && !["nothing", "mentions"].include?(@involvement))
+  end
+
+  def test_string_enum_names_store_themselves
+    schema = "Spinrail::Schema.define do\n create_table :memberships do |t|\n t.string :involvement\n end\nend\n"
+    model = %(class Membership < ApplicationRecord\n enum :involvement, { nothing: "n" }\nend\n)
+    error = assert_raises(Spinrail::CompileError) { build("db/schema.rb" => schema, "app/models/membership.rb" => model) }
+    assert_match(/stores each name as itself/, error.message)
+  end
+
+  def test_has_many_through
+    schema = <<~RUBY
+      Spinrail::Schema.define do
+        create_table :rooms do |t|
+          t.string :name
+        end
+        create_table :users do |t|
+          t.string :name
+        end
+        create_table :memberships do |t|
+          t.references :room
+          t.references :user
+        end
+      end
+    RUBY
+    ruby = build(
+      "db/schema.rb" => schema,
+      "app/models/room.rb" => "class Room < ApplicationRecord\n has_many :memberships\n has_many :users, through: :memberships\nend\n",
+      "app/models/user.rb" => "class User < ApplicationRecord\nend\n",
+      "app/models/membership.rb" => "class Membership < ApplicationRecord\n belongs_to :room\n belongs_to :user\nend\n"
+    )
+    assert_includes ruby, %(def users = User.all.where_subquery("id", "SELECT user_id FROM memberships WHERE room_id = ?", @id.to_s))
+  end
+
   def test_template_reading_an_unassigned_ivar
     error = assert_raises(Spinrail::CompileError) do
       build(
