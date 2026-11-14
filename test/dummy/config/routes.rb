@@ -48,6 +48,8 @@ Rieles.routes.draw do
   get "/open", to: "widgets#open"
   get "/boom", to: "widgets#boom"
 
+  post "/login", to: "logins#create"
+  post "/signup", to: "logins#signup"
   post "/session", to: "sessions#create"
   get "/session", to: "sessions#show"
   post "/session/logout", to: "sessions#destroy"

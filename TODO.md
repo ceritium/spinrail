@@ -35,6 +35,9 @@ Roughly in priority order within each section.
 - [x] `db/seeds.rb` (`rieles db:seed`, `rieles db:reset`).
 - [ ] PostgreSQL (tep ships an opt-in `PG` battery).
 
+- [x] `has_secure_password` (PBKDF2 via `Tep::Password`); `authenticate` returns
+      true/false instead of the record.
+
 ## Controllers
 
 - [x] `before_action` / `after_action` / `skip_*` with `only:`/`except:`;

@@ -18,6 +18,12 @@ Rieles::Schema.define do
     t.timestamps
   end
 
+  create_table :users do |t|
+    t.string :email
+    t.string :password_digest
+    t.timestamps
+  end
+
   create_table :comments do |t|
     t.references :post
     t.text :body

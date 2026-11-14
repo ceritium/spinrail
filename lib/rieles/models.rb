@@ -62,6 +62,9 @@ module Rieles
         association(stmt)
       elsif call == :scope
         scope(stmt)
+      elsif call == :has_secure_password
+        fail!(stmt, "has_secure_password needs a password_digest column") unless @table.column("password_digest")
+        @secure_password = true
       else
         @body << stmt.slice.gsub(/^ {#{stmt.location.start_column}}/, "")
       end
@@ -232,10 +235,13 @@ module Rieles
                 else read
                 end
         "@#{c.name} = #{value} if params.has?(#{c.name.inspect})"
-      end
+      end + virtual.map { |v| "self.#{v} = params.get(#{v.inspect}) if params.has?(#{v.inspect})" }
     end
 
-    def json_fields = columns.map { |c| "#{%("#{c.name}":).inspect} + @#{c.name}.to_json" }.join(%( + "," + ))
+    # has_secure_password: password and password_confirmation aren't columns.
+    def virtual = @secure_password ? %w[password password_confirmation] : []
+
+    def json_fields = columns.reject { |c| c.name == "password_digest" }.map { |c| "#{%("#{c.name}":).inspect} + @#{c.name}.to_json" }.join(%( + "," + ))
 
     def insert_sql
       cols = writable + columns.select(&:timestamp?)
@@ -383,11 +389,11 @@ module Rieles
     end
 
     def model_class
-      kwargs = columns.map { |c| "#{c.name}: #{c.default_literal}" }.join(", ")
-      update_kwargs = assignable.map { |c| "#{c.name}: @#{c.name}" }.join(", ")
-      assign = assignable.map { |c| "@#{c.name} = #{c.name}" }
+      kwargs = (columns.map { |c| "#{c.name}: #{c.default_literal}" } + virtual.map { |v| "#{v}: \"\"" }).join(", ")
+      update_kwargs = (assignable.map { |c| "#{c.name}: @#{c.name}" } + virtual.map { |v| "#{v}: \"\"" }).join(", ")
+      assign = assignable.map { |c| "@#{c.name} = #{c.name}" } + secure_assign
       from_row = columns.each_with_index.map { |c, i| "#{c.name}: #{c.read(i, null_flag(c))}" }
-      checks = (@validations + required_associations).map do |attr, cond, (key, text, count)|
+      checks = (@validations + required_associations + secure_validations).map do |attr, cond, (key, text, count)|
         message = key ? "Rieles.message(#{key.inspect}, #{text.inspect}, #{count.inspect})" : text.inspect
         "@errors.add(:#{attr}, #{message}) if #{cond}"
       end
@@ -398,9 +404,10 @@ module Rieles
           COLUMNS = #{columns.map(&:name).inspect}
           attr_accessor #{columns.map { |c| ":#{c.name}" }.join(', ')}
           attr_reader :errors
-
+        #{@secure_password ? "  attr_reader :password\n  attr_accessor :password_confirmation\n\n  def password=(plain)\n    @password = plain\n    @password_digest = Tep::Password.hash(plain) unless plain.empty?\n  end\n\n  # true or false (Rails returns the record or false).\n  def authenticate(plain) = !@password_digest.empty? && Tep::Password.verify(plain, @password_digest)\n" : ""}
           def initialize(#{kwargs})
         #{indent(columns.map { |c| "@#{c.name} = #{c.name}" }, 4)}
+        #{indent(@secure_password ? ["@password = \"\"", *secure_assign] : [], 4)}
             @errors = Rieles::Errors.new(#{Inflector.underscore(@name).inspect})
         #{indent(@associations.map { |a| "@preloaded_#{a.name} = false" }, 4)}
           end
@@ -549,8 +556,20 @@ module Rieles
       [Lowering.lower(source, @file, Build::Context.new(nil, "", view: false))]
     end
 
-    def create_kwargs = assignable.map { |c| "#{c.name}: #{c.default_literal}" }.join(", ")
-    def new_args = assignable.map { |c| "#{c.name}: #{c.name}" }.join(", ")
+    def create_kwargs = (assignable.map { |c| "#{c.name}: #{c.default_literal}" } + virtual.map { |v| "#{v}: \"\"" }).join(", ")
+    def new_args = (assignable.map(&:name) + virtual).map { |n| "#{n}: #{n}" }.join(", ")
+
+    def secure_assign
+      return [] unless @secure_password
+      ["self.password = password unless password.empty?", "@password_confirmation = password_confirmation"]
+    end
+
+    def secure_validations
+      return [] unless @secure_password
+      [["password", "@password_digest.empty?", ["blank", "can't be blank", ""]],
+       ["password_confirmation", "!@password_confirmation.empty? && @password_confirmation != @password",
+        ["confirmation", "doesn't match Password", ""]]]
+    end
 
     def scope_assignments
       assignable.map do |c|
