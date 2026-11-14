@@ -70,6 +70,7 @@ class FeaturesTest < Rieles::IntegrationTest
     assert href, body
     get href
     assert_equal "body { color: #333; }\n", response.body
+    assert_equal "public, max-age=31536000, immutable", response["Cache-Control"]
     get "/style.css"
     assert_response :success
     assert_includes body, '<script src="https://cdn.example.com/x.js" defer></script>'

@@ -249,6 +249,7 @@ module Rieles
         runner_class,
         schema_setup(schema),
         method_override,
+        asset_cache_headers,
         *routes.routes.map { |r| route_block(r, controllers) },
         not_found_block
       ].join("\n")
@@ -810,6 +811,18 @@ module Rieles
 
     # With db/migrate, pending migrations run at boot; without it, tables
     # and added columns come from db/schema.rb.
+    # Digested asset names change with their content, so they can be cached for good.
+    def asset_cache_headers
+      return "" if asset_digests.empty?
+      <<~RUBY
+        after do
+          if RielesAssets::DIGESTS.values.include?(req.path)
+            res.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+          end
+        end
+      RUBY
+    end
+
     def schema_setup(schema)
       statements = if migrations.any?
                      ['  db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)")'] +

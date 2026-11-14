@@ -71,7 +71,7 @@ Roughly in priority order within each section.
 - [x] `stylesheet_link_tag`, `javascript_include_tag`, `image_tag`.
 - [x] Asset fingerprinting: app/assets files are also served as name-<digest>.ext,
       which the tag helpers use.
-- [ ] Long-lived Cache-Control for digested assets (tep sets the headers).
+- [x] Digested assets are served with a year-long, immutable Cache-Control.
 - [x] `link_to` with a block, `collection_select`, `field_with_errors`,
       `number_to_currency`, `time_ago_in_words`.
 - [x] Helpers returning `.html_safe` are emitted raw (decided at build time).
