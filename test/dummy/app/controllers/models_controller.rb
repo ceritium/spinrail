@@ -161,6 +161,19 @@ class ModelsController < ApplicationController
     render plain: Post.find(post.id).body.length.to_s
   end
 
+  def joins
+    first = Post.find_by(title: "First")
+    Comment.create(post_id: first.id, body: "c1")
+    Comment.create(post_id: first.id, body: "c2")
+    lines = []
+    lines << "by_author=" + Post.joins(:author).where(authors: { name: "Ana" }).order(id: :asc).pluck(:title).join(",")
+    lines << "mixed=" + Post.joins(:author).where(published: true, authors: { name: "Ana" }).count.to_s
+    lines << "with_comments=" + Post.joins(:comments).count.to_s
+    counts = Post.group(:status).count
+    lines << "groups=" + counts.keys.sort.map { |k| k + ":" + counts[k].to_s }.join(",")
+    render plain: lines.join("\n")
+  end
+
   def authors
     render plain: Author.order(id: :asc).pluck(:name).join(",")
   end

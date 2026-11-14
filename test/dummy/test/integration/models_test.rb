@@ -121,3 +121,17 @@ class NullableTest < Rieles::IntegrationTest
     assert_equal expected, response.body
   end
 end
+
+class JoinsTest < Rieles::IntegrationTest
+  def test_joins_and_group
+    get "/models/seed"
+    get "/models/joins"
+    expected = <<~TEXT.chomp
+      by_author=First,Second
+      mixed=1
+      with_comments=2
+      groups=draft:3
+    TEXT
+    assert_equal expected, response.body
+  end
+end

@@ -18,7 +18,8 @@ Roughly in priority order within each section.
 - [x] Building through associations: `post.comments.create(...)`, `.new`, `.build`.
 - [x] `scope :name, ->(args) { ... }` (chainable), `update_all`.
 - [x] Eager loading: `includes`/`preload` run one query per association.
-- [ ] `joins`, `group`, nested includes (`includes(comments: :author)`).
+- [x] `joins(:assoc)` with `where(table: { column: value })`, `group(:col).count`.
+- [ ] `left_joins`, `distinct`, `having`, nested includes (`includes(comments: :author)`).
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
 - [x] Halting before_* callbacks with `throw :abort`.
 - [x] Nullable columns with `null: true` (nil in Ruby, `where(x: nil)` is `IS NULL`).

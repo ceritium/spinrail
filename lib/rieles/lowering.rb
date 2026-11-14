@@ -179,8 +179,25 @@ module Rieles
       when :order then args.size == 1 && args.first.is_a?(Prism::StringNode)
       when :exists? then args.size == 1
       when :includes, :preload, :eager_load then !node.receiver.nil?
+      when :joins then args.any? && args.all? { |a| a.is_a?(Prism::SymbolNode) }
+      when :where then args.size == 1 && args.first.is_a?(Prism::KeywordHashNode) && args.first.elements.any? { |e| e.value.is_a?(Prism::HashNode) }
+      when :count then node.receiver.is_a?(Prism::CallNode) && node.receiver.name == :group && args.empty?
       else false
       end
+    end
+
+    # where(published: true, authors: { name: x }): plain pairs stay a hash,
+    # table: { column: value } pairs become where_qualified("table.column", v).
+    def lower_nested_where(prefix, hash)
+      plain = hash.elements.reject { |e| e.value.is_a?(Prism::HashNode) }
+      code = prefix + (plain.empty? ? "all" : "where(#{plain.map { |e| @rw.slice(e) }.join(', ')})")
+      hash.elements.select { |e| e.value.is_a?(Prism::HashNode) }.each do |e|
+        table = Rieles.literal(e.key).to_s
+        e.value.elements.each do |inner|
+          code += ".where_qualified(#{"#{table}.#{Rieles.literal(inner.key)}".inspect}, (#{@rw.slice(inner.value)}).to_s)"
+        end
+      end
+      code
     end
 
     def params_call?(node)
@@ -523,7 +540,7 @@ module Rieles
     def lower_query(node)
       recv = node.name == :not ? node.receiver.receiver : node.receiver
       prefix = -> { recv ? "#{@rw.slice(recv)}." : "" }
-      arg = node.arguments.arguments.first
+      arg = node.arguments&.arguments&.first
       @rw.replace(node) do
         case node.name
         when :not then "#{prefix.call}where_not(#{@rw.slice(arg)})"
@@ -533,6 +550,13 @@ module Rieles
         when :includes, :preload, :eager_load
           names = node.arguments.arguments.map { |a| Rieles.literal(a).to_s }
           "#{prefix.call}with_includes(#{names.inspect})"
+        when :joins
+          "#{prefix.call}with_joins(#{node.arguments.arguments.map { |a| a.unescaped }.inspect})"
+        when :where then lower_nested_where(prefix.call, arg)
+        when :count
+          group = node.receiver
+          column = Rieles.literal(group.arguments.arguments.first).to_s
+          "#{group.receiver ? "#{@rw.slice(group.receiver)}." : ''}group_count(#{column.inspect})"
         end
       end
     end

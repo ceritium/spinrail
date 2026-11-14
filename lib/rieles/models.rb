@@ -209,7 +209,11 @@ module Rieles
     def select_sql = "SELECT #{select_list} FROM #{@table.name}"
 
     # Column names, then "x IS NULL" for each nullable one.
-    def select_list = (columns.map(&:name) + columns.select(&:null).map { |c| "#{c.name} IS NULL" }).join(", ")
+    # Qualified with the table so joins can't make them ambiguous.
+    def select_list
+      q = ->(name) { "#{@table.name}.#{name}" }
+      (columns.map { |c| q.(c.name) } + columns.select(&:null).map { |c| "#{q.(c.name)} IS NULL" }).join(", ")
+    end
 
     def null_flag(column)
       nullable = columns.select(&:null)
@@ -332,6 +336,15 @@ module Rieles
       end
     end
 
+    def join_sql_method
+      branches = @associations.map do |a|
+        target = Inflector.tableize(a.class_name)
+        on = a.kind == :belongs_to ? "#{target}.id = #{@table.name}.#{a.foreign_key}" : "#{target}.#{a.foreign_key} = #{@table.name}.id"
+        "return #{"INNER JOIN #{target} ON #{on}".inspect} if name == #{a.name.inspect}"
+      end
+      "def self.join_sql(name)\n#{indent(branches, 2)}\n  raise ArgumentError, #{"#{@name} has no association ".inspect} + name\nend"
+    end
+
     # One query per included association for the whole batch.
     def preload_method
       branches = @associations.map do |a|
@@ -409,6 +422,10 @@ module Rieles
           def self.find_by(conditions) = all.where(conditions).first
           def self.update_all(changes) = all.update_all(changes)
           def self.with_includes(names) = all.with_includes(names)
+          def self.with_joins(names) = all.with_joins(names)
+          def self.where_qualified(column, value) = all.where_qualified(column, value)
+          def self.group_count(name) = all.group_count(name)
+        #{indent(join_sql_method, 2)}
         #{indent(preload_method, 2)}
         #{indent(@scopes.map { |n, ps, _| sig = ps.empty? ? '' : "(#{ps.join(', ')})"; "def self.#{n}#{sig} = all.#{n}#{sig}" }, 2)}
         #{indent(plucks, 2)}
@@ -557,7 +574,7 @@ module Rieles
           def pluck_#{c.name}
             return @records.map { |r| r.#{c.name} } if @loaded
             t0 = Rieles.clock
-            statement = sql(#{(c.null ? "#{c.name}, #{c.name} IS NULL" : c.name).inspect})
+            statement = sql(#{(c.null ? "#{@table.name}.#{c.name}, #{@table.name}.#{c.name} IS NULL" : "#{@table.name}.#{c.name}").inspect})
             db = Rieles.prepare(statement, false)
             bind_all(db)
             values = []
@@ -573,7 +590,7 @@ module Rieles
       <<~RUBY
         class #{relation}
           attr_reader :wheres, :binds, :ordering, :raw_order, :limit_value, :offset_value, :scope_columns, :scope_values,
-                      :include_names
+                      :include_names, :join_names
 
           def initialize
             @wheres = []
@@ -581,6 +598,7 @@ module Rieles
             @scope_columns = []
             @scope_values = []
             @include_names = []
+            @join_names = []
             @ordering = []
             @raw_order = ""
             @limit_value = -1
@@ -595,6 +613,7 @@ module Rieles
             @scope_columns = other.scope_columns.dup
             @scope_values = other.scope_values.dup
             @include_names = other.include_names.dup
+            @join_names = other.join_names.dup
             @ordering = other.ordering.dup
             @raw_order = other.raw_order
             @limit_value = other.limit_value
@@ -603,6 +622,7 @@ module Rieles
           end
 
           def spawn = #{relation}.new.restore(self)
+          def all = spawn
 
           def where(conditions)
             relation = spawn
@@ -618,7 +638,7 @@ module Rieles
 
           def add_where_null(name, test)
             raise ArgumentError, "unknown column " + name unless #{@name}::COLUMNS.include?(name)
-            @wheres << name + " " + test
+            @wheres << "#{@table.name}." + name + " " + test
           end
 
           def where_in(name, values)
@@ -629,7 +649,7 @@ module Rieles
           end
 
           def add_where_in(name, values)
-            @wheres << name + " IN (" + values.map { |_| "?" }.join(", ") + ")"
+            @wheres << "#{@table.name}." + name + " IN (" + values.map { |_| "?" }.join(", ") + ")"
             values.each { |v| @binds << v }
           end
 
@@ -664,7 +684,7 @@ module Rieles
 
           def add_where(name, value, op)
             raise ArgumentError, "unknown column " + name unless #{@name}::COLUMNS.include?(name)
-            @wheres << name + " " + op + " ?"
+            @wheres << "#{@table.name}." + name + " " + op + " ?"
             @binds << sql_value(name, value)
             if op == "="
               @scope_columns << name
@@ -727,7 +747,7 @@ module Rieles
               raise ArgumentError, "unknown column " + name unless #{@name}::COLUMNS.include?(name)
               dir = direction.to_s.upcase
               raise ArgumentError, "bad direction " + dir unless dir == "ASC" || dir == "DESC"
-              relation.add_order(name + " " + dir)
+              relation.add_order("#{@table.name}." + name + " " + dir)
             end
             relation
           end
@@ -768,8 +788,50 @@ module Rieles
 
           def order_clause
             return @raw_order if @raw_order.length > 0
-            return "id ASC" if @ordering.empty?
+            return "#{@table.name}.id ASC" if @ordering.empty?
             @ordering.join(", ")
+          end
+
+          def joins_clause
+            @join_names.map { |name| " " + #{@name}.join_sql(name) }.join
+          end
+
+          def with_joins(names)
+            relation = spawn
+            names.each { |n| relation.add_join(n) }
+            relation
+          end
+
+          def add_join(name)
+            @join_names << name
+          end
+
+          # where(authors: { name: "Ana" }) after joins(:author).
+          def where_qualified(column, value)
+            relation = spawn
+            relation.add_qualified(column, value)
+            relation
+          end
+
+          def add_qualified(column, value)
+            @wheres << column + " = ?"
+            @binds << value
+          end
+
+          def group_count(name)
+            raise ArgumentError, "unknown column " + name unless #{@name}::COLUMNS.include?(name)
+            t0 = Rieles.clock
+            statement = "SELECT #{@table.name}." + name + ", COUNT(*) FROM #{@table.name}" + joins_clause + where_clause + " GROUP BY #{@table.name}." + name
+            db = Rieles.prepare(statement, false)
+            bind_all(db)
+            counts = { "" => 0 }
+            counts.delete("")
+            while db.step == 1
+              counts[db.col_str(0)] = db.col_int(1)
+            end
+            db.finalize
+            Rieles.log.sql_binds(#{"#{@name} Count".inspect}, statement, t0, @binds)
+            counts
           end
 
           def where_clause
@@ -777,7 +839,7 @@ module Rieles
           end
 
           def sql(select)
-            statement = "SELECT " + select + " FROM #{@table.name}" + where_clause + " ORDER BY " + order_clause
+            statement = "SELECT " + select + " FROM #{@table.name}" + joins_clause + where_clause + " ORDER BY " + order_clause
             if @limit_value >= 0 || @offset_value >= 0
               statement = statement + " LIMIT " + @limit_value.to_s
               statement = statement + " OFFSET " + @offset_value.to_s if @offset_value >= 0
@@ -823,7 +885,7 @@ module Rieles
           end
 
           def reverse_order
-            @ordering = ["id ASC"] if @ordering.empty?
+            @ordering = ["#{@table.name}.id ASC"] if @ordering.empty?
             @ordering = @ordering.map { |c| c.end_with?(" ASC") ? c.sub(" ASC", " DESC") : c.sub(" DESC", " ASC") }
           end
 
@@ -831,7 +893,7 @@ module Rieles
             return @records.length if @loaded
             return to_a.length if @limit_value >= 0 || @offset_value >= 0
             t0 = Rieles.clock
-            statement = "SELECT COUNT(*) FROM #{@table.name}" + where_clause
+            statement = "SELECT COUNT(*) FROM #{@table.name}" + joins_clause + where_clause
             db = Rieles.prepare(statement, false)
             bind_all(db)
             n = db.step == 1 ? db.col_int(0) : 0
@@ -846,6 +908,7 @@ module Rieles
           end
 
           def update_all(changes)
+            raise ArgumentError, "update_all doesn't support joins" unless @join_names.empty?
             t0 = Rieles.clock
             sets = []
             values = []
@@ -873,6 +936,7 @@ module Rieles
         #{indent(scope_methods, 2)}
 
           def delete_all
+            raise ArgumentError, "delete_all doesn't support joins" unless @join_names.empty?
             t0 = Rieles.clock
             statement = "DELETE FROM #{@table.name}" + where_clause
             db = Rieles.prepare(statement, false)
