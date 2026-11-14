@@ -16,8 +16,8 @@ Roughly in priority order within each section.
 - [x] Callbacks: `before/after_validation|save|create|update|destroy`.
 - [x] Column types: boolean (`published?`), float/decimal, `default:`.
 - [x] Building through associations: `post.comments.create(...)`, `.new`, `.build`.
-- [ ] Eager loading (`includes` is accepted but loads lazily), `joins`, `group`,
-      `update_all`, `scope :name, -> { }`.
+- [x] `scope :name, ->(args) { ... }` (chainable), `update_all`.
+- [ ] Eager loading (`includes` is accepted but loads lazily), `joins`, `group`.
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
 - [ ] Halting callbacks with `throw :abort`.
 - [ ] Nullable columns. Today every column is `NOT NULL` with a default,
@@ -35,13 +35,14 @@ Roughly in priority order within each section.
       (`entry[name]`); `Model.new(params)`, `create`, `update`, typed per column.
 - [x] Sessions on tep's signed cookie (`SECRET_KEY_BASE`, a dev secret in
       `tmp/local_secret.txt`).
-- [ ] `cookies[:x]` / `cookies.signed`.
+- [x] `cookies[:x]`, `cookies[:x] = v`, `cookies.delete(:x)`.
+- [ ] `cookies.signed` / `cookies.permanent`.
 - [x] `flash`, `flash.now`, `redirect_to ..., notice:/alert:`, `notice`/`alert` in views.
 - [x] CSRF protection (form param or `X-CSRF-Token`), `skip_forgery_protection`,
       `csrf_meta_tags`; off in tests unless `forgery_protection!`.
 - [x] `render json:` (literals encoded at build time, models and relations
       have `to_json`), `head :no_content`.
-- [ ] `respond_to` / formats.
+- [x] `respond_to` with `format.html` / `format.json` (Accept or `?format=`).
 - [x] PATCH/PUT/DELETE from HTML forms (`_method` override).
 - [x] Only public methods are actions.
 - [x] `rescue_from`; `RecordInvalid` answers 422.
@@ -49,15 +50,16 @@ Roughly in priority order within each section.
 ## Views
 
 - [x] Helpers: `link_to`, `button_to`, `form_with` and field helpers.
+- [x] `truncate`, `simple_format`, `number_with_delimiter`, `dom_id`.
 - [ ] More helpers: `link_to` with a block, `collection_select`, `field_with_errors`,
-      `number_to_currency`, `time_ago_in_words`, `truncate`, `simple_format`.
+      `number_to_currency`, `time_ago_in_words`.
 - [ ] `html_safe` strings instead of deciding at build time which output is raw.
 - [x] `content_for` (value or block), `content_for?`, `yield :title`.
 - [x] Collection partials (`render @entries`, `render partial:, collection:, as:`).
 - [ ] Partial locals with defaults, `local_assigns`.
 - [x] `app/helpers` modules, available in every view.
 - [x] Layout per controller (`layout "x"`, `layout false`, layouts/<controller>).
-- [ ] `layout:` option on `render`.
+- [x] `layout:` option on `render`.
 - [x] Partials drop their trailing newline.
 
 ## Actions and views

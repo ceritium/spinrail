@@ -562,6 +562,28 @@ module Rieles
       @req.session.dirty = true
     end
 
+    def cookie_get(key) = @req.cookies[key]
+
+    def cookie_set(key, value)
+      opts = Tep.str_hash
+      opts["Path"] = "/"
+      opts["SameSite"] = "Lax"
+      @res.set_cookie(key, value.to_s, opts)
+    end
+
+    def cookie_delete(key)
+      opts = Tep.str_hash
+      opts["Path"] = "/"
+      opts["Max-Age"] = "0"
+      @res.set_cookie(key, "", opts)
+    end
+
+    def wants_json?
+      return Tep.param(@req, "format") == "json" unless Tep.param(@req, "format").empty?
+      accept = @req.req_headers["accept"]
+      !accept.nil? && accept.include?("application/json") && !accept.include?("text/html")
+    end
+
     def reset_session
       @req.session.clear
     end
@@ -729,6 +751,32 @@ module Rieles
 
     def h(value)
       Tep.h(value)
+    end
+
+    def truncate(text, length: 30, omission: "...")
+      return text if text.length <= length
+      text[0, length - omission.length] + omission
+    end
+
+    # Escapes, then <p> per blank-line-separated block and <br> per newline.
+    def simple_format(text)
+      blocks = h(text).gsub("\r\n", "\n").split("\n\n")
+      blocks.map { |b| "<p>" + b.strip.gsub("\n", "<br>") + "</p>" }.join("\n")
+    end
+
+    def number_with_delimiter(number)
+      digits = number.to_s
+      sign = digits.start_with?("-") ? "-" : ""
+      digits = digits.delete_prefix("-")
+      whole = digits.split(".").first
+      rest = digits.include?(".") ? "." + digits.split(".").last : ""
+      groups = []
+      while whole.length > 3
+        groups.unshift(whole[whole.length - 3, 3])
+        whole = whole[0, whole.length - 3]
+      end
+      groups.unshift(whole)
+      sign + groups.join(",") + rest
     end
 
     def pluralize(count, singular)

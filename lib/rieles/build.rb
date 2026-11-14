@@ -98,6 +98,7 @@ module Rieles
 
       def partial_method(key, locals, where) = @build.use_partial(key, locals, where)
       def path_helper?(name) = @build.routes.helpers.key?(name)
+      def layout?(name) = @build.templates.key?("layouts/#{name}")
       def model?(name) = @build.model_names.include?(name)
     end
 
@@ -452,11 +453,17 @@ module Rieles
       defs = used.uniq.map do |key|
         t = @templates[key]
         args = t.exposures.map { |n| "@#{n}" }.join(", ")
-        "  def #{t.render_method}(status)\n" \
-          "    render_view(ApplicationView.new(self).#{t.method_name}#{args.empty? ? '' : "(#{args})"}, status)\n" \
+        "  def #{t.render_method}(status, layout = \"\")\n" \
+          "    render_with_layout(ApplicationView.new(self).#{t.method_name}#{args.empty? ? '' : "(#{args})"}, status, layout)\n" \
           "  end"
       end
       "class #{name}\n#{[*defs, override].compact.join("\n\n")}\nend\n"
+    end
+
+    def indent_layouts
+      @templates.values.select(&:layout?).map do |t|
+        "    return render_html(ApplicationView.new(self).#{t.method_name}(html), status) if layout == #{t.name.inspect}"
+      end.join("\n")
     end
 
     def application_controller_support
@@ -469,6 +476,14 @@ module Rieles
 
           def render_error(status, message)
             render_view("<h1>" + status.to_s + "</h1><p>" + h(message) + "</p>", status)
+          end
+
+          # render :show, layout: false | "name"; "" keeps the controller's.
+          def render_with_layout(html, status, layout)
+            return render_view(html, status) if layout.empty?
+            return render_html(html, status) if layout == "none"
+        #{indent_layouts}
+            render_view(html, status)
           end
 
         #{path_helpers}

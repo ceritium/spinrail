@@ -86,6 +86,35 @@ class ModelsController < ApplicationController
     render plain: lines.join("\n")
   end
 
+  def scopes
+    Post.where(title: "Second").update_all(views: 7, published: true)
+    lines = []
+    lines << "published=" + Post.published.count.to_s
+    lines << "chained=" + Post.published.order(id: :desc).pluck(:title).join(",")
+    lines << "arg=" + Post.rated_above(2).pluck(:title).join(",")
+    lines << "views=" + Post.find_by(title: "Second").views.to_s
+    render plain: lines.join("\n")
+  end
+
+  def formats
+    @post = Post.first
+    respond_to do |format|
+      format.html { render plain: "html " + @post.title }
+      format.json { render json: @post }
+    end
+  end
+
+  def cookie
+    cookies[:theme] = params[:theme] unless params[:theme].empty?
+    cookies.delete(:old) if params[:clear] == "1"
+    render plain: "theme=" + cookies[:theme].to_s
+  end
+
+  def helpers
+    @post = Post.first
+    render :helpers, layout: "bare"
+  end
+
   def authors
     render plain: Author.order(id: :asc).pluck(:name).join(",")
   end

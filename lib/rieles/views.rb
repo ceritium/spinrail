@@ -8,7 +8,7 @@ module Rieles
     module_function
 
     # Helpers that return markup; their output isn't escaped again.
-    HTML_HELPERS = /\A(csrf_meta_tags|content_for|link_to|button_to|\w+\.(label|\w+_field|text_?area|check_?box|select|submit))\b/
+    HTML_HELPERS = /\A(csrf_meta_tags|content_for|simple_format|link_to|button_to|\w+\.(label|\w+_field|text_?area|check_?box|select|submit))\b/
     BLOCK = /\bdo\s*(\|[^|]*\|)?\z/
 
     # log_as: template name for the request log; partials pass nil.

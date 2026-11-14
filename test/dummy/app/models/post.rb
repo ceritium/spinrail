@@ -18,6 +18,9 @@ class Post < ApplicationRecord
     self.views = 0
   end
 
+  scope :published, -> { where(published: true) }
+  scope :rated_above, ->(min) { where_not(rating: 0.0).order(rating: :desc).limit(min) }
+
   def self.visible
     where(published: true).order(rating: :desc)
   end

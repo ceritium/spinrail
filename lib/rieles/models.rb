@@ -36,6 +36,7 @@ module Rieles
       @custom_validations = []
       @callbacks = Hash.new { |h, k| h[k] = [] }
       @associations = []
+      @scopes = []
       @body = []
       (klass.body&.body || []).each { |stmt| collect(stmt) }
     end
@@ -56,6 +57,8 @@ module Rieles
         @callbacks[call].concat(guarded_calls(stmt))
       elsif %i[has_many has_one belongs_to].include?(call)
         association(stmt)
+      elsif call == :scope
+        scope(stmt)
       else
         @body << stmt.slice.gsub(/^ {#{stmt.location.start_column}}/, "")
       end
@@ -103,6 +106,18 @@ module Rieles
         fail!(node, "dependent: only supports :destroy and :delete_all")
       end
       @associations << Association.new(node.name, name, class_name, fk, dependent, opts[:optional])
+    end
+
+    # scope :published, -> { where(published: true) } becomes a relation
+    # method (so scopes chain) and a class method.
+    def scope(node)
+      args, = Rieles.call_args(node)
+      name = Rieles.literal(args[0]).to_s
+      lambda = args[1]
+      fail!(node, "scope :name, -> { ... }") unless lambda.is_a?(Prism::LambdaNode)
+      params = lambda.parameters&.parameters&.requireds&.map(&:name) || []
+      body = lambda.body ? lambda.body.slice : "self"
+      @scopes << [name, params, body]
     end
 
     def validates(node)
@@ -334,6 +349,8 @@ module Rieles
           def self.exists? = all.exists?
           def self.delete_all = all.delete_all
           def self.find_by(conditions) = all.where(conditions).first
+          def self.update_all(changes) = all.update_all(changes)
+        #{indent(@scopes.map { |n, ps, _| sig = ps.empty? ? '' : "(#{ps.join(', ')})"; "def self.#{n}#{sig} = all.#{n}#{sig}" }, 2)}
         #{indent(plucks, 2)}
 
           def self.find(id)
@@ -359,6 +376,7 @@ module Rieles
           end
 
           def to_param = @id.to_s
+          def dom_id = @id > 0 ? #{"#{Inflector.underscore(@name)}_".inspect} + @id.to_s : #{"new_#{Inflector.underscore(@name)}".inspect}
           def persisted? = @id > 0
           def new_record? = @id == 0
         #{indent(predicates, 2)}
@@ -441,6 +459,14 @@ module Rieles
         #{indent(user_methods, 2)}
         end
       RUBY
+    end
+
+    def scope_methods
+      return [] if @scopes.empty?
+      source = @scopes.map do |name, params, body|
+        "def #{name}#{params.empty? ? '' : "(#{params.join(', ')})"}\n#{body.gsub(/^\s*/, '  ')}\nend"
+      end.join("\n\n")
+      [Lowering.lower(source, @file, Build::Context.new(nil, "", view: false))]
     end
 
     def create_kwargs = assignable.map { |c| "#{c.name}: #{c.default_literal}" }.join(", ")
@@ -707,6 +733,33 @@ module Rieles
             return !@records.empty? if @loaded
             limit(1).to_a.length > 0
           end
+
+          def update_all(changes)
+            t0 = Rieles.clock
+            sets = []
+            values = []
+            changes.each do |column, value|
+              name = column.to_s
+              raise ArgumentError, "unknown column " + name unless #{@name}::COLUMNS.include?(name)
+              sets << name + " = ?"
+              values << sql_value(name, value.to_s)
+            end
+            statement = "UPDATE #{@table.name} SET " + sets.join(", ") + where_clause
+            db = Rieles.prepare(statement, false)
+            i = 0
+            while i < values.length
+              db.bind_str(i + 1, values[i])
+              i += 1
+            end
+            j = 0
+            while j < @binds.length
+              db.bind_str(values.length + j + 1, @binds[j])
+              j += 1
+            end
+            Rieles.write(db, #{"#{@name} Update All".inspect}, statement, t0)
+          end
+
+        #{indent(scope_methods, 2)}
 
           def delete_all
             t0 = Rieles.clock

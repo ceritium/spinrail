@@ -81,10 +81,15 @@ module Rieles
         @forms.pop
         return
       end
-      if @ctx.view? && node.receiver.nil? && %i[content_for provide content_for?].include?(node.name)
+      if @ctx.controller? && node.receiver.nil? && node.name == :respond_to && node.block
+        lower_respond_to(node)
+      elsif @ctx.view? && node.receiver.nil? && %i[content_for provide content_for?].include?(node.name)
         lower_content_for(node)
       elsif @forms.any? && local?(node.receiver, @forms.last[:var]) && BUILDER.include?(node.name)
         lower_field(node)
+      elsif @ctx.view? && node.receiver.nil? && node.name == :dom_id && node.arguments&.arguments&.size == 1
+        arg = node.arguments.arguments.first
+        @rw.replace(node) { "(#{@rw.slice(arg)}).dom_id" }
       elsif @ctx.view? && node.receiver.nil? && %i[link_to button_to].include?(node.name) && node.block.nil?
         lower_link(node)
       elsif params_call?(node)
@@ -297,6 +302,25 @@ module Rieles
       end
     end
 
+    # respond_to do |format| format.html { } format.json { } end -> if/else
+    # on the request's format (Accept header or ?format=).
+    def lower_respond_to(node)
+      var = node.block.parameters&.parameters&.requireds&.first&.name or fail!(node, "respond_to needs |format|")
+      branches = (node.block.body&.body || []).map do |stmt|
+        unless stmt.is_a?(Prism::CallNode) && local?(stmt.receiver, var) && %i[html json].include?(stmt.name)
+          fail!(stmt, "respond_to supports format.html and format.json")
+        end
+        [stmt.name, stmt.block&.body]
+      end
+      @rw.replace(node) do
+        code = branches.map.with_index do |(format, body), i|
+          test = format == :json ? "wants_json?" : "!wants_json?"
+          "#{i.zero? ? 'if' : 'elsif'} #{test}\n#{body ? @rw.slice(body) : 'nil'}"
+        end
+        code.join("\n") + "\nelse\nhead(406)\nend"
+      end
+    end
+
     # Stored on the controller: the page and its layout are rendered by
     # different view instances. The block form captures what it writes.
     def lower_content_for(node)
@@ -358,11 +382,12 @@ module Rieles
       if recv.name == :now && bare?(recv.receiver, :flash) && node.name == :[]=
         return [:flash_now, :set]
       end
-      return nil unless recv.receiver.nil? && %i[session flash].include?(recv.name)
+      return nil unless recv.receiver.nil? && %i[session flash cookies].include?(recv.name)
+      store = recv.name == :cookies ? :cookie : recv.name
       case node.name
-      when :[] then [recv.name, :get]
-      when :[]= then [recv.name, :set]
-      when :delete then recv.name == :session ? [:session, :delete] : nil
+      when :[] then [store, :get]
+      when :[]= then [store, :set]
+      when :delete then recv.name == :flash ? nil : [store, :delete]
       end
     end
 
@@ -473,7 +498,13 @@ module Rieles
         template = name.include?("/") ? name : "#{@ctx.dir}/#{name}"
         method = @ctx.render_method(template) or fail!(node, "missing template app/views/#{template}.html.erb")
         @ctx.record_response(template, where(node))
-        @rw.replace(node) { "#{method}(#{status})" }
+        layout = ""
+        if kw.key?(:layout)
+          value = Rieles.literal(kw[:layout])
+          layout = value ? value.to_s : "none"
+          fail!(node, "no app/views/layouts/#{layout}.html.erb") if value && !@ctx.layout?(layout)
+        end
+        @rw.replace(node) { layout.empty? ? "#{method}(#{status})" : "#{method}(#{status}, #{layout.inspect})" }
       else
         fail!(node, "unsupported render: `#{node.slice}`")
       end
