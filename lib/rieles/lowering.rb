@@ -244,12 +244,20 @@ module Rieles
       fail!(node, "form_with takes keyword options") unless args.empty?
       var = node.block.parameters&.parameters&.requireds&.first&.name or fail!(node, "form_with needs a block parameter")
       model = kw[:model]
+      parent = nil
+      if model.is_a?(Prism::ArrayNode)
+        fail!(node, "form_with model: [parent, record]") unless model.elements.size == 2
+        parent, model = model.elements
+      end
       scope = kw[:scope] ? Rieles.literal(kw[:scope]).to_s : model ? model_scope(model) : ""
       @forms << { var: var, scope: scope, model: model }
       attrs = html_attrs(kw.reject { |k, _| %i[model scope url method local].include?(k) })
       @rw.replace(node) do
         m = model && @rw.slice(model)
-        url = kw[:url] ? @rw.slice(kw[:url]) : model_url(node, scope, m)
+        url = if kw[:url] then @rw.slice(kw[:url])
+              elsif parent then nested_model_url(node, model_scope(parent), @rw.slice(parent), scope, m)
+              else model_url(node, scope, m)
+              end
         method = if kw[:method] then Rieles.literal(kw[:method]).to_s.inspect
                  elsif m then "(#{m}.persisted? ? \"patch\" : \"post\")"
                  else '"post"'
@@ -275,6 +283,18 @@ module Rieles
       return collection unless has_member
       return "#{member}(#{model})" unless has_collection
       "(#{model}.persisted? ? #{member}(#{model}) : #{collection})"
+    end
+
+    # [@post, @comment]: post_comments_path(post) to create, and
+    # post_comment_path(post, comment) or a shallow comment_path(comment).
+    def nested_model_url(node, parent_scope, parent, scope, model)
+      collection = "#{parent_scope}_#{Inflector.pluralize(scope)}_path"
+      fail!(node, "form_with needs #{collection}") unless @ctx.path_helper?(collection)
+      member = if @ctx.path_helper?("#{parent_scope}_#{scope}_path") then "#{parent_scope}_#{scope}_path(#{parent}, #{model})"
+               elsif @ctx.path_helper?("#{scope}_path") then "#{scope}_path(#{model})"
+               end
+      return "#{collection}(#{parent})" unless member
+      "(#{model}.persisted? ? #{member} : #{collection}(#{parent}))"
     end
 
     def lower_field(node)

@@ -13,6 +13,12 @@ class RoutesTest < Rieles::IntegrationTest
     assert_equal "comment 1 of 1", response.body
   end
 
+  def test_nested_form
+    get "/posts/1/comments/new"
+    assert_select "form[action='/posts/1/comments'] textarea#comment_body"
+    assert_select "input[type=submit][value='Create Comment']"
+  end
+
   def test_collection_comes_before_member
     get "/posts/search"
     assert_equal "search /posts/search /posts/3/publish", response.body

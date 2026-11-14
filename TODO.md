@@ -74,7 +74,9 @@ Roughly in priority order within each section.
 
 - [x] Nested resources, `member`/`collection`, `namespace` (controllers in
       `app/controllers/admin/`), singular `resource`.
-- [ ] `shallow:`, `scope`, `concerns`, `constraints`, `form_with model: [@post, @comment]`.
+- [x] `shallow`, `scope` (path, `module:`, `as:`), `concern`/`concerns:`,
+      `form_with model: [@post, @comment]`.
+- [ ] Route `constraints`, `(.:format)`, globbing.
 - [x] Path helpers that accept ids as well as records (`to_param`); `_url` helpers.
 
 ## Tooling

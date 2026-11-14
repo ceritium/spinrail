@@ -48,8 +48,8 @@ module Rieles
     end
 
     def select(root, selector)
-      selector.split(",").flat_map do |group|
-        steps = group.strip.split(/\s+/)
+      selector.scan(/(?:\[(?:"[^"]*"|'[^']*'|[^\]"'])*\]|[^,\[])+/).flat_map do |group|
+        steps = group.strip.scan(/(?:\[(?:"[^"]*"|'[^']*'|[^\]"'])*\]|[^\s\[])+/)
         steps.reduce([root]) do |scope, step|
           scope.flat_map(&:descendants).uniq.select { |n| match?(n, step) }
         end

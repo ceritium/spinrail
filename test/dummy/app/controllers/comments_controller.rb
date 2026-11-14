@@ -5,6 +5,10 @@ class CommentsController < ApplicationController
     render plain: @post.comments.pluck(:body).join(",") + " " + post_comments_path(@post) + " " + post_comment_path(@post, 7)
   end
 
+  def new
+    @comment = @post.comments.new
+  end
+
   def show
     render plain: "comment " + params[:id] + " of " + params[:post_id]
   end

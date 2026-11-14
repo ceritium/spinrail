@@ -10,7 +10,8 @@ module Rieles
     VERBS = %i[get post patch put delete].freeze
 
     # One level of nesting: where paths, helper names and controllers start.
-    Scope = Struct.new(:path, :helper, :module, :params, :kind) # kind: nil, :member, :collection
+    # base_path/base_helper exclude resource nesting, for shallow routes.
+    Scope = Struct.new(:path, :helper, :module, :params, :kind, :base_path, :base_helper, :shallow)
 
     attr_reader :routes, :helpers
 
@@ -18,7 +19,8 @@ module Rieles
       @file = file
       @routes = []
       @helpers = {} # name => [params, ruby expression]
-      @scopes = [Scope.new("", "", "", [], nil)]
+      @scopes = [Scope.new("", "", "", [], nil, "", "", false)]
+      @concerns = {}
       root = Rieles.parse(File.read(file), file)
       draw = find_draw(root) or fail!(root, "expected Rieles.routes.draw do ... end")
       body(draw.block)
@@ -48,6 +50,9 @@ module Rieles
       when :resources then resources(node, plural: true)
       when :resource then resources(node, plural: false)
       when :namespace then namespace(node)
+      when :scope then path_scope(node)
+      when :concern then @concerns[Rieles.literal(Rieles.call_args(node).first.first)] = node.block
+      when :shallow then within(scope.dup.tap { |sc| sc.shallow = true }) { body(node.block) }
       when :member, :collection then nest_kind(node)
       when *VERBS then verb(node)
       else fail!(node, "unsupported route `#{node.name}`")
@@ -65,7 +70,20 @@ module Rieles
     def namespace(node)
       args, = Rieles.call_args(node)
       name = Rieles.literal(args.first).to_s
-      within(Scope.new("#{scope.path}/#{name}", "#{scope.helper}#{name}_", "#{scope.module}#{name}/", scope.params, nil)) do
+      within(Scope.new("#{scope.path}/#{name}", "#{scope.helper}#{name}_", "#{scope.module}#{name}/", scope.params, nil,
+                       "#{scope.base_path}/#{name}", "#{scope.base_helper}#{name}_", scope.shallow)) do
+        body(node.block)
+      end
+    end
+
+    # scope "/prefix", module: "admin", as: "admin" -- each part optional.
+    def path_scope(node)
+      args, kw = Rieles.call_args(node)
+      prefix = args.first ? "/#{Rieles.literal(args.first).to_s.delete_prefix('/')}" : ""
+      mod = kw[:module] ? "#{Rieles.literal(kw[:module])}/" : ""
+      as = kw[:as] ? "#{Rieles.literal(kw[:as])}_" : ""
+      within(Scope.new("#{scope.path}#{prefix}", "#{scope.helper}#{as}", "#{scope.module}#{mod}", scope.params, nil,
+                       "#{scope.base_path}#{prefix}", "#{scope.base_helper}#{as}", scope.shallow)) do
         body(node.block)
       end
     end
@@ -102,7 +120,7 @@ module Rieles
       if scope.kind == :member && r[:plural]
         path = "#{r[:member]}/#{action}"
         add(node.name, path, *to)
-        helper("#{action}_#{r[:helper_single]}", r[:params] + ["id"], path_expr(path))
+        helper("#{action}_#{r[:member_helper]}", r[:member_params] + ["id"], path_expr(path))
       else
         path = "#{r[:base]}/#{action}"
         @collection_routes << [node.name, path, *to]
@@ -119,11 +137,16 @@ module Rieles
       single = plural ? Inflector.singularize(name) : name
       controller = scope.module + (kw[:controller] ? Rieles.literal(kw[:controller]).to_s : (plural ? name : Inflector.pluralize(name)))
       base = "#{scope.path}/#{name}"
-      member = plural ? "#{base}/:id" : base
+      shallow = (kw[:shallow] ? Rieles.literal(kw[:shallow]) : scope.shallow) && !scope.params.empty?
+      member_base = shallow ? "#{scope.base_path}/#{name}" : base
+      member = plural ? "#{member_base}/:id" : base
+      member_params = shallow ? [] : scope.params
+      member_helper = shallow ? "#{scope.base_helper}#{single}" : "#{scope.helper}#{single}"
       outer = @resource
       @resource = {
         plural: plural, controller: controller, base: base, member: member, params: scope.params,
-        helper_single: "#{scope.helper}#{single}", helper_plural: "#{scope.helper}#{name}"
+        helper_single: "#{scope.helper}#{single}", helper_plural: "#{scope.helper}#{name}",
+        member_helper: member_helper, member_params: member_params
       }
       @collection_routes = []
 
@@ -133,7 +156,11 @@ module Rieles
       saved = @routes
       @routes = []
       nested_param = "#{single}_id"
-      (node.block&.body&.body || []).each do |stmt|
+      concern_nodes = Array(kw[:concerns] ? Rieles.literal(kw[:concerns]) : []).flat_map do |c|
+        block = @concerns[c] or fail!(node, "unknown concern :#{c}")
+        block.body&.body || []
+      end
+      ((node.block&.body&.body || []) + concern_nodes).each do |stmt|
         if stmt.is_a?(Prism::CallNode) && %i[member collection].include?(stmt.name)
           statement(stmt)
         else
@@ -163,19 +190,20 @@ module Rieles
       @collection_routes.each { |r| add(*r) }
       member_routes.each { |r| @routes << r }
 
-      ids = plural ? helper_params + ["id"] : helper_params
+      ids = plural ? member_params + ["id"] : helper_params
       if (actions & %i[index create]).any? && plural
         helper(@resource[:helper_plural], helper_params, path_expr(base))
       end
       helper("new_#{@resource[:helper_single]}", helper_params, path_expr("#{base}/new")) if actions.include?(:new)
       member_actions = plural ? %i[show update destroy] : %i[show create update destroy]
-      helper(@resource[:helper_single], ids, path_expr(member)) if (actions & member_actions).any?
-      helper("edit_#{@resource[:helper_single]}", ids, path_expr("#{member}/edit")) if actions.include?(:edit)
+      helper(member_helper, ids, path_expr(member)) if (actions & member_actions).any?
+      helper("edit_#{member_helper}", ids, path_expr("#{member}/edit")) if actions.include?(:edit)
 
       unless deferred.empty?
         nested_path = plural ? "#{base}/:#{nested_param}" : base
         nested_params = plural ? helper_params + [nested_param] : helper_params
-        within(Scope.new(nested_path, "#{@resource[:helper_single]}_", scope.module, nested_params, nil)) do
+        within(Scope.new(nested_path, "#{@resource[:helper_single]}_", scope.module, nested_params, nil,
+                         scope.base_path, scope.base_helper, scope.shallow || kw[:shallow] && Rieles.literal(kw[:shallow]))) do
           deferred.each { |stmt| statement(stmt) }
         end
       end

@@ -1,6 +1,6 @@
 Rieles.routes.draw do
   resources :posts do
-    resources :comments, only: [:index, :create, :show]
+    resources :comments, only: [:index, :new, :create, :show]
     member do
       post :publish
     end

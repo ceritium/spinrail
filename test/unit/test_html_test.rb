@@ -16,5 +16,7 @@ class TestHTMLTest < CompilerTest
     assert_equal 1, select("input[name='post[title]']").size
     assert_equal 1, select("input[value=Hi]").size
     assert_empty select("ul p")
+    assert_equal 1, select("form p[id='note'], ul.missing").size
+    assert_equal 1, select("input[value='Hi'][name='post[title]']").size
   end
 end
