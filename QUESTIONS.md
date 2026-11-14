@@ -34,8 +34,10 @@ is easy to revisit.
   request: non-blocking accepted sockets, and sp_ffi_bin_len is
   thread-local in Spinel's threaded runtime) and fix/scheduled-burst (the
   scheduled server left connections unanswered in bursts: each connection
-  fiber closed over the accept loop's shared `client`). Candidates for
-  upstream PRs.
+  fiber closed over the accept loop's shared `client`),
+  fix/prefork-idle-keepalive (tep#277), fix/stale-prebuilt-objects (bin/tep
+  linked a helper .o older than its .c) and fix/reason-phrases (your
+  tep#278, cherry-picked). Candidates for upstream PRs.
 - Default production builds to the prefork server? The scheduled one no
   longer drops connections in bursts (fixed in the fork).
 - The gemspec says MIT and lists you as author; the repo has no LICENSE

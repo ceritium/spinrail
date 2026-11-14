@@ -183,10 +183,11 @@ Roughly in priority order within each section.
 
 ## Upstream
 
-- [ ] Drop `set :scheduler, :scheduled` once
-      [OriPekelman/tep#277](https://github.com/OriPekelman/tep/issues/277) is fixed.
-- [ ] Drop the `Tep.reason` override in runtime/rieles.rb once
-      [OriPekelman/tep#278](https://github.com/OriPekelman/tep/pull/278) is released.
+- [ ] Default to the prefork server? The fork fixes
+      [OriPekelman/tep#277](https://github.com/OriPekelman/tep/issues/277) (idle
+      keep-alive clients held the worker and blocked Ctrl+C).
+- [x] Reason phrases: the fork carries
+      [OriPekelman/tep#278](https://github.com/OriPekelman/tep/pull/278).
 - [x] Compare notes with [rubys/roundhouse](https://github.com/rubys/roundhouse)
       (summary in README). Ideas worth taking:
 - [x] `rieles check`: the build's static checks without compiling.
