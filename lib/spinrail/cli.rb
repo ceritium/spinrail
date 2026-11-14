@@ -16,7 +16,7 @@ module Spinrail
     TEP = File.join(VENDOR, "tep/bin/tep")
 
     COMMANDS = {
-      "new" => "Create an app: spinrail new PATH [--skip-git]",
+      "new" => "Create an app: spinrail new PATH [--skip-git] [--skip-bundle]",
       "generate" => "model|controller|scaffold NAME [field:type ...] (alias g)",
       "server" => "Build if needed, start the server and rebuild on change (-p PORT, -w WORKERS, --no-reload)",
       "build" => "Compile the app into a native binary (-o OUTPUT)",
@@ -45,7 +45,8 @@ module Spinrail
       case command
       when "new"
         skip_git = @argv.delete("--skip-git")
-        Generators.new(File.expand_path(@argv.first || abort("spinrail: new PATH [--skip-git]"))).new_app(git: !skip_git)
+        skip_bundle = @argv.delete("--skip-bundle")
+        Generators.new(File.expand_path(@argv.first || abort("spinrail: new PATH [--skip-git] [--skip-bundle]"))).new_app(git: !skip_git, bundle: !skip_bundle)
       when "generate" then Generators.new(@app).generate(@argv[0], @argv[1], @argv[2..] || [])
       when "server" then server
       when "build" then build(option("-o") || binary, force: true)

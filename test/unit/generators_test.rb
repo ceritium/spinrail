@@ -7,7 +7,7 @@ class GeneratorsTest < CompilerTest
     dir = File.join(Dir.mktmpdir("spinrail-gen"), "blog")
     (@dirs ||= []) << File.dirname(dir)
     out = StringIO.new
-    Spinrail::Generators.new(dir, out).new_app
+    Spinrail::Generators.new(dir, out).new_app(bundle: false)
     Spinrail::Generators.new(dir, out).generate("scaffold", "Article", %w[title:string body:text published:boolean author:references])
     Spinrail::Generators.new(dir, out).generate("model", "Author", %w[name:string])
     Spinrail::Generators.new(dir, out).generate("authentication", nil, [])
@@ -26,18 +26,18 @@ class GeneratorsTest < CompilerTest
   def test_new_app_inits_a_git_repo_unless_skipped
     root = Dir.mktmpdir("spinrail-git")
     (@dirs ||= []) << root
-    Spinrail::Generators.new(File.join(root, "a"), StringIO.new).new_app
+    Spinrail::Generators.new(File.join(root, "a"), StringIO.new).new_app(bundle: false)
     assert File.directory?(File.join(root, "a/.git"))
-    Spinrail::Generators.new(File.join(root, "b"), StringIO.new).new_app(git: false)
+    Spinrail::Generators.new(File.join(root, "b"), StringIO.new).new_app(git: false, bundle: false)
     refute File.exist?(File.join(root, "b/.git"))
-    Spinrail::Generators.new(File.join(root, "a/nested"), StringIO.new).new_app
+    Spinrail::Generators.new(File.join(root, "a/nested"), StringIO.new).new_app(bundle: false)
     refute File.exist?(File.join(root, "a/nested/.git"))
   end
 
   def test_model_fields_take_nullable_and_index_modifiers
     dir = File.join(Dir.mktmpdir("spinrail-mod"), "app")
     (@dirs ||= []) << File.dirname(dir)
-    Spinrail::Generators.new(dir, StringIO.new).new_app(git: false)
+    Spinrail::Generators.new(dir, StringIO.new).new_app(git: false, bundle: false)
     Spinrail::Generators.new(dir, StringIO.new).generate("model", "User", %w[name email_address:string?:uniq bio:text? role:integer:index])
     schema = File.read(File.join(dir, "db/schema.rb"))
     assert_includes schema, "t.string :email_address, null: true"

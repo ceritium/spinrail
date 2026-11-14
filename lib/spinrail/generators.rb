@@ -28,16 +28,22 @@ module Spinrail
       @out = out
     end
 
-    def new_app(git: true)
+    def new_app(git: true, bundle: true)
       abort "spinrail: #{@app} already exists" if File.exist?(@app)
       name = File.basename(@app)
       write "bin/spinrail", <<~RUBY, mode: 0o755
         #!/usr/bin/env ruby
-        #{framework_require}
+        require "bundler/setup"
+        require "spinrail"
 
         Spinrail::CLI.new(ARGV, File.expand_path("..", __dir__)).run
       RUBY
-      write ".gitignore", "/#{name}\n/*.next\n/tmp/\n/log/\n/db/*.sqlite3*\n"
+      write ".gitignore", "/#{name}\n/*.next\n/tmp/\n/log/\n/db/*.sqlite3*\n/.bundle/\n"
+      write "Gemfile", <<~RUBY
+        source "https://rubygems.org"
+
+        gem "spinrail", github: "ceritium/spinrail", branch: "master"
+      RUBY
       write "config/routes.rb", "Spinrail.routes.draw do\n  root \"home#index\"\nend\n"
       write "db/schema.rb", "Spinrail::Schema.define do\nend\n"
       write "app/models/application_record.rb", "class ApplicationRecord < Spinrail::Record\nend\n"
@@ -73,6 +79,7 @@ module Spinrail
         end
       RUBY
       init_git if git
+      bundle_install if bundle
       @out.puts "\nNext: cd #{@app} && bin/spinrail server"
     end
 
@@ -97,11 +104,18 @@ module Spinrail
       @out.puts "         run  git init" if system("git", "init", "--quiet", @app)
     end
 
-    # A checkout's apps point at it; a gem install's use the gem.
-    def framework_require
-      return 'require "spinrail"' unless File.exist?(File.expand_path("../../.git", __dir__))
-      lib = Pathname.new(File.expand_path("..", __dir__)).relative_path_from(Pathname.new(File.join(File.expand_path(@app), "bin")))
-      "require_relative #{File.join(lib.to_s, "spinrail").inspect}"
+    # Generated from a checkout, the app uses that checkout through Bundler's
+    # local git override, so the Gemfile stays the one CI resolves.
+    def bundle_install
+      checkout = File.expand_path("../..", __dir__)
+      Dir.chdir(@app) do
+        if File.exist?(File.join(checkout, ".git"))
+          system("bundle", "config", "set", "--local", "local.spinrail", checkout, out: File::NULL)
+          @out.puts "         run  bundle config set --local local.spinrail #{checkout}"
+        end
+        @out.puts "         run  bundle install"
+        system("bundle", "install", "--quiet") or @out.puts "spinrail: bundle install failed; run it in #{@app}"
+      end
     end
 
     def fields(args)
