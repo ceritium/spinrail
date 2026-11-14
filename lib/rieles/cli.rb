@@ -17,6 +17,7 @@ module Rieles
       "build" => "Compile the app into a native binary (-o OUTPUT)",
       "routes" => "List the routes",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
+      "db:migrate" => "Apply db/migrate and rewrite db/schema.rb from it",
       "db:seed" => "Run db/seeds.rb against the database",
       "db:reset" => "Delete the development database and seed it again",
       "clean" => "Remove the binary, tmp/, log/ and the development database",
@@ -40,6 +41,7 @@ module Rieles
       when "routes" then routes
       when "test" then test
       when "clean" then clean
+      when "db:migrate" then migrate
       when "db:seed" then seed
       when "db:reset" then reset_db
       when "setup" then setup
@@ -148,6 +150,19 @@ module Rieles
       loader = "files = ARGV.shift(#{files.size}); files.each { |f| require File.expand_path(f) }"
       $stdout.flush
       exec(env, RbConfig.ruby, "-I", File.join(FRAMEWORK, "lib"), "-r", "rieles/test", "-e", loader, *files, *options)
+    end
+
+    def migrate
+      migrations = Migrations.new(File.join(@app, "db/migrate"))
+      abort "rieles: no migrations in db/migrate" unless migrations.any?
+      schema = File.join(@app, "db/schema.rb")
+      unless File.exist?(schema) && File.read(schema) == migrations.schema_rb
+        File.write(schema, migrations.schema_rb)
+        puts "rieles: wrote db/schema.rb"
+      end
+      build(binary) if stale?
+      Dir.chdir(@app)
+      system({ "RIELES_MIGRATE" => "1" }, binary) or abort "rieles: migrating failed"
     end
 
     def seed

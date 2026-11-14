@@ -540,6 +540,29 @@ module Rieles
     found.nil? ? Rieles.humanize(attribute) : found
   end
 
+  # Applies one db/migrate version unless schema_migrations has it.
+  def self.migrate(version, name, statements)
+    db = Rieles.db
+    db.prepare("SELECT 1 FROM schema_migrations WHERE version = ?")
+    db.bind_str(1, version)
+    done = db.step == 1
+    db.finalize
+    return if done
+    db.exec("BEGIN")
+    statements.each do |statement|
+      next if db.exec(statement)
+      db.exec("ROLLBACK")
+      $stderr.puts "rieles: migration " + version + " " + name + " failed at: " + statement
+      exit(1)
+    end
+    db.prepare("INSERT INTO schema_migrations (version) VALUES (?)")
+    db.bind_str(1, version)
+    db.step
+    db.finalize
+    db.exec("COMMIT")
+    puts "rieles: migrated " + version + " " + name
+  end
+
   def self.humanize(attribute)
     attribute.sub(/_id\z/, "").tr("_", " ").capitalize
   end

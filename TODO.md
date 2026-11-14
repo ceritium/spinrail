@@ -26,7 +26,11 @@ Roughly in priority order within each section.
 - [ ] Text values over 64 KB: tep's C bridge copies each into a fixed buffer.
       Reading one now raises instead of returning it cut; fix upstream.
 - [x] Columns added to `db/schema.rb` are added to existing tables at boot.
-- [ ] Migrations in `db/migrate` (renames, drops, data changes) with a schema version.
+- [x] Migrations in `db/migrate` (`create_table`, `add/remove/rename_column`,
+      `add_reference`, `rename/drop_table`, `add/remove_index`, `execute`), applied
+      at boot through `schema_migrations`; `rieles db:migrate` dumps db/schema.rb;
+      `generate migration`. Indexes in db/schema.rb too.
+- [ ] Reversible `up`/`down`, `change_column`, `rieles db:rollback`.
 - [x] `db/seeds.rb` (`rieles db:seed`, `rieles db:reset`).
 - [ ] PostgreSQL (tep ships an opt-in `PG` battery).
 

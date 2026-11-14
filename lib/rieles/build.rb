@@ -167,7 +167,7 @@ module Rieles
     def rel(file) = file.delete_prefix("#{@app}/")
 
     def generate
-      schema = Schema.new(path("db/schema.rb"))
+      schema = migrations.any? ? Schema.from_migrations(migrations) : Schema.new(path("db/schema.rb"))
       @templates = Dir[path("app/views/**/*.html.erb")].to_h do |file|
         key = rel(file).delete_prefix("app/views/").delete_suffix(".html.erb")
         [key, Template.new(file, File.dirname(key), File.basename(key), [])]
@@ -596,12 +596,22 @@ module Rieles
       "#{SOURCE_MARK}db/seeds.rb\nclass RielesSeeds\n  def self.run\n#{body.gsub(/^(?=.)/, '    ')}\n  end\nend\n"
     end
 
+    def migrations = @migrations ||= Migrations.new(path("db/migrate"))
+
+    # With db/migrate, pending migrations run at boot; without it, tables
+    # and added columns come from db/schema.rb.
     def schema_setup(schema)
-      statements = schema.tables.values.flat_map do |t|
-        cols = t.columns.reject { |c| c.name == "id" }
-        ["  db.exec(#{t.create_sql.inspect})",
-         "  Rieles.add_missing_columns(#{t.name.inspect}, #{cols.map(&:name).inspect}, #{cols.map { |c| t.add_column_sql(c) }.inspect})"]
-      end
+      statements = if migrations.any?
+                     ['  db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)")'] +
+                       migrations.migrations.map { |m| "  Rieles.migrate(#{m.version.inspect}, #{m.name.inspect}, #{m.statements.inspect})" } +
+                       ['  exit(0) if ENV.fetch("RIELES_MIGRATE", "") == "1"']
+                   else
+                     schema.tables.values.flat_map do |t|
+                       cols = t.columns.reject { |c| c.name == "id" }
+                       ["  db.exec(#{t.create_sql.inspect})",
+                        "  Rieles.add_missing_columns(#{t.name.inspect}, #{cols.map(&:name).inspect}, #{cols.map { |c| t.add_column_sql(c) }.inspect})"]
+                     end + schema.indexes.map { |i| "  db.exec(#{Schema.index_sql(i).inspect})" }
+                   end
       seeds = File.exist?(path("db/seeds.rb"))
       <<~RUBY
         on_start do

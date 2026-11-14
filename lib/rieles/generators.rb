@@ -78,7 +78,8 @@ module Rieles
       when "model" then model(name, fields(args))
       when "controller" then controller(name, args)
       when "scaffold" then scaffold(name, fields(args))
-      else abort "rieles: generate model|controller|scaffold"
+      when "migration" then migration(name, fields(args))
+      else abort "rieles: generate model|controller|scaffold|migration"
       end
     end
 
@@ -96,10 +97,30 @@ module Rieles
     def model(name, fields)
       klass = Inflector.camelize(name)
       table = Inflector.tableize(klass)
-      columns = fields.map { |f| "    t.#{f.type} :#{f.name}" } + ["    t.timestamps"]
-      insert_before_last_end("db/schema.rb", "  create_table :#{table} do |t|\n#{columns.join("\n")}\n  end\n")
+      if Dir.exist?(File.join(@app, "db/migrate"))
+        migration("Create#{Inflector.camelize(table)}", fields)
+      else
+        columns = fields.map { |f| "    t.#{f.type} :#{f.name}" } + ["    t.timestamps"]
+        insert_before_last_end("db/schema.rb", "  create_table :#{table} do |t|\n#{columns.join("\n")}\n  end\n")
+      end
       assocs = fields.select(&:references?).map { |f| "  belongs_to :#{f.name}\n" }.join
       write "app/models/#{Inflector.underscore(klass)}.rb", "class #{klass} < ApplicationRecord\n#{assocs}end\n"
+    end
+
+    # AddXToPosts / RemoveXFromPosts / CreatePosts fill in `change`.
+    def migration(name, fields)
+      klass = Inflector.camelize(Inflector.underscore(name))
+      body = case Inflector.underscore(name)
+             when /\Aadd_\w+_to_(\w+)\z/ then fields.map { |f| "    add_column :#{$1}, :#{f.column}, :#{f.references? ? 'integer' : f.type}" }
+             when /\Aremove_\w+_from_(\w+)\z/ then fields.map { |f| "    remove_column :#{$1}, :#{f.column}" }
+             when /\Acreate_(\w+)\z/
+               cols = fields.map { |f| "      t.#{f.type} :#{f.name}" } + ["      t.timestamps"]
+               ["    create_table :#{$1} do |t|", *cols, "    end"]
+             else []
+             end
+      version = Time.now.strftime("%Y%m%d%H%M%S")
+      write "db/migrate/#{version}_#{Inflector.underscore(name)}.rb",
+            "class #{klass} < Rieles::Migration\n  def change\n#{body.join("\n")}#{body.empty? ? '' : "\n"}  end\nend\n"
     end
 
     def controller(name, actions)

@@ -21,8 +21,8 @@ is easy to revisit.
   Rails' cookie store keeps JSON types.
 - CSRF is on by default outside tests, so plain `curl -d` POSTs get 422;
   APIs need `skip_forgery_protection`.
-- Schema changes are applied at boot (only added columns). Real migrations
-  or keep db/schema.rb as the only source of truth?
+- Both db/schema.rb (auto-added columns) and db/migrate work; with
+  migrations present they win. Keep both modes?
 - SQL bind values are logged at debug level without filtering (the
   binds don't carry column names yet). Fine for development?
 - Tep::SQLite cuts text values at 64 KB (fixed C buffer). Open an issue/PR

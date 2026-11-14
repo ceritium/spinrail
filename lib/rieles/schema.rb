@@ -88,38 +88,42 @@ module Rieles
       boolean: :boolean, float: :float, decimal: :float
     }.freeze
 
-    attr_reader :tables
+    attr_reader :tables, :indexes
 
-    def initialize(file)
+    def initialize(file, tables: nil, indexes: [])
       @file = file
-      @tables = {}
-      walk(Rieles.parse(File.read(file), file))
+      @tables = tables || {}
+      @indexes = indexes
+      walk(Rieles.parse(File.read(file), file)) unless tables
     end
+
+    # The schema the migrations in db/migrate build.
+    def self.from_migrations(migrations) = new(nil, tables: migrations.tables, indexes: migrations.indexes)
 
     def table(name) = @tables[name]
 
-    private
+    def self.index_name(table, columns) = "index_#{table}_on_#{columns.join('_and_')}"
 
-    def walk(node)
-      if node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == :create_table
-        create_table(node)
-      else
-        node.compact_child_nodes.each { |child| walk(child) }
-      end
+    def self.index_sql(index)
+      "CREATE #{index[:unique] ? 'UNIQUE ' : ''}INDEX IF NOT EXISTS #{index_name(index[:table], index[:columns])} " \
+        "ON #{index[:table]} (#{index[:columns].join(', ')})"
     end
 
-    def create_table(node)
+    # create_table :name do |t| ... end -> Table
+    def self.table_from(node, file)
       args, = Rieles.call_args(node)
       name = Rieles.literal(args.first).to_s
       columns = [Column.new("id", :integer, nil, false)]
       body = node.block&.body&.body || []
       body.each do |call|
-        fail!(call, "expected t.<type> :name") unless call.is_a?(Prism::CallNode) && call.receiver
+        unless call.is_a?(Prism::CallNode) && call.receiver
+          raise CompileError, "#{file}:#{call.location.start_line}: expected t.<type> :name"
+        end
         if call.name == :timestamps
           columns << Column.new("created_at", :string, nil, false) << Column.new("updated_at", :string, nil, false)
           next
         end
-        type = TYPES.fetch(call.name) { fail!(call, "unsupported column type t.#{call.name}") }
+        type = TYPES.fetch(call.name) { raise CompileError, "#{file}:#{call.location.start_line}: unsupported column type t.#{call.name}" }
         col_args, kw = Rieles.call_args(call)
         col_name = Rieles.literal(col_args.first).to_s
         col_name += "_id" if %i[references belongs_to].include?(call.name)
@@ -127,7 +131,22 @@ module Rieles
         null = kw[:null] ? Rieles.literal(kw[:null]) == true : false
         columns << Column.new(col_name, type, default, null)
       end
-      @tables[name] = Table.new(name, columns)
+      Table.new(name, columns)
+    end
+
+    private
+
+    def walk(node)
+      if node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == :create_table
+        table = Schema.table_from(node, @file)
+        @tables[table.name] = table
+      elsif node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == :add_index
+        args, kw = Rieles.call_args(node)
+        @indexes << { table: Rieles.literal(args[0]).to_s, columns: Array(Rieles.literal(args[1])).map(&:to_s),
+                      unique: kw[:unique] && Rieles.literal(kw[:unique]) }
+      else
+        node.compact_child_nodes.each { |child| walk(child) }
+      end
     end
 
     def fail!(node, message)

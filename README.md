@@ -116,6 +116,9 @@ to the server.
 - Request log: Rails-style by default (filtered params, SQL, rendered
   templates, timings); one line per request with `RIELES_LOG_FORMAT=logfmt`
   or `json`. Each response carries `X-Request-Id`.
+- Database: `db/schema.rb` (new columns are added at boot), or migrations in
+  `db/migrate` applied at boot (`rieles generate migration AddXToPosts x:string`,
+  `rieles db:migrate` also rewrites db/schema.rb); `db/seeds.rb`.
 - Static files in `public/` and assets in `app/assets/`.
 - i18n: `config/locales/*.yml`, `t(".title")`, `t("greeting", name: x)`,
   `I18n.locale = params[:locale]`, translated validation messages.

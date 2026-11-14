@@ -1,0 +1,45 @@
+require_relative "helper"
+
+class MigrationsTest < CompilerTest
+  def test_replays_migrations_into_sql_and_schema
+    dir = app(
+      "db/migrate/20260101000000_create_posts.rb" => <<~RUBY,
+        class CreatePosts < Rieles::Migration
+          def change
+            create_table :posts do |t|
+              t.string :title
+              t.timestamps
+            end
+            add_index :posts, :title, unique: true
+          end
+        end
+      RUBY
+      "db/migrate/20260102000000_change_posts.rb" => <<~RUBY
+        class ChangePosts < Rieles::Migration
+          def change
+            add_column :posts, :views, :integer, default: 0
+            add_column :posts, :subtitle, :string, null: true
+            rename_column :posts, :title, :headline
+            remove_column :posts, :subtitle
+          end
+        end
+      RUBY
+    )
+    m = Rieles::Migrations.new(File.join(dir, "db/migrate"))
+    assert_equal %w[20260101000000 20260102000000], m.migrations.map(&:version)
+    assert_match(/\ACREATE TABLE posts \(id INTEGER PRIMARY KEY, title TEXT/, m.migrations[0].statements[0])
+    assert_equal "CREATE UNIQUE INDEX IF NOT EXISTS index_posts_on_title ON posts (title)", m.migrations[0].statements[1]
+    assert_includes m.migrations[1].statements, "ALTER TABLE posts RENAME COLUMN title TO headline"
+    assert_equal %w[id headline created_at updated_at views], m.tables["posts"].columns.map(&:name)
+    schema = m.schema_rb
+    assert_includes schema, "Rieles::Schema.define(version: 20260102000000) do"
+    assert_includes schema, "t.integer :views, default: 0"
+    reread = Rieles::Schema.new(File.join(app("db/schema.rb" => schema), "db/schema.rb"))
+    assert_equal %w[id headline views created_at updated_at], reread.table("posts").columns.map(&:name)
+  end
+
+  def test_unknown_table
+    dir = app("db/migrate/20260101000000_x.rb" => "class X < Rieles::Migration\n def change\n add_column :nope, :a, :string\n end\nend\n")
+    assert_raises(Rieles::CompileError) { Rieles::Migrations.new(File.join(dir, "db/migrate")) }
+  end
+end
