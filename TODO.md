@@ -34,7 +34,13 @@ Roughly in priority order within each section.
 - [x] Reversible `change` (or `up`/`down`), `rieles db:rollback`.
 - [ ] `change_column` (SQLite needs a table rebuild).
 - [x] `db/seeds.rb` (`rieles db:seed`, `rieles db:reset`).
-- [ ] PostgreSQL (tep ships an opt-in `PG` battery).
+- [x] PostgreSQL, experimental: `RIELES_DATABASE=postgres` at build time and
+      `DATABASE_URL` at run time; an adapter gives tep's PG battery the SQLite
+      cursor interface and translates the SQLite-isms. The dummy's 73 request
+      tests pass against it (`RIELES_DATABASE=postgres bin/rieles test`).
+- [ ] PostgreSQL: three model tests fail when run after the others (an INSERT
+      raises PG::ServerError with no message and nothing in the server log);
+      they pass alone. The model test binary shares one connection.
 
 - [x] `enum :status, { draft: 0, published: 1 }`: names in Ruby, integers in the
       database; `draft?`, `draft!`, `Post.draft`, `Post.statuses`.

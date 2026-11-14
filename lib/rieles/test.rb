@@ -44,6 +44,11 @@ module Rieles
       FileUtils.mkdir_p(mail_dir)
       env["RIELES_MAIL_DELIVERY"] = "file"
       env["RIELES_MAIL_DIR"] = mail_dir
+      if postgres?
+        @pg_database = "rieles_test_#{Process.pid}_#{object_id}"
+        system("createdb", @pg_database, exception: true)
+        env["DATABASE_URL"] = "postgres:///#{@pg_database}"
+      end
       env.merge!(self.class.server_env)
       fixtures_sql = Fixtures.load(ENV.fetch("RIELES_APP"), self.class.fixture_tables)
       unless fixtures_sql.empty?
@@ -59,7 +64,7 @@ module Rieles
     end
 
     def cookies = @cookies
-    def database_path = File.join(@db_dir, "test.sqlite3")
+    def database_path = @pg_database ? "postgres:///#{@pg_database}" : File.join(@db_dir, "test.sqlite3")
     def mail_dir = File.join(@db_dir, "mails")
 
     Delivery = Struct.new(:to, :from, :subject, :body, :html)
@@ -76,8 +81,12 @@ module Rieles
 
     def teardown
       stop_server if @pid
+      system("dropdb", "--if-exists", @pg_database) if @pg_database
       FileUtils.rm_rf(@db_dir)
     end
+
+    # RIELES_DATABASE=postgres: each test gets a fresh database on the local server.
+    def postgres? = ENV.fetch("RIELES_DATABASE", "sqlite") == "postgres"
 
     def get(path, headers: {}) = request(Net::HTTP::Get, path, nil, headers)
     def post(path, params: {}, headers: {}, json: nil) = request(Net::HTTP::Post, path, params, headers, json)

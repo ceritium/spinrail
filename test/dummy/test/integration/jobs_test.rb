@@ -17,7 +17,7 @@ class QueuedJobsTest < Rieles::IntegrationTest
     assert_equal "Ana,Bea", response.body
 
     log = File.join(Dir.tmpdir, "rieles-jobs-#{Process.pid}.log")
-    worker = Process.spawn({ "DATABASE_PATH" => database_path, "RIELES_JOBS" => "1", "RIELES_ENV" => "test",
+    worker = Process.spawn({ "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path, "RIELES_JOBS" => "1", "RIELES_ENV" => "test",
                              "RIELES_JOBS_INLINE" => "0" }, ENV.fetch("RIELES_BINARY"), out: log, err: log)
     50.times do
       get "/models/authors"

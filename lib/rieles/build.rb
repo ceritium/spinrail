@@ -230,7 +230,8 @@ module Rieles
         *(ENV.fetch("RIELES_SERVER", "scheduled") == "prefork" ? [] : ["set :scheduler, :scheduled"]),
         "Tep.session_secret = ENV.fetch(\"SECRET_KEY_BASE\", #{local_secret.inspect})",
         *(Dir.exist?(path("public")) ? ["set :public_dir, \"public\""] : []),
-        File.read(RUNTIME),
+        *(postgres? ? ['require "tep/pg"'] : []),
+        runtime_source,
         translations,
         assets_source,
         application_record,
@@ -253,6 +254,19 @@ module Rieles
         *routes.routes.map { |r| route_block(r, controllers) },
         not_found_block
       ].join("\n")
+    end
+
+    # RIELES_DATABASE=postgres (at build time) swaps Tep::SQLite for the
+    # PG adapter and reads DATABASE_URL instead of DATABASE_PATH.
+    def postgres? = ENV.fetch("RIELES_DATABASE", "sqlite") == "postgres"
+
+    def runtime_source
+      source = File.read(RUNTIME)
+      return source unless postgres?
+      source.sub("@conn = Tep::SQLite.new", "@conn = Rieles::PgConnection.new")
+            .sub('raise StatementInvalid, "failed: " + sql if rc < 0', 'raise StatementInvalid, "failed: " + sql + ": " + db.last_error if rc < 0')
+            .sub('ENV.fetch("DATABASE_PATH", "./db/development.sqlite3")', 'ENV.fetch("DATABASE_URL", "postgres:///rieles_development")') +
+        "\n" + File.read(File.join(File.dirname(RUNTIME), "postgres.rb"))
     end
 
     # style.css -> /style-<sha256 prefix>.css: a new name whenever the

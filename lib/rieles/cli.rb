@@ -193,6 +193,11 @@ module Rieles
       Dir.mktmpdir("rieles-models") do |dir|
         env = { "DATABASE_PATH" => File.join(dir, "test.sqlite3"), "RIELES_ENV" => "test", "RIELES_RUN_TESTS" => "1",
                 "RIELES_LOG_FILE" => File.join(@app, "log/test.log"), "RIELES_TEST_NAME" => filter }
+        if ENV.fetch("RIELES_DATABASE", "sqlite") == "postgres"
+          pg_database = "rieles_models_#{Process.pid}"
+          system("createdb", pg_database, exception: true)
+          env["DATABASE_URL"] = "postgres:///#{pg_database}"
+        end
         require_relative "fixtures"
         sql = Fixtures.load(@app, ["all"])
         unless sql.empty?
@@ -202,6 +207,8 @@ module Rieles
         puts "rieles: model tests"
         $stdout.flush
         system(env, test_binary)
+      ensure
+        system("dropdb", "--if-exists", pg_database) if pg_database
       end
     end
 
@@ -283,6 +290,7 @@ module Rieles
         "SPINELKIT_DIR" => File.join(VENDOR, "spinelkit"),
         "TEP_SKIP_SPINEL_FRESH" => "1"
       }
+      env.merge!(postgres_env) if ENV.fetch("RIELES_DATABASE", "sqlite") == "postgres"
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       $stdout.print "rieles: compiling #{File.basename(@app)}... "
       $stdout.flush
@@ -295,9 +303,25 @@ module Rieles
         return false
       end
       puts format("done in %.1fs", Process.clock_gettime(Process::CLOCK_MONOTONIC) - started)
+      File.write(flavor_file, flavor) if output == binary
       warnings = log.lines.select { |l| l.match?(/warning|error/i) && KNOWN_WARNINGS.none? { |k| l.include?(k) } }
       warn warnings.join unless warnings.empty?
       true
+    end
+
+    # tep's PG battery: its C shim, built once next to its source, and
+    # libpq's flags from pg_config (Homebrew's libpq isn't on the default path).
+    def postgres_env
+      pg_config = ENV.fetch("PG_CONFIG", "pg_config")
+      include_dir = `#{pg_config} --includedir`.strip
+      lib_dir = `#{pg_config} --libdir`.strip
+      abort "rieles: pg_config not found; install libpq or set PG_CONFIG" if include_dir.empty?
+      shim = File.join(VENDOR, "tep/native/pg/tep_pg.o")
+      unless File.exist?(shim)
+        system("cc", "-O2", "-I#{include_dir}", "-c", shim.sub(/\.o\z/, ".c"), "-o", shim) or abort "rieles: building tep_pg.o failed"
+      end
+      { "TEP_PG_O" => shim, "TEP_PG_CFLAGS" => "-I#{include_dir}", "TEP_PG_LIBS" => "-L#{lib_dir} -lpq",
+        "LIBRARY_PATH" => [lib_dir, ENV["LIBRARY_PATH"]].compact.join(":") }
     end
 
     # Harmless and not actionable by apps (see the build notes in README).
@@ -325,8 +349,13 @@ module Rieles
       hints.empty? ? "" : "rieles: the error is near\n#{hints.uniq.join("\n")}"
     end
 
+    # The database adapter is chosen at build time, so switching it rebuilds.
+    def flavor_file = File.join(@app, "tmp/.database")
+    def flavor = ENV.fetch("RIELES_DATABASE", "sqlite")
+
     def stale?
       return true unless File.exist?(binary)
+      return true unless File.exist?(flavor_file) && File.read(flavor_file) == flavor
       built = File.mtime(binary)
       input_mtimes.values.any? { |t| t > built }
     end

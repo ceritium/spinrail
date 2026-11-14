@@ -91,7 +91,8 @@ end
 
 class SeedsTest < Rieles::IntegrationTest
   def test_seeds_run_against_the_database
-    assert system({ "RIELES_SEED" => "1", "DATABASE_PATH" => database_path, "RIELES_LOG_LEVEL" => "error" },
+    assert system({ "RIELES_SEED" => "1", "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path,
+                    "RIELES_LOG_LEVEL" => "error" },
                   ENV.fetch("RIELES_BINARY"), out: File::NULL)
     get "/models/authors"
     assert_equal "Seeded", response.body
