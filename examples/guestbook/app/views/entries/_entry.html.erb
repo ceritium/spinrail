@@ -1,4 +1,4 @@
-<li>
+<li id="<%= dom_id(entry) %>">
   <p class="body"><%= entry.excerpt %></p>
   <p class="meta"><a href="<%= entry_path(entry) %>"><%= entry.name %> · <%= l(entry.created_at) %></a></p>
 </li>

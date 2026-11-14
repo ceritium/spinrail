@@ -97,6 +97,8 @@ module Rieles
         lower_field(node)
       elsif @ctx.view? && node.receiver.nil? && node.name == :link_to && node.block
         lower_link_block(node)
+      elsif @ctx.view? && node.receiver.nil? && node.name == :turbo_frame_tag
+        lower_turbo_frame(node)
       elsif @ctx.view? && node.receiver.nil? && node.name == :paginate && node.arguments&.arguments&.size == 1
         arg = node.arguments.arguments.first
         @rw.replace(node) { "pagination_links((#{@rw.slice(arg)}).current_page, (#{@rw.slice(arg)}).total_pages)" }
@@ -638,6 +640,20 @@ module Rieles
         open = "\"<a href=\\\"\" + h((#{@rw.slice(args[0])}).to_s) + \"\\\"\" + #{html_attrs(kw)} + \">\""
         body = node.block.body ? @rw.slice(node.block.body) : ""
         "out << #{open}\n#{body}\nout << \"</a>\""
+      end
+    end
+
+    # turbo_frame_tag "id" do ... end, or turbo_frame_tag "id", src: path
+    def lower_turbo_frame(node)
+      args, kw = Rieles.call_args(node)
+      @rw.replace(node) do
+        open = "\"<turbo-frame id=\\\"\" + h((#{@rw.slice(args.first)}).to_s) + \"\\\"\" + #{html_attrs(kw)} + \">\""
+        if node.block
+          body = node.block.body ? @rw.slice(node.block.body) : ""
+          "out << #{open}\n#{body}\nout << \"</turbo-frame>\""
+        else
+          "(#{open} + \"</turbo-frame>\")"
+        end
       end
     end
 

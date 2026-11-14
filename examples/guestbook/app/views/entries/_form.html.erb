@@ -1,0 +1,15 @@
+<%# locals: (entry:) %>
+<%= form_with model: entry, id: "entry_form" do |f| %>
+  <% if entry.errors.any? %>
+    <ul class="errors">
+      <% entry.errors.full_messages.each do |message| %>
+        <li><%= message %></li>
+      <% end %>
+    </ul>
+  <% end %>
+  <%= f.label :name %>
+  <%= f.text_field :name, maxlength: 40 %>
+  <%= f.label :body, "Message" %>
+  <%= f.text_area :body, maxlength: 500, rows: 3 %>
+  <button>Sign</button>
+<% end %>

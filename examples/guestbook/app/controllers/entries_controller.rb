@@ -16,7 +16,17 @@ class EntriesController < ApplicationController
   def create
     @entry = Entry.new(entry_params)
     if @entry.save
-      redirect_to entry_path(@entry), status: :see_other
+      respond_to do |format|
+        # With Turbo the page stays: the entry is prepended and the form reset.
+        format.turbo_stream do
+          render turbo_stream: [
+            turbo_stream.prepend("entries", partial: "entries/entry", locals: { entry: @entry }),
+            turbo_stream.update("count", Entry.count.to_s + (Entry.count == 1 ? " message" : " messages")),
+            turbo_stream.replace("entry_form", partial: "entries/form", locals: { entry: Entry.new })
+          ]
+        end
+        format.html { redirect_to entry_path(@entry), status: :see_other }
+      end
     else
       @entries = Entry.order(id: :desc).limit(50)
       render :index, status: :unprocessable_entity

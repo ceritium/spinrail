@@ -46,6 +46,11 @@ class LoweringTest < CompilerTest
     assert_match(/unknown status :teapot_ish/, error.message)
   end
 
+  def test_turbo_frame_tag
+    assert_equal %(("<turbo-frame id=\\"" + h(("x").to_s) + "\\"" + " src=\\"" + h((path).to_s) + "\\"" + ">" + "</turbo-frame>")),
+                 lower(%(turbo_frame_tag "x", src: path), view: true, controller: false)
+  end
+
   def test_views_turn_ivars_into_exposures
     assert_equal "out << iv_post.title", lower("out << @post.title", view: true, controller: false)
   end

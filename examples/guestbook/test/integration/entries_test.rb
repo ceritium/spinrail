@@ -16,6 +16,15 @@ class EntriesTest < Rieles::IntegrationTest
     assert_body_includes "¡Hola!"
   end
 
+  def test_create_with_turbo_streams
+    post "/entries", params: { "entry[name]" => "Ana", "entry[body]" => "hi" },
+                     headers: { "Accept" => "text/vnd.turbo-stream.html, text/html" }
+    assert_response :success
+    assert_body_includes '<turbo-stream action="prepend" target="entries"><template><li id="entry_1">'
+    assert_body_includes '<turbo-stream action="update" target="count"><template>1 message</template>'
+    assert_body_includes '<turbo-stream action="replace" target="entry_form"><template><form action="/entries"'
+  end
+
   def test_invalid_entry_renders_errors
     post "/entries", params: { "entry[name]" => "", "entry[body]" => "" }
     assert_response :unprocessable_entity

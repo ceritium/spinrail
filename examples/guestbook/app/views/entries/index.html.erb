@@ -3,22 +3,9 @@
   <p class="lead">Rails-shaped Ruby, compiled to a native binary.</p>
 </header>
 
-<%= form_with model: @entry do |f| %>
-  <% if @entry.errors.any? %>
-    <ul class="errors">
-      <% @entry.errors.full_messages.each do |message| %>
-        <li><%= message %></li>
-      <% end %>
-    </ul>
-  <% end %>
-  <%= f.label :name %>
-  <%= f.text_field :name, maxlength: 40 %>
-  <%= f.label :body, "Message" %>
-  <%= f.text_area :body, maxlength: 500, rows: 3 %>
-  <button>Sign</button>
-<% end %>
+<%= render "form", entry: @entry %>
 
-<h2><%= pluralize(@entries.count, "message") %></h2>
-<ul class="entries">
+<h2 id="count"><%= pluralize(@entries.count, "message") %></h2>
+<ul class="entries" id="entries">
   <%= render @entries %>
 </ul>
