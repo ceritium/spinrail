@@ -70,6 +70,9 @@ class EntriesTest < Rieles::IntegrationTest
 end
 ```
 
+Framework tests: `rake unit` (compiler, no spinel) and `rake` (also the
+request tests of `test/dummy` and the guestbook).
+
 Helpers: `get/post/put/patch/delete`, `response`, `follow_redirect!`,
 `assert_response` (status, `:success`, `:redirect`, `:not_found`...),
 `assert_redirected_to`, `assert_body_includes`.
