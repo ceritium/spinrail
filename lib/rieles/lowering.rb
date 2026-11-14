@@ -352,8 +352,8 @@ module Rieles
 
     def i18n_call?(node)
       i18n = node.receiver.is_a?(Prism::ConstantReadNode) && node.receiver.name == :I18n
-      return %i[t translate locale locale=].include?(node.name) if i18n
-      node.receiver.nil? && %i[t translate].include?(node.name) && node.arguments
+      return %i[t translate l localize locale locale=].include?(node.name) if i18n
+      node.receiver.nil? && %i[t translate l localize].include?(node.name) && node.arguments
     end
 
     # t("key"), t(".lazy") (scoped to the template, or controller.action),
@@ -364,12 +364,20 @@ module Rieles
       when :locale= then return @rw.replace(node) { "Rieles.set_locale((#{@rw.slice(node.arguments.arguments.first)}).to_s)" }
       end
       args, kw = Rieles.call_args(node)
+      if %i[l localize].include?(node.name)
+        format = kw[:format] ? Rieles.literal(kw[:format]).to_s : "default"
+        return @rw.replace(node) { "Rieles.localize((#{@rw.slice(args.first)}).to_s, #{format.inspect})" }
+      end
       key_node = args.first or fail!(node, "t needs a key")
       literal = key_node.is_a?(Prism::StringNode) || key_node.is_a?(Prism::SymbolNode)
       static = literal && (key_node.unescaped.start_with?(".") ? "#{lazy_scope(node)}#{key_node.unescaped}" : key_node.unescaped)
       @rw.replace(node) do
         key = static ? static.inspect : "(#{@rw.slice(key_node)}).to_s"
-        if kw.empty?
+        if kw.key?(:count)
+          rest = kw.reject { |k, _| k == :count }
+          "Rieles.t_count(#{key}, #{@rw.slice(kw[:count])}, #{rest.keys.map(&:to_s).inspect}, " \
+            "[#{rest.values.map { |v| "(#{@rw.slice(v)}).to_s" }.join(', ')}])"
+        elsif kw.empty?
           "Rieles.t(#{key})"
         else
           "Rieles.t_with(#{key}, #{kw.keys.map(&:to_s).inspect}, [#{kw.values.map { |v| "(#{@rw.slice(v)}).to_s" }.join(', ')}])"

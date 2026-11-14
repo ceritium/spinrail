@@ -3,3 +3,10 @@ en:
   i18n:
     show:
       title: "Translations"
+  comments:
+    zero: "No comments"
+    one: "1 comment"
+    other: "%{count} comments"
+  time:
+    formats:
+      short: "%d/%m %H:%M"

@@ -510,6 +510,26 @@ module Rieles
     text
   end
 
+  # count: picks key.zero/one/other when the locale defines them.
+  def self.t_count(key, count, names, values)
+    branch = count == 0 && !Rieles.translate(key + ".zero").nil? ? ".zero" : (count == 1 ? ".one" : ".other")
+    chosen = Rieles.translate(key + branch).nil? ? key : key + branch
+    Rieles.t_with(chosen, names, values).gsub("%{count}", count.to_s)
+  end
+
+  # l("2026-11-14 09:30:00", format: :short) with time.formats.short as a
+  # strftime pattern; timestamps are the strings Rieles.now writes.
+  def self.localize(timestamp, format)
+    parts = timestamp.split(/[- :T]/).map { |x| x.to_i }
+    return timestamp if parts.length < 3
+    while parts.length < 6
+      parts << 0
+    end
+    pattern = Rieles.translate("time.formats." + format)
+    pattern = format == "short" ? "%d %b %H:%M" : (format == "long" ? "%B %d, %Y %H:%M" : "%Y-%m-%d %H:%M:%S") if pattern.nil?
+    Time.new(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]).strftime(pattern)
+  end
+
   def self.message(key, default, count)
     found = Rieles.translate("errors.messages." + key)
     (found.nil? ? default : found).gsub("%{count}", count)

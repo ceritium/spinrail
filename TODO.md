@@ -113,7 +113,8 @@ Roughly in priority order within each section.
 - [x] Static files from `public/`, served from disk.
 - [x] i18n: `config/locales/*.yml`, `t`/`I18n.t` with lazy `.keys` and interpolation,
       `I18n.locale =` per request, translated validation messages and attribute names.
-- [ ] i18n: `l` for dates and numbers, pluralization (`count:`), Accept-Language.
+- [x] i18n: pluralization (`count:` with zero/one/other), `l` with `time.formats`.
+- [ ] i18n: number formats, Accept-Language.
 - [ ] Prefork workers on Linux.
 
 ## Upstream
