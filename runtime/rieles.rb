@@ -128,7 +128,15 @@ module Rieles
     def sql(name, statement, t0)
       ms = since(t0)
       @db += ms
-      on_sql(name, statement, ms) if @level == 0
+      on_sql(name, statement, ms, "") if @level == 0
+    rescue StandardError => e
+      failed(e)
+    end
+
+    def sql_binds(name, statement, t0, binds)
+      ms = since(t0)
+      @db += ms
+      on_sql(name, statement, ms, binds.empty? ? "" : "  " + binds.inspect) if @level == 0
     rescue StandardError => e
       failed(e)
     end
@@ -168,7 +176,7 @@ module Rieles
     end
 
     def on_start; end
-    def on_sql(name, statement, elapsed); end
+    def on_sql(name, statement, elapsed, binds); end
     def on_render(template, elapsed); end
     def on_redirect; end
     def on_error; end
@@ -229,8 +237,8 @@ module Rieles
       emit "  Parameters: {" + pairs.join(", ") + "}"
     end
 
-    def on_sql(name, statement, elapsed)
-      emit "  " + paint(name + " (" + ms(elapsed) + "ms)", "1;36") + "  " + paint(statement, "1;34")
+    def on_sql(name, statement, elapsed, binds)
+      emit "  " + paint(name + " (" + ms(elapsed) + "ms)", "1;36") + "  " + paint(statement, "1;34") + binds
     end
 
     def on_render(template, elapsed)
@@ -579,6 +587,32 @@ module Rieles
       opts["Path"] = "/"
       opts["SameSite"] = "Lax"
       @res.set_cookie(key, value.to_s, opts)
+    end
+
+    def cookie_set_permanent(key, value)
+      opts = Tep.str_hash
+      opts["Path"] = "/"
+      opts["SameSite"] = "Lax"
+      opts["Max-Age"] = "630720000"
+      @res.set_cookie(key, value.to_s, opts)
+    end
+
+    # value--hmac, verified with the session secret.
+    def cookie_get_signed(key)
+      raw = @req.cookies[key]
+      return nil if raw.nil?
+      cut = raw.rindex("--")
+      return nil if cut.nil?
+      value = raw[0, cut]
+      Tep.timing_safe_eq(raw[cut + 2, raw.length - cut - 2], Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, value)) ? value : nil
+    end
+
+    def cookie_set_signed(key, value)
+      cookie_set(key, value.to_s + "--" + Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, value.to_s))
+    end
+
+    def cookie_set_permanent_signed(key, value)
+      cookie_set_permanent(key, value.to_s + "--" + Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, value.to_s))
     end
 
     def cookie_delete(key)

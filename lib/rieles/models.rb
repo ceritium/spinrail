@@ -227,7 +227,12 @@ module Rieles
 
     def indent(lines, n) = Array(lines).flat_map { |l| l.split("\n") }.map { |l| l.empty? ? l : (" " * n) + l }.join("\n")
 
-    def run_callbacks(kind) = @callbacks[kind].join("\n")
+    # before_* callbacks may `throw :abort` to cancel the operation.
+    def run_callbacks(kind)
+      calls = @callbacks[kind]
+      return calls.join("\n") unless kind.to_s.start_with?("before_") && kind != :before_validation && calls.any?
+      "halted = catch(:abort) do\n#{calls.map { |c| "  #{c}" }.join("\n")}\n  false\nend\nreturn false if halted.nil?"
+    end
 
     def write_statement(sql, label, cols, extra)
       binds = cols.each_with_index.map { |c, i| c.bind(i + 1, "@#{c.name}") }
@@ -538,7 +543,7 @@ module Rieles
               values << #{c.read(0)}
             end
             db.finalize
-            Rieles.log.sql(#{"#{@name} Pluck".inspect}, statement, t0)
+            Rieles.log.sql_binds(#{"#{@name} Pluck".inspect}, statement, t0, @binds)
             values
           end
         RUBY
@@ -759,7 +764,7 @@ module Rieles
               @records << #{@name}.from_row(db)
             end
             db.finalize
-            Rieles.log.sql(#{"#{@name} Load".inspect}, statement, t0)
+            Rieles.log.sql_binds(#{"#{@name} Load".inspect}, statement, t0, @binds)
             @loaded = true
             @include_names.each { |name| #{@name}.preload_association(@records, name) }
             @records
@@ -792,7 +797,7 @@ module Rieles
             bind_all(db)
             n = db.step == 1 ? db.col_int(0) : 0
             db.finalize
-            Rieles.log.sql(#{"#{@name} Count".inspect}, statement, t0)
+            Rieles.log.sql_binds(#{"#{@name} Count".inspect}, statement, t0, @binds)
             n
           end
 

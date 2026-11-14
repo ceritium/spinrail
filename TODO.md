@@ -20,7 +20,7 @@ Roughly in priority order within each section.
 - [x] Eager loading: `includes`/`preload` run one query per association.
 - [ ] `joins`, `group`, nested includes (`includes(comments: :author)`).
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
-- [ ] Halting callbacks with `throw :abort`.
+- [x] Halting before_* callbacks with `throw :abort`.
 - [ ] Nullable columns. Today every column is `NOT NULL` with a default,
       because spinel can't hold nil where a String is expected.
 - [x] Columns added to `db/schema.rb` are added to existing tables at boot.
@@ -37,7 +37,8 @@ Roughly in priority order within each section.
 - [x] Sessions on tep's signed cookie (`SECRET_KEY_BASE`, a dev secret in
       `tmp/local_secret.txt`).
 - [x] `cookies[:x]`, `cookies[:x] = v`, `cookies.delete(:x)`.
-- [ ] `cookies.signed` / `cookies.permanent`.
+- [x] `cookies.signed` (HMAC with the session secret) / `cookies.permanent`.
+- [ ] `cookies.encrypted`.
 - [x] `flash`, `flash.now`, `redirect_to ..., notice:/alert:`, `notice`/`alert` in views.
 - [x] CSRF protection (form param or `X-CSRF-Token`), `skip_forgery_protection`,
       `csrf_meta_tags`; off in tests unless `forgery_protection!`.
@@ -76,7 +77,8 @@ Roughly in priority order within each section.
       `app/controllers/admin/`), singular `resource`.
 - [x] `shallow`, `scope` (path, `module:`, `as:`), `concern`/`concerns:`,
       `form_with model: [@post, @comment]`.
-- [ ] Route `constraints`, `(.:format)`, globbing.
+- [x] `.json` suffix on any path sets `format=json`.
+- [ ] Route `constraints`, globbing.
 - [x] Path helpers that accept ids as well as records (`to_param`); `_url` helpers.
 
 ## Tooling
@@ -101,9 +103,9 @@ Roughly in priority order within each section.
 - [x] Log levels (`RIELES_LOG_LEVEL`): SQL and rendered templates only at debug.
 - [x] Log: request id, also sent as `X-Request-Id` (an incoming one is kept).
 - [ ] Log: client IP (tep has no peer address yet).
-- [ ] Log: backtraces for 500s, if spinel can produce useful ones.
+- [ ] Log: backtraces for 500s. Blocked: spinel exceptions carry an empty backtrace.
 - [x] Log: configurable filtered params (`RIELES_FILTER_PARAMETERS`).
-- [ ] Log: SQL bind values in dev.
+- [x] Log: SQL bind values at debug level.
 - [x] Log: a failure inside the logger must not take the server down.
 - [x] Log: write to a file (`RIELES_LOG_FILE`).
 - [x] Quieter `rieles build`: one summary line, only warnings and errors.

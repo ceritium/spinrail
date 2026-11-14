@@ -529,9 +529,14 @@ module Rieles
     end
 
     # HTML forms can only POST; `_method` picks PATCH, PUT or DELETE.
+    # /posts/1.json is /posts/1 with format=json, for respond_to.
     def method_override
       <<~RUBY
         before do
+          if req.path.end_with?(".json")
+            req.path = req.path.delete_suffix(".json")
+            req.params["format"] = "json"
+          end
           if req.verb == "POST"
             override = Tep.param(req, "_method").upcase
             req.verb = override if override == "PATCH" || override == "PUT" || override == "DELETE"

@@ -125,6 +125,20 @@ class ModelsController < ApplicationController
     render plain: lines.join("\n")
   end
 
+  def abort
+    post = Post.find_by(title: "First")
+    post.title = "Locked"
+    post.save
+    destroyed = post.destroy
+    render plain: "destroyed=" + destroyed.to_s + " still=" + Post.where(title: "Locked").count.to_s
+  end
+
+  def signed
+    cookies.signed[:uid] = params[:uid] unless params[:uid].empty?
+    cookies.permanent[:seen] = "yes"
+    render plain: "uid=" + cookies.signed[:uid].to_s
+  end
+
   def authors
     render plain: Author.order(id: :asc).pluck(:name).join(",")
   end

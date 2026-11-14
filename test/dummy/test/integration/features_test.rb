@@ -26,6 +26,27 @@ class FeaturesTest < Rieles::IntegrationTest
     assert_equal "application/json", response["Content-Type"]
   end
 
+  def test_throw_abort_cancels_destroy
+    get "/models/abort"
+    assert_equal "destroyed=false still=1", response.body
+  end
+
+  def test_signed_and_permanent_cookies
+    get "/models/signed?uid=42"
+    assert_match(/\A42--\h{64}\z/, cookies["uid"])
+    assert_match(/Max-Age=630720000/, response.get_fields("set-cookie").join)
+    get "/models/signed"
+    assert_equal "uid=42", response.body
+    cookies["uid"] = "43--" + cookies["uid"].split("--").last
+    get "/models/signed"
+    assert_equal "uid=", response.body
+  end
+
+  def test_json_suffix
+    get "/models/formats.json"
+    assert_equal "First", JSON.parse(response.body)["title"]
+  end
+
   def test_cookies
     get "/models/cookie?theme=dark"
     assert_equal "theme=", response.body

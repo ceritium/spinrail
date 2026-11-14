@@ -19,3 +19,5 @@ is easy to revisit.
   APIs need `skip_forgery_protection`.
 - Schema changes are applied at boot (only added columns). Real migrations
   or keep db/schema.rb as the only source of truth?
+- SQL bind values are logged at debug level without filtering (the
+  binds don't carry column names yet). Fine for development?

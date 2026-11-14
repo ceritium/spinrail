@@ -9,6 +9,11 @@ class Post < ApplicationRecord
   validates :body, presence: true, if: :published?
 
   after_create :log_creation
+  before_destroy :protect_locked
+
+  def protect_locked
+    throw :abort if title == "Locked"
+  end
 
   def body_not_shouting
     errors.add(:body, "is shouting") if body.length > 3 && body == body.upcase

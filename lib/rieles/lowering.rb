@@ -439,6 +439,18 @@ module Rieles
       if recv.name == :now && bare?(recv.receiver, :flash) && node.name == :[]=
         return [:flash_now, :set]
       end
+      # cookies.signed / cookies.permanent / cookies.permanent.signed
+      if %i[signed permanent].include?(recv.name)
+        chain = [recv.name]
+        base = recv.receiver
+        if base.is_a?(Prism::CallNode) && base.name == :permanent && base.arguments.nil?
+          chain.unshift(:permanent)
+          base = base.receiver
+        end
+        return nil unless bare?(base, :cookies)
+        kind = chain.join("_")
+        return [:cookie, node.name == :[]= ? :"set_#{kind}" : :"get_#{kind}"] if %i[[] []=].include?(node.name)
+      end
       return nil unless recv.receiver.nil? && %i[session flash cookies].include?(recv.name)
       store = recv.name == :cookies ? :cookie : recv.name
       case node.name
@@ -458,6 +470,9 @@ module Rieles
         when :get then "#{store}_get(#{k})"
         when :set then "#{store}_set(#{k}, #{@rw.slice(value)})"
         when :delete then "#{store}_delete(#{k})"
+        when :get_signed then "cookie_get_signed(#{k})"
+        when :set_signed, :set_permanent, :set_permanent_signed then "#{store}_#{op}(#{k}, #{@rw.slice(value)})"
+        else fail!(node, "unsupported cookies access")
         end
       end
     end
