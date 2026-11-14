@@ -136,6 +136,15 @@ to the server.
 | `RIELES_SERVER` (build) | `scheduled` | `prefork` for production: tep's default server handles bursts better but ignores Ctrl+C on idle keep-alive connections ([OriPekelman/tep#277](https://github.com/OriPekelman/tep/issues/277)) |
 | `RIELES_FILTER_PARAMETERS` | `password,token,secret,...` | substrings, comma-separated |
 
+## Prior art
+
+[rubys/roundhouse](https://github.com/rubys/roundhouse) takes unmodified
+Rails apps, infers types across the whole program and emits a project for
+one of a dozen targets, Spinel-compiled Ruby among them, checked against
+live Rails with a conformance oracle. Rieles is narrower: a Rails-shaped
+framework whose idioms are lowered to plain Ruby for tep and spinel, with
+no claim of running existing Rails apps.
+
 ## Not yet
 
 See [TODO.md](TODO.md).
