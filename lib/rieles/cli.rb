@@ -66,9 +66,11 @@ module Rieles
     end
 
     def routes
-      Build.new(@app).routes.routes.each do |r|
+      all = Build.new(@app).routes.routes
+      width = all.map { |r| r.path.size }.max.to_i
+      all.each do |r|
         target = r.controller ? "#{r.controller}##{r.action}" : Rieles.class_name(r.action, "Actions")
-        puts format("%-7s %-22s %s", r.verb.to_s.upcase, r.path, target)
+        puts format("%-7s %-#{width}s  %s", r.verb.to_s.upcase, r.path, target)
       end
     end
 

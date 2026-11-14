@@ -1,5 +1,5 @@
 class PostsController < ApplicationController
-  before_action :set_post, only: [:show, :edit, :update, :destroy]
+  before_action :set_post, only: [:show, :edit, :update, :destroy, :publish]
 
   def index
     @posts = Post.order(id: :asc)
@@ -30,6 +30,15 @@ class PostsController < ApplicationController
     else
       render :edit, status: :unprocessable_entity
     end
+  end
+
+  def search
+    render plain: "search " + search_posts_path + " " + publish_post_path(3)
+  end
+
+  def publish
+    @post.update(published: true)
+    redirect_to post_path(@post.id)
   end
 
   def destroy

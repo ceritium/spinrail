@@ -76,7 +76,9 @@ Helpers: `get/post/put/patch/delete`, `response`, `follow_redirect!`,
 
 ## Supported so far
 
-- Routes: `root`, `resources` (with `only:`/`except:`), `get/post/... "path", to:`.
+- Routes: `root`, `resources`/`resource` (with `only:`/`except:`, nesting,
+  `member`, `collection`), `namespace`, `get/post/... "path", to:`; `_path`
+  and `_url` helpers.
 - Models: columns from `create_table` (`string`, `text`, `integer`, `float`,
   `boolean`, `datetime`, `references`, `timestamps`, `default:`); `all`,
   `where`, `where.not`, `order`, `limit`, `offset`, `first`, `last`, `count`,

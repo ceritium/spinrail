@@ -1,79 +1,206 @@
 module Rieles
+  # controller is a path ("posts", "admin/posts"); nil for action classes.
   Route = Struct.new(:verb, :path, :controller, :action)
 
+  # Reads config/routes.rb: root, resources/resource (nested, member,
+  # collection), namespace and verb routes, plus their path helpers.
   class Routes
     RESOURCE_ACTIONS = %i[index new create show edit update destroy].freeze
+    SINGULAR_ACTIONS = %i[new create show edit update destroy].freeze
+    VERBS = %i[get post patch put delete].freeze
+
+    # One level of nesting: where paths, helper names and controllers start.
+    Scope = Struct.new(:path, :helper, :module, :params, :kind) # kind: nil, :member, :collection
 
     attr_reader :routes, :helpers
 
     def initialize(file)
       @file = file
       @routes = []
-      @helpers = {} # name => [param, ruby expression]
-      walk(Rieles.parse(File.read(file), file))
+      @helpers = {} # name => [params, ruby expression]
+      @scopes = [Scope.new("", "", "", [], nil)]
+      root = Rieles.parse(File.read(file), file)
+      draw = find_draw(root) or fail!(root, "expected Rieles.routes.draw do ... end")
+      body(draw.block)
     end
 
     private
 
-    def walk(node)
-      if node.is_a?(Prism::CallNode) && node.receiver.nil?
-        case node.name
-        when :root then root(node)
-        when :resources then resources(node)
-        when :get, :post, :patch, :put, :delete then verb(node)
-        end
+    def scope = @scopes.last
+
+    def find_draw(node)
+      return node if node.is_a?(Prism::CallNode) && node.name == :draw && node.block
+      node.compact_child_nodes.each do |child|
+        found = find_draw(child)
+        return found if found
       end
-      node.compact_child_nodes.each { |child| walk(child) }
+      nil
+    end
+
+    def body(block)
+      (block&.body&.body || []).each { |stmt| statement(stmt) }
+    end
+
+    def statement(node)
+      fail!(node, "unexpected `#{node.slice.lines.first.strip}` in routes") unless node.is_a?(Prism::CallNode) && node.receiver.nil?
+      case node.name
+      when :root then root(node)
+      when :resources then resources(node, plural: true)
+      when :resource then resources(node, plural: false)
+      when :namespace then namespace(node)
+      when :member, :collection then nest_kind(node)
+      when *VERBS then verb(node)
+      else fail!(node, "unsupported route `#{node.name}`")
+      end
     end
 
     def root(node)
+      args, kw = Rieles.call_args(node)
+      target = args.first || kw[:to]
+      controller, action = endpoint(node, target)
+      add(:get, scope.path.empty? ? "/" : scope.path, controller, action)
+      helper("#{scope.helper}root", [], (scope.path.empty? ? "/" : scope.path).inspect)
+    end
+
+    def namespace(node)
       args, = Rieles.call_args(node)
-      controller, action = endpoint(node, args.first)
-      @routes << Route.new(:get, "/", controller, action)
-      @helpers["root_path"] = [nil, '"/"']
+      name = Rieles.literal(args.first).to_s
+      within(Scope.new("#{scope.path}/#{name}", "#{scope.helper}#{name}_", "#{scope.module}#{name}/", scope.params, nil)) do
+        body(node.block)
+      end
+    end
+
+    def nest_kind(node)
+      fail!(node, "#{node.name} only goes inside resources") unless @resource
+      kind_scope = scope.dup
+      kind_scope.kind = node.name
+      within(kind_scope) { body(node.block) }
     end
 
     def verb(node)
       args, kw = Rieles.call_args(node)
-      path = Rieles.literal(args.first)
+      if scope.kind
+        return member_route(node, args, kw)
+      end
+      path = Rieles.literal(args.first).to_s
+      path = "/#{path}" unless path.start_with?("/")
       fail!(node, "#{node.name} needs `to: \"controller#action\"`") unless kw[:to]
       controller, action = endpoint(node, kw[:to])
-      @routes << Route.new(node.name, path, controller, action)
+      full = "#{scope.path}#{path}"
+      add(node.name, full, controller, action)
       name = kw[:as] ? Rieles.literal(kw[:as]).to_s : path.delete_prefix("/").tr("/-", "__")
-      @helpers["#{name}_path"] = [nil, path.inspect] unless path.include?(":") || name.empty?
+      return if name.empty? || name.include?(":")
+      params = full.scan(/:(\w+)/).flatten
+      helper("#{scope.helper}#{name}", params, path_expr(full))
     end
 
-    def resources(node)
+    # Inside member/collection: `post :publish` -> posts#publish.
+    def member_route(node, args, kw)
+      action = Rieles.literal(args.first).to_s
+      r = @resource
+      to = kw[:to] ? endpoint(node, kw[:to]) : [r[:controller], action]
+      if scope.kind == :member && r[:plural]
+        path = "#{r[:member]}/#{action}"
+        add(node.name, path, *to)
+        helper("#{action}_#{r[:helper_single]}", r[:params] + ["id"], path_expr(path))
+      else
+        path = "#{r[:base]}/#{action}"
+        @collection_routes << [node.name, path, *to]
+        helper("#{action}_#{r[:plural] ? r[:helper_plural] : r[:helper_single]}", r[:params], path_expr(path))
+      end
+    end
+
+    def resources(node, plural:)
       args, kw = Rieles.call_args(node)
       name = Rieles.literal(args.first).to_s
-      actions = kw[:only] ? Rieles.literal(kw[:only]) : RESOURCE_ACTIONS
-      actions -= Rieles.literal(kw[:except]) if kw[:except]
-      base = "/#{name}"
-      member = "#{base}/:id"
-      single = Inflector.singularize(name)
-      member_expr = ->(suffix) { "#{base.inspect} + \"/\" + record.id.to_s#{suffix}" }
+      all = plural ? RESOURCE_ACTIONS : SINGULAR_ACTIONS
+      actions = kw[:only] ? Array(Rieles.literal(kw[:only])) : all
+      actions -= Array(Rieles.literal(kw[:except])) if kw[:except]
+      single = plural ? Inflector.singularize(name) : name
+      controller = scope.module + (kw[:controller] ? Rieles.literal(kw[:controller]).to_s : (plural ? name : Inflector.pluralize(name)))
+      base = "#{scope.path}/#{name}"
+      member = plural ? "#{base}/:id" : base
+      outer = @resource
+      @resource = {
+        plural: plural, controller: controller, base: base, member: member, params: scope.params,
+        helper_single: "#{scope.helper}#{single}", helper_plural: "#{scope.helper}#{name}"
+      }
+      @collection_routes = []
 
-      # Order matters: /entries/new must be registered before /entries/:id.
-      RESOURCE_ACTIONS.each do |action|
-        next unless actions.include?(action)
-        case action
-        when :index then add(:get, base, name, action)
-        when :new then add(:get, "#{base}/new", name, action)
-        when :create then add(:post, base, name, action)
-        when :show then add(:get, member, name, action)
-        when :edit then add(:get, "#{member}/edit", name, action)
-        when :update then add(:patch, member, name, action); add(:put, member, name, action)
-        when :destroy then add(:delete, member, name, action)
+      # member/collection and nested resources are read first so collection
+      # routes (/posts/search) can be registered before /posts/:id.
+      deferred = []
+      saved = @routes
+      @routes = []
+      nested_param = "#{single}_id"
+      (node.block&.body&.body || []).each do |stmt|
+        if stmt.is_a?(Prism::CallNode) && %i[member collection].include?(stmt.name)
+          statement(stmt)
+        else
+          deferred << stmt
         end
       end
-      @helpers["#{name}_path"] = [nil, base.inspect] if (actions & %i[index create]).any?
-      @helpers["new_#{single}_path"] = [nil, "#{base}/new".inspect] if actions.include?(:new)
-      @helpers["#{single}_path"] = ["record", member_expr.call("")] if (actions & %i[show update destroy]).any?
-      @helpers["edit_#{single}_path"] = ["record", member_expr.call(' + "/edit"')] if actions.include?(:edit)
+      member_routes = @routes
+      @routes = saved
+
+      collection_path = plural ? base : nil
+      helper_params = scope.params
+      all.each do |action|
+        next unless actions.include?(action)
+        case action
+        when :index then add(:get, base, controller, action)
+        when :new
+          add(:get, "#{base}/new", controller, action)
+          @collection_routes.each { |r| add(*r) }
+          @collection_routes = []
+        when :create then add(:post, base, controller, action)
+        when :show then add(:get, member, controller, action)
+        when :edit then add(:get, "#{member}/edit", controller, action)
+        when :update then add(:patch, member, controller, action); add(:put, member, controller, action)
+        when :destroy then add(:delete, member, controller, action)
+        end
+      end
+      @collection_routes.each { |r| add(*r) }
+      member_routes.each { |r| @routes << r }
+
+      ids = plural ? helper_params + ["id"] : helper_params
+      if (actions & %i[index create]).any? && plural
+        helper(@resource[:helper_plural], helper_params, path_expr(base))
+      end
+      helper("new_#{@resource[:helper_single]}", helper_params, path_expr("#{base}/new")) if actions.include?(:new)
+      member_actions = plural ? %i[show update destroy] : %i[show create update destroy]
+      helper(@resource[:helper_single], ids, path_expr(member)) if (actions & member_actions).any?
+      helper("edit_#{@resource[:helper_single]}", ids, path_expr("#{member}/edit")) if actions.include?(:edit)
+
+      unless deferred.empty?
+        nested_path = plural ? "#{base}/:#{nested_param}" : base
+        nested_params = plural ? helper_params + [nested_param] : helper_params
+        within(Scope.new(nested_path, "#{@resource[:helper_single]}_", scope.module, nested_params, nil)) do
+          deferred.each { |stmt| statement(stmt) }
+        end
+      end
+      @resource = outer
+    end
+
+    def within(new_scope)
+      @scopes.push(new_scope)
+      yield
+    ensure
+      @scopes.pop
     end
 
     def add(verb, path, controller, action)
       @routes << Route.new(verb, path, controller, action.to_s)
+    end
+
+    def helper(name, params, expr)
+      @helpers["#{name}_path"] = [params, expr]
+    end
+
+    # "/posts/:post_id/comments/:id" -> "/posts/" + post_id.to_param + ...
+    def path_expr(path)
+      parts = path.split(/(:\w+)/).reject(&:empty?)
+      parts.map { |p| p.start_with?(":") ? "#{p[1..]}.to_param" : p.inspect }.join(" + ")
     end
 
     # "entries#index" is a controller action; Actions::Stats::Show an action
@@ -83,7 +210,7 @@ module Rieles
       value = Rieles.literal(target).to_s
       controller, action = value.split("#", 2)
       fail!(node, "expected \"controller#action\" or Actions::..., got #{value.inspect}") unless action
-      [controller, action]
+      [scope.module + controller, action]
     end
 
     def constant_key(node, target)

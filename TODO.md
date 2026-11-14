@@ -66,8 +66,10 @@ Roughly in priority order within each section.
 
 ## Routing
 
-- [ ] Nested resources, `member`/`collection`, `namespace`, singular `resource`.
-- [ ] Path helpers that accept ids as well as records; `_url` helpers.
+- [x] Nested resources, `member`/`collection`, `namespace` (controllers in
+      `app/controllers/admin/`), singular `resource`.
+- [ ] `shallow:`, `scope`, `concerns`, `constraints`, `form_with model: [@post, @comment]`.
+- [x] Path helpers that accept ids as well as records (`to_param`); `_url` helpers.
 
 ## Tooling
 

@@ -336,6 +336,7 @@ module Rieles
             Rieles.transaction { yield }
           end
 
+          def to_param = @id.to_s
           def persisted? = @id > 0
           def new_record? = @id == 0
         #{indent(predicates, 2)}

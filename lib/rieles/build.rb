@@ -187,8 +187,11 @@ module Rieles
     end
 
     def path_helpers
-      routes.helpers.map do |name, (param, expr)|
-        "  def #{name}#{param ? "(#{param})" : ''}\n    #{expr}\n  end"
+      routes.helpers.flat_map do |name, (params, expr)|
+        sig = params.empty? ? "" : "(#{params.join(', ')})"
+        url = name.sub(/_path\z/, "_url")
+        ["  def #{name}#{sig}\n    #{expr}\n  end",
+         "  def #{url}#{sig}\n    request_base_url + #{name}#{sig}\n  end"]
       end.join("\n\n")
     end
 
@@ -278,13 +281,22 @@ module Rieles
 
     def load_controllers
       controllers = {}
-      Dir[path("app/controllers/*_controller.rb")].sort.each do |file|
-        dir = File.basename(file, "_controller.rb")
+      Dir[path("app/controllers/**/*_controller.rb")].sort.each do |file|
+        dir = rel(file).delete_prefix("app/controllers/").delete_suffix("_controller.rb")
         name = "#{Inflector.camelize(dir)}Controller"
         source = File.read(file)
         klass = Rieles.parse(source, rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
-        unless klass&.constant_path&.slice == name
-          raise CompileError, "#{rel(file)}: expected class #{name}"
+        expected = "#{dir.split('/').map { |s| Inflector.camelize(s) }.join('::')}Controller"
+        unless klass&.constant_path&.slice == expected
+          raise CompileError, "#{rel(file)}: expected class #{expected} (compact form for namespaces)"
+        end
+        # Admin::PostsController is flattened to AdminPostsController, like actions.
+        if expected != name
+          header = klass.location.slice.lines.first
+          parent = klass.superclass&.slice
+          flat_parent = parent&.match?(/::\w*Controller\z/) ? parent.delete(":") : parent
+          source = source.sub(header, "class #{name}#{flat_parent ? " < #{flat_parent}" : ''}\n")
+          klass = Rieles.parse(source, rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
         end
         ctx = Context.new(self, dir, view: false, controller: true)
         lowered = Lowering.lower(source, rel(file), ctx)
@@ -493,7 +505,8 @@ module Rieles
                  else
                    "render_error(500, \"No template for #{route.controller}/#{route.action}\") unless performed?"
                  end
-      dispatch(route, klass, klass, route.action, "#{klass}##{route.action}", implicit)
+      display = "#{route.controller.split('/').map { |s| Inflector.camelize(s) }.join('::')}Controller"
+      dispatch(route, klass, klass, route.action, "#{display}##{route.action}", implicit)
     end
 
     # The chain runs inside the controller, where private filters and

@@ -11,7 +11,7 @@ module Rieles
   class IntegrationTest < Minitest::Test
     STATUS_GROUPS = { success: 200..299, redirect: 300..399, missing: 404..404, error: 500..599 }.freeze
 
-    attr_reader :response
+    attr_reader :response, :port
 
     # Rails turns CSRF checks off in tests; a test class can turn them on.
     def self.forgery_protection! = @forgery_protection = true

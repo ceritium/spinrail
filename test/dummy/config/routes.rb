@@ -1,5 +1,18 @@
 Rieles.routes.draw do
-  resources :posts
+  resources :posts do
+    resources :comments, only: [:index, :create, :show]
+    member do
+      post :publish
+    end
+    collection do
+      get :search
+    end
+  end
+  resource :profile, only: [:show]
+  namespace :admin do
+    root "posts#index"
+    resources :posts, only: [:index]
+  end
   get "/home", to: "pages#home"
   get "/bare", to: "bare#show"
   get "/plain", to: "plain#show"

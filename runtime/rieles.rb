@@ -43,10 +43,12 @@ end
 # generate theirs.
 class String
   def to_json = Tep::Json.quote(self)
+  def to_param = self
 end
 
 class Integer
   def to_json = to_s
+  def to_param = to_s
 end
 
 class Float
@@ -530,6 +532,12 @@ module Rieles
     end
 
     def params = Parameters.new(@req.params, "")
+
+    def request_base_url
+      host = @req.req_headers["host"]
+      host = "localhost" if host.nil?
+      (Tep::APP.tls_cert.length > 0 ? "https://" : "http://") + host
+    end
     def request = @req
     def response = @res
 
@@ -591,6 +599,7 @@ module Rieles
     def alert = @controller.flash_get("alert")
     def session_get(key) = @controller.session_get(key)
     def form_authenticity_token = @controller.form_authenticity_token
+    def request_base_url = @controller.request_base_url
 
     def form_open(action, method, attrs)
       verb = method.downcase
