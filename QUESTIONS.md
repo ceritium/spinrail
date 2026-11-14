@@ -5,8 +5,12 @@ is easy to revisit.
 
 - Name: "rieles" is a working name.
 - Default branch: `master` or `main`?
-- `presence` on non-string columns is a compile error instead of Rails'
-  always-valid behaviour for integers/floats. Keep it strict?
+- Columns are NOT NULL with a default unless `null: true`, the opposite of
+  Rails (nullable unless `null: false`). Nullable works now; flip the
+  default? It would make `post.title.length` raise on unset titles, as in
+  Rails.
+- `presence` on a NOT NULL integer/float/boolean column is a compile error
+  (it could never fail). Keep it strict?
 - Timestamps are set in Ruby (`Time.now`, local time, `%Y-%m-%d %H:%M:%S`),
   not by SQLite. UTC instead?
 - `belongs_to` reader returns nil when the parent is gone (`find_by`), like

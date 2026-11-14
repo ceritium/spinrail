@@ -1,5 +1,8 @@
 module Rieles
-  Column = Struct.new(:name, :type, :default) do
+  # null: true columns hold nil. Tep::SQLite reads NULL as "" and can't bind
+  # it, so reads select "col IS NULL" too and writes go through NULLIF with
+  # a sentinel (Rieles::NULL_STR / NULL_INT).
+  Column = Struct.new(:name, :type, :default, :null) do
     def integer? = type == :integer
     def boolean? = type == :boolean
     def float? = type == :float
@@ -8,11 +11,16 @@ module Rieles
 
     def default_literal
       return default.inspect unless default.nil?
+      return "nil" if null
       { integer: "0", boolean: "false", float: "0.0", string: '""' }.fetch(type)
     end
 
     def sql_type
       sql_default = default.nil? ? nil : (boolean? ? (default ? 1 : 0) : default)
+      if null
+        base = { integer: "INTEGER", boolean: "INTEGER", float: "REAL", string: "TEXT" }.fetch(type)
+        return sql_default.nil? ? base : "#{base} DEFAULT #{string? ? "'#{sql_default.to_s.gsub("'", "''")}'" : sql_default}"
+      end
       case type
       when :integer, :boolean then "INTEGER NOT NULL DEFAULT #{sql_default || 0}"
       when :float then "REAL NOT NULL DEFAULT #{sql_default || 0.0}"
@@ -20,8 +28,19 @@ module Rieles
       end
     end
 
-    # Ruby expression reading column i of the current row.
-    def read(i)
+    def placeholder
+      return "?" unless null
+      integer? || boolean? ? "NULLIF(?, -9007199254740991)" : "NULLIF(?, char(1))"
+    end
+
+    # Ruby expression reading column i of the current row; null_flag is the
+    # index of its "IS NULL" column.
+    def read(i, null_flag = nil)
+      value = read_value(i)
+      null_flag ? "(db.col_int(#{null_flag}) == 1 ? nil : #{value})" : value
+    end
+
+    def read_value(i)
       case type
       when :integer then "db.col_int(#{i})"
       when :boolean then "db.col_int(#{i}) == 1"
@@ -31,6 +50,16 @@ module Rieles
     end
 
     def bind(i, value)
+      return bind_value(i, value) unless null
+      case type
+      when :integer then "db.bind_int(#{i}, #{value}.nil? ? Rieles::NULL_INT : #{value})"
+      when :boolean then "db.bind_int(#{i}, #{value}.nil? ? Rieles::NULL_INT : (#{value} ? 1 : 0))"
+      when :float then "db.bind_str(#{i}, #{value}.nil? ? Rieles::NULL_STR : #{value}.to_s)"
+      else "db.bind_str(#{i}, #{value}.nil? ? Rieles::NULL_STR : #{value})"
+      end
+    end
+
+    def bind_value(i, value)
       case type
       when :integer then "db.bind_int(#{i}, #{value})"
       when :boolean then "db.bind_int(#{i}, #{value} ? 1 : 0)"
@@ -51,8 +80,7 @@ module Rieles
     end
   end
 
-  # Spinel values can't be nil where a String or Integer is expected, so
-  # every column is NOT NULL with a default; `null:` options are ignored.
+  # Columns are NOT NULL with a default unless declared `null: true`.
   class Schema
     TYPES = {
       string: :string, text: :string, datetime: :string, date: :string, time: :string,
@@ -83,12 +111,12 @@ module Rieles
     def create_table(node)
       args, = Rieles.call_args(node)
       name = Rieles.literal(args.first).to_s
-      columns = [Column.new("id", :integer, nil)]
+      columns = [Column.new("id", :integer, nil, false)]
       body = node.block&.body&.body || []
       body.each do |call|
         fail!(call, "expected t.<type> :name") unless call.is_a?(Prism::CallNode) && call.receiver
         if call.name == :timestamps
-          columns << Column.new("created_at", :string, nil) << Column.new("updated_at", :string, nil)
+          columns << Column.new("created_at", :string, nil, false) << Column.new("updated_at", :string, nil, false)
           next
         end
         type = TYPES.fetch(call.name) { fail!(call, "unsupported column type t.#{call.name}") }
@@ -96,7 +124,8 @@ module Rieles
         col_name = Rieles.literal(col_args.first).to_s
         col_name += "_id" if %i[references belongs_to].include?(call.name)
         default = kw[:default] ? Rieles.literal(kw[:default]) : nil
-        columns << Column.new(col_name, type, default)
+        null = kw[:null] ? Rieles.literal(kw[:null]) == true : false
+        columns << Column.new(col_name, type, default, null)
       end
       @tables[name] = Table.new(name, columns)
     end

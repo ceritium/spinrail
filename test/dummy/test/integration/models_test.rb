@@ -97,3 +97,19 @@ class SeedsTest < Rieles::IntegrationTest
     assert_equal "Seeded", response.body
   end
 end
+
+class NullableTest < Rieles::IntegrationTest
+  def test_nullable_columns
+    get "/models/seed"
+    get "/models/nulls"
+    expected = <<~TEXT.chomp
+      initial=nil,nil
+      null_count=3 not_null=0
+      set=Sub,3 not_null=1
+      cleared=nil,nil
+      pluck=[nil, nil, nil]
+      json=true
+    TEXT
+    assert_equal expected, response.body
+  end
+end

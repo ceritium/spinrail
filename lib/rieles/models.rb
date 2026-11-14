@@ -151,10 +151,16 @@ module Rieles
       add = ->(cond, key, text, count = "") { @validations << [attr, guarded(cond), message ? [nil, message, ""] : [key, text, count.to_s]] }
       case kind
       when :presence
-        fail!(node, "presence only applies to string columns (#{attr} is #{column.type})") unless column.string?
-        add.("#{ivar}.strip.empty?", "blank", "can't be blank") if Rieles.literal(value_node)
+        if column.string?
+          add.("#{column.null ? "#{ivar}.nil? || " : ''}#{ivar}.strip.empty?", "blank", "can't be blank") if Rieles.literal(value_node)
+        elsif column.null
+          add.("#{ivar}.nil?", "blank", "can't be blank") if Rieles.literal(value_node)
+        else
+          fail!(node, "presence on a NOT NULL #{column.type} column is always true; declare it null: true")
+        end
       when :length
         fail!(node, "length only applies to string columns") unless column.string?
+        ivar = "#{ivar}.to_s" if column.null
         { maximum: [">", "too_long", "is too long (maximum is %{count} characters)"],
           minimum: ["<", "too_short", "is too short (minimum is %{count} characters)"],
           is: ["!=", "wrong_length", "is the wrong length (should be %{count} characters)"] }.each do |key, (op, i18n, msg)|
@@ -166,6 +172,7 @@ module Rieles
         numericality(column, value, add)
       when :format
         fail!(node, "format only applies to string columns") unless column.string?
+        ivar = "#{ivar}.to_s" if column.null
         add.("!#{ivar}.match?(#{value[:with].slice})", "invalid", "is invalid") if value[:with]
         add.("#{ivar}.match?(#{value[:without].slice})", "invalid", "is invalid") if value[:without]
       when :inclusion
@@ -181,7 +188,8 @@ module Rieles
     def numericality(column, value, add)
       ivar = "@#{column.name}"
       number = ivar
-      guard = ""
+      guard = column.null && !column.string? ? "!#{ivar}.nil? && " : ""
+      ivar = "#{ivar}.to_s" if column.null && column.string?
       if column.string?
         pattern = value[:only_integer] ? INTEGER : NUMBER
         add.("!#{ivar}.match?(#{pattern})", *(value[:only_integer] ? ["not_an_integer", "must be an integer"] : ["not_a_number", "is not a number"]))
@@ -198,15 +206,24 @@ module Rieles
     def columns = @table.columns
     def writable = columns.reject { |c| c.name == "id" || c.timestamp? }
     def assignable = columns.reject { |c| c.name == "id" }
-    def select_sql = "SELECT #{columns.map(&:name).join(', ')} FROM #{@table.name}"
+    def select_sql = "SELECT #{select_list} FROM #{@table.name}"
+
+    # Column names, then "x IS NULL" for each nullable one.
+    def select_list = (columns.map(&:name) + columns.select(&:null).map { |c| "#{c.name} IS NULL" }).join(", ")
+
+    def null_flag(column)
+      nullable = columns.select(&:null)
+      i = nullable.index(column)
+      i && columns.size + i
+    end
     def relation = "#{@name}Relation"
 
     def param_assignments
       writable.map do |c|
         read = "params.get(#{c.name.inspect})"
         value = case c.type
-                when :integer then "#{read}.to_i"
-                when :float then "#{read}.to_f"
+                when :integer then c.null ? "(#{read}.empty? ? nil : #{read}.to_i)" : "#{read}.to_i"
+                when :float then c.null ? "(#{read}.empty? ? nil : #{read}.to_f)" : "#{read}.to_f"
                 when :boolean then "(#{read} == \"1\" || #{read} == \"true\" || #{read} == \"on\")"
                 else read
                 end
@@ -217,12 +234,12 @@ module Rieles
     def json_fields = columns.map { |c| "#{%("#{c.name}":).inspect} + @#{c.name}.to_json" }.join(%( + "," + ))
 
     def insert_sql
-      names = writable.map(&:name) + columns.select(&:timestamp?).map(&:name)
-      "INSERT INTO #{@table.name} (#{names.join(', ')}) VALUES (#{(['?'] * names.size).join(', ')})"
+      cols = writable + columns.select(&:timestamp?)
+      "INSERT INTO #{@table.name} (#{cols.map(&:name).join(', ')}) VALUES (#{cols.map(&:placeholder).join(', ')})"
     end
 
     def update_sql
-      sets = writable.map { |c| "#{c.name} = ?" }
+      sets = writable.map { |c| "#{c.name} = #{c.placeholder}" }
       sets << "updated_at = ?" if @table.column("updated_at")
       "UPDATE #{@table.name} SET #{sets.join(', ')} WHERE id = ?"
     end
@@ -354,7 +371,7 @@ module Rieles
       kwargs = columns.map { |c| "#{c.name}: #{c.default_literal}" }.join(", ")
       update_kwargs = assignable.map { |c| "#{c.name}: @#{c.name}" }.join(", ")
       assign = assignable.map { |c| "@#{c.name} = #{c.name}" }
-      from_row = columns.each_with_index.map { |c, i| "#{c.name}: #{c.read(i)}" }
+      from_row = columns.each_with_index.map { |c, i| "#{c.name}: #{c.read(i, null_flag(c))}" }
       checks = (@validations + required_associations).map do |attr, cond, (key, text, count)|
         message = key ? "Rieles.message(#{key.inspect}, #{text.inspect}, #{count.inspect})" : text.inspect
         "@errors.add(:#{attr}, #{message}) if #{cond}"
@@ -540,12 +557,12 @@ module Rieles
           def pluck_#{c.name}
             return @records.map { |r| r.#{c.name} } if @loaded
             t0 = Rieles.clock
-            statement = sql(#{c.name.inspect})
+            statement = sql(#{(c.null ? "#{c.name}, #{c.name} IS NULL" : c.name).inspect})
             db = Rieles.prepare(statement, false)
             bind_all(db)
             values = []
             while db.step == 1
-              values << #{c.read(0)}
+              values << #{c.read(0, c.null ? 1 : nil)}
             end
             db.finalize
             Rieles.log.sql_binds(#{"#{@name} Pluck".inspect}, statement, t0, @binds)
@@ -589,8 +606,19 @@ module Rieles
 
           def where(conditions)
             relation = spawn
-            conditions.each { |column, value| relation.add_where(column.to_s, value.to_s, "=") }
+            conditions.each do |column, value|
+              if value.nil?
+                relation.add_where_null(column.to_s, "IS NULL")
+              else
+                relation.add_where(column.to_s, value.to_s, "=")
+              end
+            end
             relation
+          end
+
+          def add_where_null(name, test)
+            raise ArgumentError, "unknown column " + name unless #{@name}::COLUMNS.include?(name)
+            @wheres << name + " " + test
           end
 
           def where_in(name, values)
@@ -624,7 +652,13 @@ module Rieles
 
           def where_not(conditions)
             relation = spawn
-            conditions.each { |column, value| relation.add_where(column.to_s, value.to_s, "!=") }
+            conditions.each do |column, value|
+              if value.nil?
+                relation.add_where_null(column.to_s, "IS NOT NULL")
+              else
+                relation.add_where(column.to_s, value.to_s, "!=")
+              end
+            end
             relation
           end
 
@@ -762,7 +796,7 @@ module Rieles
           def to_a
             return @records if @loaded
             t0 = Rieles.clock
-            statement = sql(#{columns.map(&:name).join(', ').inspect})
+            statement = sql(#{select_list.inspect})
             db = Rieles.prepare(statement, false)
             bind_all(db)
             while db.step == 1

@@ -28,6 +28,7 @@ Rieles.routes.draw do
   get "/models/authors", to: "models#authors"
   get "/models/eager", to: "models#eager"
   get "/models/abort", to: "models#abort"
+  get "/models/nulls", to: "models#nulls"
   get "/models/signed", to: "models#signed"
   get "/models/scopes", to: "models#scopes"
   get "/models/formats", to: "models#formats"

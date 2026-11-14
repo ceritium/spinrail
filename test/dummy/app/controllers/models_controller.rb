@@ -139,6 +139,22 @@ class ModelsController < ApplicationController
     render plain: "uid=" + cookies.signed[:uid].to_s
   end
 
+  def nulls
+    post = Post.find_by(title: "First")
+    lines = []
+    lines << "initial=" + post.subtitle.inspect + "," + post.priority.inspect
+    lines << "null_count=" + Post.where(subtitle: nil).count.to_s + " not_null=" + Post.where.not(subtitle: nil).count.to_s
+    post.update(subtitle: "Sub", priority: 3)
+    fresh = Post.find(post.id)
+    lines << "set=" + fresh.subtitle.to_s + "," + fresh.priority.to_s + " not_null=" + Post.where.not(subtitle: nil).count.to_s
+    fresh.update(subtitle: nil, priority: nil)
+    again = Post.find(post.id)
+    lines << "cleared=" + again.subtitle.inspect + "," + again.priority.inspect
+    lines << "pluck=" + Post.order(id: :asc).pluck(:priority).inspect
+    lines << "json=" + again.to_json.include?("\"subtitle\":null").to_s
+    render plain: lines.join("\n")
+  end
+
   def authors
     render plain: Author.order(id: :asc).pluck(:name).join(",")
   end

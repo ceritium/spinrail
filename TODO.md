@@ -21,8 +21,9 @@ Roughly in priority order within each section.
 - [ ] `joins`, `group`, nested includes (`includes(comments: :author)`).
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
 - [x] Halting before_* callbacks with `throw :abort`.
-- [ ] Nullable columns. Today every column is `NOT NULL` with a default,
-      because spinel can't hold nil where a String is expected.
+- [x] Nullable columns with `null: true` (nil in Ruby, `where(x: nil)` is `IS NULL`).
+- [ ] Text columns are cut at 64 KB: tep's C bridge copies each value into a
+      fixed buffer. Raise or fix upstream.
 - [x] Columns added to `db/schema.rb` are added to existing tables at boot.
 - [ ] Migrations in `db/migrate` (renames, drops, data changes) with a schema version.
 - [x] `db/seeds.rb` (`rieles db:seed`, `rieles db:reset`).

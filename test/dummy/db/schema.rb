@@ -13,6 +13,8 @@ Rieles::Schema.define do
     t.float :rating
     t.integer :views, default: 0
     t.string :status, default: "draft"
+    t.string :subtitle, null: true
+    t.integer :priority, null: true
     t.timestamps
   end
 
