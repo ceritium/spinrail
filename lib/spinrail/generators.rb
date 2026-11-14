@@ -44,7 +44,41 @@ module Spinrail
         source "https://rubygems.org"
 
         gem "spinrail", github: "ceritium/spinrail", branch: "master"
+
+        group :development do
+          gem "rubocop", require: false
+        end
       RUBY
+      write ".rubocop.yml", <<~YAML
+        # Spinel/* flags what spinel won't compile. Tests run on CRuby.
+        require:
+          - spinrail/rubocop
+
+        AllCops:
+          NewCops: enable
+          SuggestExtensions: false
+          Exclude:
+            - "bin/*"
+            - "db/schema.rb"
+            - "tmp/**/*"
+            - "vendor/**/*"
+
+        Spinel:
+          Exclude:
+            - "test/**/*"
+
+        Style/Documentation:
+          Enabled: false
+
+        Style/FrozenStringLiteralComment:
+          Enabled: false
+
+        Style/StringLiterals:
+          EnforcedStyle: double_quotes
+
+        Style/EmptyMethod:
+          EnforcedStyle: expanded
+      YAML
       write "config/routes.rb", "Spinrail.routes.draw do\n  root \"home#index\"\nend\n"
       write "db/schema.rb", "Spinrail::Schema.define do\nend\n"
       write "app/models/application_record.rb", "class ApplicationRecord < Spinrail::Record\nend\n"
@@ -170,17 +204,17 @@ module Spinrail
       model("user", fields(%w[email_address:string! password_digest:string!]))
       user = File.join(@app, "app/models/user.rb")
       File.write(user, "class User < ApplicationRecord\n  has_secure_password\n  validates :email_address, presence: true, uniqueness: true\nend\n")
-      add_route("resource :session, only: [:new, :create, :destroy]")
+      add_route("resource :session, only: %i[new create destroy]")
       write "app/controllers/sessions_controller.rb", <<~RUBY
         class SessionsController < ApplicationController
-          skip_before_action :require_authentication, only: [:new, :create]
+          skip_before_action :require_authentication, only: %i[new create]
 
           def new
           end
 
           def create
             user = User.find_by(email_address: params[:email_address])
-            if user && user.authenticate(params[:password])
+            if user&.authenticate(params[:password])
               reset_session
               session[:user_id] = user.id
               redirect_to "/", notice: "Signed in."
@@ -281,7 +315,7 @@ module Spinrail
       permitted = fields.map { |f| ":#{f.column}" }.join(", ")
       write "app/controllers/#{plural}_controller.rb", <<~RUBY
         class #{Inflector.camelize(plural)}Controller < ApplicationController
-          before_action :set_#{single}, only: [:show, :edit, :update, :destroy]
+          before_action :set_#{single}, only: %i[show edit update destroy]
 
           def index
             @#{plural} = #{klass}.order(id: :desc)
@@ -362,7 +396,8 @@ module Spinrail
       ERB
       write "app/views/#{plural}/new.html.erb", "<h1>New #{human.downcase}</h1>\n<%= render \"form\", #{single}: @#{single} %>\n<%= link_to \"Back\", #{plural}_path %>\n"
       write "app/views/#{plural}/edit.html.erb", "<h1>Editing #{human.downcase}</h1>\n<%= render \"form\", #{single}: @#{single} %>\n<%= link_to \"Show\", #{single}_path(@#{single}) %>\n"
-      sample = fields.reject(&:references?).to_h { |f| ["#{single}[#{f.column}]", sample_value(f)] }
+      sample = fields.reject(&:references?).map { |f| "#{"#{single}[#{f.column}]".inspect} => #{sample_value(f).inspect}" }
+      params = sample.join(", ").size > 80 ? "{\n      #{sample.join(",\n      ")}\n    }" : "{ #{sample.join(", ")} }"
       write "test/integration/#{plural}_test.rb", <<~RUBY
         class #{Inflector.camelize(plural)}Test < Spinrail::IntegrationTest
           def test_index
@@ -371,7 +406,7 @@ module Spinrail
           end
 
           def test_create
-            post "/#{plural}", params: #{sample.inspect}
+            post "/#{plural}", params: #{params}
             assert_response :redirect
             follow_redirect!
             assert_body_includes "#{klass} was successfully created."

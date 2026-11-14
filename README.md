@@ -63,6 +63,11 @@ bin/spinrail server
 Fields are `name:type`, as in Rails, plus `:index` or `:uniq`. `name:string!`
 writes `null: false`; references get it anyway, as in Rails.
 
+New apps carry a `.rubocop.yml` whose `Spinel/*` cops flag what spinel won't
+compile (`eval` of a String, `method_missing`, `send`/`define_method` with a
+computed name, `ObjectSpace`, `binding`) without waiting for a build:
+`bundle exec rubocop`. `test/` is left out, since tests run on CRuby.
+
 The example:
 
 ```sh
