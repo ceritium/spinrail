@@ -188,7 +188,7 @@ module Rieles
     end
 
     def model_tests(filter)
-      test_binary = File.join(@app, "tmp", "#{File.basename(@app)}-test")
+      test_binary = flavored(File.join(@app, "tmp", "#{File.basename(@app)}-test"))
       newest = (input_mtimes.values + Dir[File.join(@app, "test/**/*")].map { |f| File.mtime(f) }).max
       compile(test_binary, tests: true) or abort "rieles: build failed" if !File.exist?(test_binary) || newest > File.mtime(test_binary)
       Dir.mktmpdir("rieles-models") do |dir|
@@ -231,7 +231,7 @@ module Rieles
     def jobs
       threads = option("-c").to_i
       if threads > 1
-        output = File.join(@app, "tmp", "#{File.basename(@app)}-jobs")
+        output = flavored(File.join(@app, "tmp", "#{File.basename(@app)}-jobs"))
         compile(output, threads: true) or abort "rieles: build failed" if !File.exist?(output) || input_mtimes.values.max > File.mtime(output)
         Dir.chdir(@app)
         $stdout.flush
@@ -333,8 +333,9 @@ module Rieles
       lib_dir = `#{pg_config} --libdir`.strip
       abort "rieles: pg_config not found; install libpq or set PG_CONFIG" if include_dir.empty?
       shim = File.join(VENDOR, "tep/native/pg/tep_pg.o")
-      unless File.exist?(shim)
-        system("cc", "-O2", "-I#{include_dir}", "-c", shim.sub(/\.o\z/, ".c"), "-o", shim) or abort "rieles: building tep_pg.o failed"
+      source = shim.sub(/\.o\z/, ".c")
+      unless File.exist?(shim) && File.mtime(shim) >= File.mtime(source)
+        system("cc", "-O2", "-I#{include_dir}", "-c", source, "-o", shim) or abort "rieles: building tep_pg.o failed"
       end
       { "TEP_PG_O" => shim, "TEP_PG_CFLAGS" => "-I#{include_dir}", "TEP_PG_LIBS" => "-L#{lib_dir} -lpq",
         "LIBRARY_PATH" => [lib_dir, ENV["LIBRARY_PATH"]].compact.join(":") }
@@ -368,6 +369,7 @@ module Rieles
     # The database adapter is chosen at build time, so switching it rebuilds.
     def flavor_file = File.join(@app, "tmp/.database")
     def flavor = ENV.fetch("RIELES_DATABASE", "sqlite")
+    def flavored(path) = flavor == "sqlite" ? path : "#{path}-#{flavor}"
 
     def stale?
       return true unless File.exist?(binary)
