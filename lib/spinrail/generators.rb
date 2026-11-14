@@ -80,6 +80,12 @@ module Spinrail
           EnforcedStyle: expanded
       YAML
       write "config/routes.rb", "Spinrail.routes.draw do\n  root \"home#index\"\nend\n"
+      write "config/application.rb", <<~RUBY
+        Spinrail.application.configure do
+          # Time.now and Time.current run in this zone (an IANA name); the database keeps UTC.
+          config.time_zone = "UTC"
+        end
+      RUBY
       write "db/schema.rb", "Spinrail::Schema.define do\nend\n"
       write "app/models/application_record.rb", "class ApplicationRecord < Spinrail::Record\nend\n"
       write "app/controllers/application_controller.rb", "class ApplicationController < Spinrail::Controller\nend\n"

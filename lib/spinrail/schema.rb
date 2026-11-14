@@ -6,19 +6,21 @@ module Spinrail
     def boolean? = type == :boolean
     def float? = type == :float
     def string? = type == :string
+    def datetime? = type == :datetime
     def timestamp? = %w[created_at updated_at].include?(name)
 
     def default_literal
+      return "Spinrail.parse_time(#{default.inspect})" if datetime? && !default.nil?
       return default.inspect unless default.nil?
       return "nil" if null
-      { integer: "0", boolean: "false", float: "0.0", string: '""' }.fetch(type)
+      { integer: "0", boolean: "false", float: "0.0", string: '""', datetime: "Time.at(0)" }.fetch(type)
     end
 
     def sql_type
       sql_default = default.nil? ? nil : (boolean? ? (default ? 1 : 0) : default)
       if null
-        base = { integer: "INTEGER", boolean: "INTEGER", float: "REAL", string: "TEXT" }.fetch(type)
-        return sql_default.nil? ? base : "#{base} DEFAULT #{string? ? "'#{sql_default.to_s.gsub("'", "''")}'" : sql_default}"
+        base = { integer: "INTEGER", boolean: "INTEGER", float: "REAL", string: "TEXT", datetime: "TEXT" }.fetch(type)
+        return sql_default.nil? ? base : "#{base} DEFAULT #{string? || datetime? ? "'#{sql_default.to_s.gsub("'", "''")}'" : sql_default}"
       end
       case type
       when :integer, :boolean then "INTEGER NOT NULL DEFAULT #{sql_default || 0}"
@@ -38,6 +40,7 @@ module Spinrail
       when :integer then "db.col_int(#{i})"
       when :boolean then "db.col_int(#{i}) == 1"
       when :float then "db.col_str(#{i}).to_f"
+      when :datetime then "Spinrail.parse_time(db.col_str(#{i}))"
       else "db.col_str(#{i})"
       end
     end
@@ -52,6 +55,7 @@ module Spinrail
       when :integer then "db.bind_int(#{i}, #{value})"
       when :boolean then "db.bind_int(#{i}, #{value} ? 1 : 0)"
       when :float then "db.bind_str(#{i}, #{value}.to_s)"
+      when :datetime then "db.bind_str(#{i}, Spinrail.format_time(#{value}))"
       else "db.bind_str(#{i}, #{value})"
       end
     end
@@ -104,7 +108,7 @@ module Spinrail
 
   class Schema
     TYPES = {
-      string: :string, text: :string, datetime: :string, date: :string, time: :string,
+      string: :string, text: :string, datetime: :datetime, timestamp: :datetime, date: :string, time: :string,
       integer: :integer, bigint: :integer, references: :integer, belongs_to: :integer,
       boolean: :boolean, float: :float, decimal: :float
     }.freeze
@@ -141,7 +145,7 @@ module Spinrail
           raise CompileError, "#{file}:#{call.location.start_line}: expected t.<type> :name"
         end
         if call.name == :timestamps
-          columns << Column.new("created_at", :string, nil, false) << Column.new("updated_at", :string, nil, false)
+          columns << Column.new("created_at", :datetime, nil, false) << Column.new("updated_at", :datetime, nil, false)
           next
         end
         type = TYPES.fetch(call.name) { raise CompileError, "#{file}:#{call.location.start_line}: unsupported column type t.#{call.name}" }

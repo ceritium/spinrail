@@ -48,6 +48,13 @@ class FalseClass
   def to_json = "false"
 end
 
+class Time
+  # The process runs in config.time_zone (ENV["TZ"] at boot).
+  def self.current = Time.now
+
+  def to_json = "\"" + iso8601(3) + "\""
+end
+
 class NilClass
   def to_json = "null"
 end
@@ -519,7 +526,37 @@ module Spinrail
   def self.db = DB.connection
 
   # Microseconds, as Rails stores them, so two writes in one second differ.
-  def self.now = Time.now.strftime("%Y-%m-%d %H:%M:%S.%6N")
+  # datetime columns are TEXT in this format, in UTC, to the microsecond; now
+  # is cut to it so a record compares equal to its reloaded self.
+  def self.now
+    t = Time.now
+    Time.at(t.to_i, t.usec, :usec)
+  end
+
+  def self.format_time(time) = time.getutc.strftime("%Y-%m-%d %H:%M:%S.%6N")
+
+  # A stored value (UTC) in the app's zone; empty is the epoch.
+  def self.parse_time(text) = Spinrail.time_from(text, true)
+
+  # A form's 2026-11-14T09:30, read in the app's zone as Rails does.
+  def self.parse_local(text) = Spinrail.time_from(text, false)
+
+  def self.time_from(text, utc)
+    parts = text.split(/[- :T.]/)
+    return Time.at(0) if parts.length < 3
+    n = parts.map { |x| x.to_i }
+    while n.length < 6
+      n << 0
+    end
+    time = utc ? Time.utc(n[0], n[1], n[2], n[3], n[4], n[5]) : Time.new(n[0], n[1], n[2], n[3], n[4], n[5])
+    usec = parts.length > 6 ? parts[6].ljust(6, "0")[0, 6].to_i : 0
+    Time.at(time.to_i, usec, :usec)
+  end
+
+  # A where value as the column stores it.
+  def self.sql_text(value) = value.is_a?(Time) ? Spinrail.format_time(value) : value.to_s
+
+  def self.to_time(value) = value.is_a?(Time) ? value : Spinrail.parse_local(value.to_s)
 
   # Cache only SQL fixed at build time; tep keeps 64 cached statements.
   def self.prepare(sql, cached)
@@ -684,17 +721,12 @@ module Spinrail
     Spinrail.t_with(chosen, names, values).gsub("%{count}", count.to_s)
   end
 
-  # l("2026-11-14 09:30:00", format: :short) with time.formats.short as a
-  # strftime pattern; timestamps are the strings Spinrail.now writes.
+  # l(record.created_at, format: :short) with time.formats.short as a
+  # strftime pattern; a String in the stored format works too.
   def self.localize(timestamp, format)
-    parts = timestamp.split(/[- :T]/).map { |x| x.to_i }
-    return timestamp if parts.length < 3
-    while parts.length < 6
-      parts << 0
-    end
     pattern = Spinrail.translate("time.formats." + format)
     pattern = format == "short" ? "%d %b %H:%M" : (format == "long" ? "%B %d, %Y %H:%M" : "%Y-%m-%d %H:%M:%S") if pattern.nil?
-    Time.new(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]).strftime(pattern)
+    Spinrail.to_time(timestamp).strftime(pattern)
   end
 
   def self.message(key, default, count)
@@ -1513,9 +1545,7 @@ module Spinrail
 
     # Timestamps are "YYYY-MM-DD HH:MM:SS[.ffffff]" local time (see Spinrail.now).
     def time_ago_in_words(timestamp)
-      parts = timestamp.split(/[- :T]/).map { |x| x.to_i }
-      return "" if parts.length < 6
-      seconds = Time.now.to_i - Time.new(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]).to_i
+      seconds = Time.now.to_i - Spinrail.to_time(timestamp).to_i
       minutes = seconds / 60
       return "less than a minute" if minutes < 1
       return pluralize(minutes, "minute") if minutes < 45

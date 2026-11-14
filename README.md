@@ -19,6 +19,7 @@ app/models/entry.rb          → Entry + EntryRelation, typed from db/schema.rb
 app/controllers/*.rb         → same classes; render/redirect_to/params lowered
 app/views/**/*.html.erb      → ApplicationView methods; @ivars become parameters
 config/routes.rb             → tep routes + path helpers
+config/application.rb        → settings read at build time (config.time_zone)
 db/schema.rb                 → CREATE TABLE IF NOT EXISTS at boot
 app/assets/*                 → embedded in the binary
 ```
@@ -126,9 +127,11 @@ to the server.
   `member`, `collection`), `namespace`, `get/post/... "path", to:`; `_path`
   and `_url` helpers.
 - Models: columns from `create_table` (`string`, `text`, `integer`, `float`,
-  `boolean`, `datetime`, `references`, `timestamps`, `default:`). Columns
+  `boolean`, `datetime`, `references`, `timestamps`, `default:`); `datetime`
+  and `timestamps` read and take `Time`, stored in UTC and read in
+  `config.time_zone` (`date` and `time` are still Strings). Columns
   are nullable unless `null: false`, as in Rails. A `null: false` column gets a
-  zero default (`""`, `0`, `false`) and its reader never returns nil, which
+  zero default (`""`, `0`, `false`, the epoch) and its reader never returns nil, which
   spinel compiles to a single type; declare it wherever nil can't happen. `all`,
   `where`, `where.not`, `order`, `limit`, `offset`, `first`, `last`, `count`,
   `exists?`, `pluck`, `find`, `find_by`, `create`, `save`, `update`,
@@ -176,6 +179,17 @@ to the server.
 | `SPINRAIL_DATABASE` (build) | `sqlite` | `postgres` (experimental): uses `DATABASE_URL` and libpq from `pg_config` |
 | `SPINRAIL_SERVER` (build) | `scheduled` | `prefork` for production: tep's default server handles bursts better but ignores Ctrl+C on idle keep-alive connections ([OriPekelman/tep#277](https://github.com/OriPekelman/tep/issues/277)) |
 | `SPINRAIL_FILTER_PARAMETERS` | `password,token,secret,...` | substrings, comma-separated |
+
+`config/application.rb` holds what is fixed at build time:
+
+```ruby
+Spinrail.application.configure do
+  config.time_zone = "Europe/Madrid" # IANA name; UTC by default
+end
+```
+
+The binary runs in that zone (it sets `TZ` at boot), so `Time.now` and
+`Time.current` both answer in it; `datetime` columns are stored in UTC.
 
 ## Prior art
 

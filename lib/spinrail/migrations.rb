@@ -135,7 +135,7 @@ module Spinrail
     end
 
     def schema_type(column)
-      { integer: "integer", boolean: "boolean", float: "float", string: "string" }.fetch(column.type)
+      { integer: "integer", boolean: "boolean", float: "float", string: "string", datetime: "datetime" }.fetch(column.type)
     end
 
     def column_options(column)

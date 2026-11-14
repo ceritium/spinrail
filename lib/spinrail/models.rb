@@ -310,6 +310,7 @@ module Spinrail
                 when :integer then c.null ? "(#{read}.empty? ? nil : #{read}.to_i)" : "#{read}.to_i"
                 when :float then c.null ? "(#{read}.empty? ? nil : #{read}.to_f)" : "#{read}.to_f"
                 when :boolean then "(#{read} == \"1\" || #{read} == \"true\" || #{read} == \"on\")"
+                when :datetime then c.null ? "(#{read}.empty? ? nil : Spinrail.parse_local(#{read}))" : "Spinrail.parse_local(#{read})"
                 else read
                 end
         "@#{c.name} = #{value} if params.has?(#{c.name.inspect})"
@@ -363,10 +364,10 @@ module Spinrail
     def save_method
       timestamps = columns.select(&:timestamp?).map(&:name)
       stamp = timestamps.empty? ? "" : "now = Spinrail.now\n"
-      insert_stamps = timestamps.map { |t| "db.bind_str(%d, now)" }
+      insert_stamps = timestamps.map { |t| "db.bind_str(%d, Spinrail.format_time(now))" }
       create = [stamp + run_callbacks(:before_create), write_statement(insert_sql, "Create", writable, insert_stamps),
                 "@id = db.last_rowid", *timestamps.map { |t| "@#{t} = now" }, run_callbacks(:after_create)]
-      update_stamps = @table.column("updated_at") ? ["db.bind_str(%d, now)"] : []
+      update_stamps = @table.column("updated_at") ? ["db.bind_str(%d, Spinrail.format_time(now))"] : []
       update = [stamp + run_callbacks(:before_update),
                 write_statement(update_sql, "Update", writable, update_stamps + ["db.bind_int(%d, @id)"]),
                 *(@table.column("updated_at") ? ["@updated_at = now"] : []), run_callbacks(:after_update)]
@@ -549,7 +550,7 @@ module Spinrail
 
         #{indent(enum_methods, 2)}
           def to_param = @id.to_s
-          def cache_key = #{"#{@table.name}/".inspect} + @id.to_s#{@table.column("updated_at") ? ' + "-" + @updated_at' : ''}
+          def cache_key = #{"#{@table.name}/".inspect} + @id.to_s#{@table.column("updated_at") ? ' + "-" + @updated_at.strftime("%Y%m%d%H%M%S%6N")' : ''}
           def dom_id = @id > 0 ? #{"#{Inflector.underscore(@name)}_".inspect} + @id.to_s : #{"new_#{Inflector.underscore(@name)}".inspect}
           def persisted? = @id > 0
           def new_record? = @id == 0
@@ -669,6 +670,7 @@ module Spinrail
                 when :integer then "value.to_i"
                 when :float then "value.to_f"
                 when :boolean then 'value == "1"'
+                when :datetime then "Spinrail.parse_time(value)"
                 else "value"
                 end
         "record.#{c.name} = #{value} if name == #{c.name.inspect}"
@@ -788,7 +790,7 @@ module Spinrail
               if value.nil?
                 relation.add_where_null(column.to_s, "IS NULL")
               else
-                relation.add_where(column.to_s, value.to_s, "=")
+                relation.add_where(column.to_s, Spinrail.sql_text(value), "=")
               end
             end
             relation
@@ -834,7 +836,7 @@ module Spinrail
               if value.nil?
                 relation.add_where_null(column.to_s, "IS NOT NULL")
               else
-                relation.add_where(column.to_s, value.to_s, "!=")
+                relation.add_where(column.to_s, Spinrail.sql_text(value), "!=")
               end
             end
             relation

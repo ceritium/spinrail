@@ -17,6 +17,7 @@ class GeneratorsTest < CompilerTest
     assert_includes ruby, "def edit_article_path(id)"
     assert_includes File.read(File.join(dir, "db/schema.rb")), "t.references :author"
     assert_includes File.read(File.join(dir, ".rubocop.yml")), "spinrail/rubocop"
+    assert_includes File.read(File.join(dir, "config/application.rb")), %(config.time_zone = "UTC")
     assert_includes File.read(File.join(dir, "app/models/article.rb")), "belongs_to :author"
     assert_includes ruby, "class SessionsController"
     assert_includes ruby, "class NotificationsMailer"

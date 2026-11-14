@@ -229,6 +229,8 @@ module Spinrail
         "require 'sinatra'",
         # Rails apps get SecureRandom without asking (Active Support loads it).
         'require "securerandom"',
+        # Time.now and Time.current in config.time_zone; the database keeps UTC.
+        "ENV[\"TZ\"] = #{time_zone.inspect}",
         # The default prefork server ignores SIGINT while a keep-alive
         # connection is idle (OriPekelman/tep#277).
         *(ENV.fetch("SPINRAIL_SERVER", "scheduled") == "prefork" ? [] : ["set :scheduler, :scheduled"]),
@@ -316,6 +318,40 @@ module Spinrail
       locales = flat.keys.map { |k| k.split(".").first.to_s }.reject(&:empty?).uniq
       locales = [""] if locales.empty?
       "module SpinrailTranslations\n  ALL = {\n#{entries}\n  }.freeze\n  LOCALES = #{locales.inspect}.freeze\nend\n"
+    end
+
+    SETTINGS = %w[time_zone].freeze
+
+    # config/application.rb: Spinrail.application.configure do config.x = literal end.
+    def settings
+      @settings ||= begin
+        file = path("config/application.rb")
+        found = {}
+        if File.exist?(file)
+          walk = lambda do |node|
+            if node.is_a?(Prism::CallNode) && node.name.end_with?("=") && node.receiver.is_a?(Prism::CallNode) &&
+               node.receiver.name == :config && node.receiver.receiver.nil?
+              name = node.name.to_s.chomp("=")
+              line = "config/application.rb:#{node.location.start_line}"
+              raise CompileError, "#{line}: config.#{name} is not supported (#{SETTINGS.join(', ')} are)" unless SETTINGS.include?(name)
+              found[name] = Spinrail.literal(node.arguments.arguments.first)
+            end
+            node.compact_child_nodes.each { |child| walk.call(child) }
+          end
+          walk.call(Spinrail.parse(File.read(file), file))
+        end
+        found
+      end
+    end
+
+    # An IANA name, checked against the build machine's zoneinfo when it has one.
+    def time_zone
+      zone = settings.fetch("time_zone", "UTC").to_s
+      zoneinfo = "/usr/share/zoneinfo"
+      if zone != "UTC" && File.directory?(zoneinfo) && !File.file?(File.join(zoneinfo, zone))
+        raise CompileError, "config/application.rb: unknown time zone #{zone.inspect}; use an IANA name such as \"Europe/Madrid\""
+      end
+      zone
     end
 
     # Development secret, kept across builds; production sets SECRET_KEY_BASE.

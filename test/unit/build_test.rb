@@ -58,6 +58,21 @@ class BuildTest < CompilerTest
     assert_includes ruby, %(def users = User.all.where_subquery("id", "SELECT user_id FROM memberships WHERE room_id = ?", @id.to_s))
   end
 
+  def test_time_zone_from_config
+    assert_includes build({}), %(ENV["TZ"] = "UTC")
+    config = %(Spinrail.application.configure do\n config.time_zone = "Europe/Madrid"\nend\n)
+    assert_includes build("config/application.rb" => config), %(ENV["TZ"] = "Europe/Madrid")
+  end
+
+  def test_unknown_time_zone_or_setting
+    zone = %(Spinrail.application.configure do\n config.time_zone = "Madrid"\nend\n)
+    error = assert_raises(Spinrail::CompileError) { build("config/application.rb" => zone) }
+    assert_match(/unknown time zone "Madrid"/, error.message)
+    setting = %(Spinrail.application.configure do\n config.cache_store = :memory_store\nend\n)
+    error = assert_raises(Spinrail::CompileError) { build("config/application.rb" => setting) }
+    assert_match(/config.cache_store is not supported/, error.message)
+  end
+
   def test_template_reading_an_unassigned_ivar
     error = assert_raises(Spinrail::CompileError) do
       build(

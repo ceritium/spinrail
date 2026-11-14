@@ -25,8 +25,13 @@ Roughly in priority order within each section.
       `includes`/`joins` of it yet); `find_by` on relations; `order(:col)`.
 - [ ] Single-table inheritance: Campfire's `Rooms::Open < Room` is a `type`
       column with predicates for now.
-- [ ] `datetime` columns read and take `Time` (they are strings today, as
-      `Spinrail.now` writes them).
+- [x] `datetime` columns read and take `Time` (TEXT in SQLite, local time to the
+      microsecond); `where`, params, `to_json`, `l` and `cache_key` follow.
+- [ ] `date` and `time` columns as `Date` and a time of day; they are Strings.
+- [x] `config.time_zone` in `config/application.rb` (an IANA name, UTC by
+      default): the process runs in it, so `Time.now` and `Time.current` agree
+      (Rails keeps `Time.now` in the system zone); the database keeps UTC.
+- [ ] Rails' friendly zone names (`"Madrid"`, `"Eastern Time (US & Canada)"`).
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
 - [x] Halting before_* callbacks with `throw :abort`.
 - [x] Nullable columns, the default as in Rails (nil in Ruby, `where(x: nil)` is

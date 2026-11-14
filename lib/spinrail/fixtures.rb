@@ -43,7 +43,7 @@ module Spinrail
     end
 
     def row(table, label, attrs)
-      now = Time.now.strftime("%Y-%m-%d %H:%M:%S")
+      now = Time.now.utc.strftime("%Y-%m-%d %H:%M:%S")
       values = { "id" => identify(label) }
       attrs.each do |key, value|
         key = key.to_s
@@ -56,7 +56,7 @@ module Spinrail
       end
       table.columns.each do |c|
         next if values.key?(c.name)
-        values[c.name] = c.timestamp? ? now : (c.default.nil? ? { integer: 0, boolean: false, float: 0.0, string: "" }.fetch(c.type) : c.default)
+        values[c.name] = c.timestamp? ? now : (c.default.nil? ? { integer: 0, boolean: false, float: 0.0, string: "", datetime: "" }.fetch(c.type) : c.default)
       end
       values
     end
