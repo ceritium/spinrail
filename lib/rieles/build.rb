@@ -183,7 +183,7 @@ module Rieles
         "require 'sinatra'",
         # The default prefork server ignores SIGINT while a keep-alive
         # connection is idle (OriPekelman/tep#277).
-        "set :scheduler, :scheduled",
+        *(ENV.fetch("RIELES_SERVER", "scheduled") == "prefork" ? [] : ["set :scheduler, :scheduled"]),
         "Tep.session_secret = ENV.fetch(\"SECRET_KEY_BASE\", #{local_secret.inspect})",
         *(Dir.exist?(path("public")) ? ["set :public_dir, \"public\""] : []),
         File.read(RUNTIME),
@@ -624,6 +624,7 @@ module Rieles
           boot_sql = ENV.fetch("RIELES_BOOT_SQL", "")
           Rieles.run_sql_file(boot_sql) unless boot_sql.empty?
         #{seeds ? "  if ENV.fetch(\"RIELES_SEED\", \"\") == \"1\"\n    RielesSeeds.run\n    puts \"rieles: seeded\"\n    exit(0)\n  end" : ""}
+          Rieles::DB.close
         end
       RUBY
     end

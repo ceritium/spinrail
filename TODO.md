@@ -120,7 +120,11 @@ Roughly in priority order within each section.
       `I18n.locale =` per request, translated validation messages and attribute names.
 - [x] i18n: pluralization (`count:` with zero/one/other), `l` with `time.formats`.
 - [ ] i18n: number formats, Accept-Language.
-- [ ] Prefork workers on Linux.
+- [x] Workers (`-w N`): the boot connection is closed before forking; SQLite
+      runs in WAL with a busy timeout. `RIELES_SERVER=prefork` builds tep's
+      default server.
+- [ ] tep's scheduled server drops some connections under a burst (2/40 with one
+      worker, 5-10/40 with four; prefork serves 40/40). Report upstream.
 
 ## Upstream
 

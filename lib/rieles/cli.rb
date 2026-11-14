@@ -13,7 +13,7 @@ module Rieles
     COMMANDS = {
       "new" => "Create an app: rieles new PATH",
       "generate" => "model|controller|scaffold NAME [field:type ...] (alias g)",
-      "server" => "Build if needed, start the server and rebuild on change (-p PORT, --no-reload)",
+      "server" => "Build if needed, start the server and rebuild on change (-p PORT, -w WORKERS, --no-reload)",
       "build" => "Compile the app into a native binary (-o OUTPUT)",
       "routes" => "List the routes",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
@@ -69,12 +69,13 @@ module Rieles
 
     def server
       port = option("-p") || "3000"
+      workers = option("-w")
       reload = !@argv.delete("--no-reload") && ENV.fetch("RIELES_ENV", "development") == "development"
       build(binary) if stale?
       Dir.chdir(@app)
       puts "rieles: http://localhost:#{port} (Ctrl+C to stop)"
       $stdout.flush
-      exec(binary, "-p", port) unless reload
+      exec(binary, "-p", port, *(workers ? ["-w", workers] : [])) unless reload
       watch(port)
     end
 

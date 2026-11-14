@@ -27,3 +27,6 @@ is easy to revisit.
   binds don't carry column names yet). Fine for development?
 - Tep::SQLite cuts text values at 64 KB (fixed C buffer). Open an issue/PR
   upstream? Rieles raises on such reads meanwhile.
+- tep's scheduled server (our default, for Ctrl+C) drops connections under
+  a burst of 40; the prefork server doesn't. Report upstream? Default
+  production builds to prefork?

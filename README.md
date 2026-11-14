@@ -133,6 +133,7 @@ to the server.
 | `RIELES_LOG_FORMAT` | `dev` (`logfmt` in production) | `dev`, `logfmt`, `json` |
 | `RIELES_LOG_LEVEL` | `debug` (`info` in production) | SQL and templates only at `debug` |
 | `RIELES_LOG_FILE` | stdout | |
+| `RIELES_SERVER` (build) | `scheduled` | `prefork` for production: tep's default server handles bursts better but ignores Ctrl+C on idle keep-alive connections ([OriPekelman/tep#277](https://github.com/OriPekelman/tep/issues/277)) |
 | `RIELES_FILTER_PARAMETERS` | `password,token,secret,...` | substrings, comma-separated |
 
 ## Not yet

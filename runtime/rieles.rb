@@ -403,11 +403,20 @@ module Rieles
       @open = false
     end
 
+    # Waits on other workers' locks instead of failing with SQLITE_BUSY.
     def connection
       return @conn if @open
       raise StatementInvalid, "can't open " + Rieles.database_path unless @conn.open(Rieles.database_path)
+      @conn.exec("PRAGMA busy_timeout = 5000")
+      @conn.exec("PRAGMA journal_mode = WAL")
       @open = true
       @conn
+    end
+
+    # Called after boot: a connection must not cross the fork into workers.
+    def close
+      @conn.close if @open
+      @open = false
     end
   end
 
