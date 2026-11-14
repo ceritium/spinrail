@@ -23,6 +23,7 @@ module Rieles
       "routes" => "List the routes",
       "check" => "Run the build's static checks without compiling",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
+      "jobs" => "Work background jobs (app/jobs) until Ctrl+C",
       "db:migrate" => "Apply db/migrate and rewrite db/schema.rb from it",
       "db:rollback" => "Undo the latest applied migration",
       "db:seed" => "Run db/seeds.rb against the database",
@@ -49,6 +50,7 @@ module Rieles
       when "check" then check
       when "test" then test
       when "clean" then clean
+      when "jobs" then jobs
       when "db:migrate" then migrate
       when "db:rollback" then rollback
       when "db:seed" then seed
@@ -199,6 +201,12 @@ module Rieles
         $stdout.flush
         system(env, test_binary)
       end
+    end
+
+    def jobs
+      build(binary) if stale?
+      Dir.chdir(@app)
+      exec({ "RIELES_JOBS" => "1" }, binary)
     end
 
     def migrate

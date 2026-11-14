@@ -138,6 +138,8 @@ to the server.
   `db/migrate` applied at boot (`rieles generate migration AddXToPosts x:string`,
   `rieles db:migrate` also rewrites db/schema.rb); `db/seeds.rb`.
 - Static files in `public/` and assets in `app/assets/`.
+- Jobs: `app/jobs/*_job.rb` with `perform(arg)`, `perform_later` into a SQLite
+  queue drained by `rieles jobs` (3 attempts with backoff); inline in tests.
 - i18n: `config/locales/*.yml`, `t(".title")`, `t("greeting", name: x)`,
   `I18n.locale = params[:locale]`, translated validation messages.
 

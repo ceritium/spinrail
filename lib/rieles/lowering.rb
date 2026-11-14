@@ -127,6 +127,13 @@ module Rieles
         @rw.replace(node) { "@res.set_status(#{arg.is_a?(Prism::SymbolNode) ? status_code(arg) : @rw.slice(arg)})" }
       elsif @ctx.action? && node.receiver.nil? && node.name == :halt
         lower_halt(node)
+      elsif job_call?(node)
+        arg = node.arguments&.arguments&.first
+        value = arg ? "(#{@rw.slice(arg)}).to_s" : '""'
+        name = node.receiver.slice
+        @rw.replace(node) { node.name == :perform_later ? "Rieles.enqueue(#{name.inspect}, #{value})" : "#{name}.new.perform(#{value})" }
+      elsif node.receiver.nil? && @ctx.job? && %i[queue_as retry_on discard_on].include?(node.name)
+        @rw.replace(node) { "" }
       elsif node.receiver.nil? && @ctx.controller? && CONTROLLER_DSL.include?(node.name)
         @rw.replace(node) { "" }
       elsif node.receiver.nil? && node.block.nil?
@@ -280,6 +287,13 @@ module Rieles
         end
       end
       true
+    end
+
+    # WelcomeJob.perform_later(x): jobs take one argument, passed as a String.
+    def job_call?(node)
+      %i[perform_later perform_now].include?(node.name) &&
+        (node.receiver.is_a?(Prism::ConstantReadNode) || node.receiver.is_a?(Prism::ConstantPathNode)) &&
+        node.receiver.slice.end_with?("Job") && (node.arguments.nil? || node.arguments.arguments.size == 1)
     end
 
     def request_params?(node)

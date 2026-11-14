@@ -175,6 +175,12 @@ class ModelsController < ApplicationController
     render plain: lines.join("\n")
   end
 
+  def shout
+    ShoutJob.perform_later(Author.find_by(name: "Ana").id)
+    BrokenJob.perform_later("x") if params[:broken] == "1"
+    render plain: "queued"
+  end
+
   def authors
     render plain: Author.order(id: :asc).pluck(:name).join(",")
   end

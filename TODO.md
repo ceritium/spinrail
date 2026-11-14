@@ -112,6 +112,13 @@ Roughly in priority order within each section.
       `RIELES_VENDOR` or `~/.cache/rieles/vendor` outside a checkout.
 - [ ] Publish the gem (name, license and ownership to decide).
 
+## Jobs
+
+- [x] `app/jobs` with `perform_later`/`perform_now`, a SQLite queue claimed under
+      `BEGIN IMMEDIATE`, retries with backoff, `rieles jobs`; inline in tests.
+- [ ] Several arguments and typed arguments (one String argument today);
+      `set(wait:)`, scheduled jobs.
+
 ## Runtime
 
 - [x] Environments (`RIELES_ENV`): error details only in development, logfmt

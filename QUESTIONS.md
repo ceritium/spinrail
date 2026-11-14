@@ -32,3 +32,5 @@ is easy to revisit.
   production builds to prefork?
 - The gemspec says MIT and lists you as author; the repo has no LICENSE
   yet. Confirm before publishing anything.
+- Jobs take a single argument, passed as a String (perform(id) gets "3").
+  Enough, or encode several typed arguments?

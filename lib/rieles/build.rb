@@ -64,8 +64,9 @@ module Rieles
     class Context
       attr_reader :dir, :exposures, :assigns, :responses
 
-      def initialize(build, dir, view:, ivars: true, action: nil, controller: false, test: false)
+      def initialize(build, dir, view:, ivars: true, action: nil, controller: false, test: false, job: false)
         @build = build
+        @job = job
         @controller = controller
         @test = test
         @dir = dir
@@ -80,6 +81,7 @@ module Rieles
 
       def view? = @view
       def test? = @test
+      def job? = @job
       def fixture_tables = @build ? @build.fixture_tables : []
       def controller? = @controller
       def action? = !@action.nil?
@@ -220,6 +222,7 @@ module Rieles
         *Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }
           .map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Model.new(f, schema).to_ruby}" },
         views,
+        jobs_source,
         *controllers.sort_by { |name, _| name == "ApplicationController" ? 0 : 1 }
           .map { |_, c| "#{SOURCE_MARK}#{c[:file]}\n#{c[:source]}" },
         application_controller_support,
@@ -673,6 +676,25 @@ module Rieles
 
     def migrations = @migrations ||= Migrations.new(path("db/migrate"))
 
+    # app/jobs: ApplicationJob, each job class, and the dispatcher the
+    # worker calls by name (spinel can't look classes up at runtime).
+    def jobs_source
+      files = Dir[path("app/jobs/*.rb")].sort
+      base = files.find { |f| f.end_with?("/application_job.rb") }
+      jobs = files - [base]
+      parts = [base ? File.read(base).sub(/<\s*(ActiveJob::Base|Rieles::Job)/, "< Rieles::Job") : "class ApplicationJob < Rieles::Job\nend\n"]
+      names = jobs.map do |file|
+        klass = Rieles.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) } or
+          raise CompileError, "#{rel(file)}: expected a job class"
+        parts << "#{SOURCE_MARK}#{rel(file)}\n" + Lowering.lower(File.read(file), rel(file), Context.new(self, "", view: false, job: true))
+        klass.constant_path.slice
+      end
+      branches = names.map { |n| "  return #{n}.new.perform(arg) if name == #{n.inspect}" }
+      parts << "module RielesJobs\n  def self.dispatch(name, arg)\n#{branches.map { |b| "  #{b}" }.join("\n")}\n" \
+               "    raise ArgumentError, \"unknown job \" + name\n  end\nend\n"
+      parts.join("\n")
+    end
+
     # test/models/*_test.rb: class PostTest < Rieles::ModelTest (or
     # ActiveSupport::TestCase) with test_* methods.
     def model_tests
@@ -745,6 +767,7 @@ module Rieles
           Rieles.run_sql_file(boot_sql) unless boot_sql.empty?
         #{seeds ? "  if ENV.fetch(\"RIELES_SEED\", \"\") == \"1\"\n    RielesSeeds.run\n    puts \"rieles: seeded\"\n    exit(0)\n  end" : ""}
         #{@tests ? test_runner : ''}
+          Rieles.work_jobs if ENV.fetch("RIELES_JOBS", "") == "1"
           Rieles::DB.close
         end
       RUBY
