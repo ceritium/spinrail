@@ -1,7 +1,7 @@
 require "prism"
 require "fileutils"
 require "json"
-require "cgi"
+require "cgi/escape"
 require "digest"
 require "yaml"
 require "zlib"

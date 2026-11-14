@@ -10,4 +10,5 @@ Gem::Specification.new do |spec|
   spec.executables = ["spinrail"]
   spec.add_dependency "prism"
   spec.add_dependency "minitest"
+  spec.add_dependency "base64"
 end

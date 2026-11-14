@@ -201,13 +201,17 @@ module Spinrail
       server&.close
     end
 
+    # Generous: macOS scans a freshly built binary on its first launch.
     def wait_for_server
-      100.times do
-        TCPSocket.new("127.0.0.1", @port).close
-        return
-      rescue Errno::ECONNREFUSED
-        flunk "server exited, see log/test.log" if wait_exit(0)
-        sleep 0.02
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 15
+      while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+        begin
+          TCPSocket.new("127.0.0.1", @port).close
+          return
+        rescue Errno::ECONNREFUSED
+          flunk "server exited, see log/test.log" if wait_exit(0)
+          sleep 0.02
+        end
       end
       flunk "server didn't start on port #{@port}"
     end
