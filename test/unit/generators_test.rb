@@ -22,4 +22,15 @@ class GeneratorsTest < CompilerTest
     digest = Spinrail::Fixtures.rows(dir)["users"]["one"].password_digest
     assert_match(/\Apbkdf2-sha256\$1000\$[\w-]+\$[\w-]{43}\z/, digest)
   end
+
+  def test_new_app_inits_a_git_repo_unless_skipped
+    root = Dir.mktmpdir("spinrail-git")
+    (@dirs ||= []) << root
+    Spinrail::Generators.new(File.join(root, "a"), StringIO.new).new_app
+    assert File.directory?(File.join(root, "a/.git"))
+    Spinrail::Generators.new(File.join(root, "b"), StringIO.new).new_app(git: false)
+    refute File.exist?(File.join(root, "b/.git"))
+    Spinrail::Generators.new(File.join(root, "a/nested"), StringIO.new).new_app
+    refute File.exist?(File.join(root, "a/nested/.git"))
+  end
 end

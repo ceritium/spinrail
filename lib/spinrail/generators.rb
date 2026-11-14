@@ -24,7 +24,7 @@ module Spinrail
       @out = out
     end
 
-    def new_app
+    def new_app(git: true)
       abort "spinrail: #{@app} already exists" if File.exist?(@app)
       name = File.basename(@app)
       write "bin/spinrail", <<~RUBY, mode: 0o755
@@ -68,6 +68,7 @@ module Spinrail
           end
         end
       RUBY
+      init_git if git
       @out.puts "\nNext: cd #{@app} && bin/spinrail server"
     end
 
@@ -85,6 +86,12 @@ module Spinrail
     end
 
     private
+
+    # Like rails new: a repo of its own, unless the app lands inside one.
+    def init_git
+      return if system("git", "-C", File.dirname(@app), "rev-parse", "--is-inside-work-tree", out: File::NULL, err: File::NULL)
+      @out.puts "         run  git init" if system("git", "init", "--quiet", @app)
+    end
 
     # A checkout's apps point at it; a gem install's use the gem.
     def framework_require
