@@ -203,6 +203,34 @@ class QueueCommandsTest < Spinrail::IntegrationTest
   end
 end
 
+class LegacyJobsTableTest < Spinrail::IntegrationTest
+  include WorkerHelpers
+
+  server_env "SPINRAIL_JOBS_INLINE" => "0"
+
+  # The pre-Solid Queue spinrail_jobs table migrates at boot: queued rows
+  # move to the new queue, the table itself is dropped.
+  def test_the_legacy_table_migrates_and_drops
+    get "/models/seed"
+    get "/models/legacy"
+    assert_equal "ready=1 scheduled=0 claimed=0 blocked=0 failed=0 processes=0 finished=0", status
+    log = File.join(Dir.tmpdir, "spinrail-legacy-#{Process.pid}.log")
+    pid = worker(log)
+    50.times do
+      break if File.read(log).include?("Performed NoteJob")
+      sleep 0.1
+    end
+    sleep 0.3
+    get "/models/legacy?check=1"
+    assert_equal "table=0 migrated=1", response.body
+  ensure
+    if pid
+      Process.kill("KILL", pid) rescue nil
+      Process.wait(pid) rescue nil
+    end
+  end
+end
+
 class RecurringJobsTest < Spinrail::IntegrationTest
   include WorkerHelpers
 

@@ -207,6 +207,27 @@ class ModelsController < ApplicationController
     render plain: "queued"
   end
 
+  # Recreates the pre-Solid Queue spinrail_jobs table with a queued row, so
+  # the next boot migrates it; ?check=1 reports whether it is still there.
+  def legacy
+    if params[:check] == "1"
+      db = Spinrail.prepare("PRAGMA table_info(spinrail_jobs)", false)
+      left = db.step == 1 ? 1 : 0
+      db.finalize
+      render plain: "table=" + left.to_s + " migrated=" + Author.where(name: "legacy").count.to_s
+    else
+      Spinrail.db.exec("CREATE TABLE IF NOT EXISTS spinrail_jobs (id INTEGER PRIMARY KEY, job TEXT NOT NULL, " \
+                       "arg TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, " \
+                       "run_at INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)")
+      db = Spinrail.prepare("INSERT INTO spinrail_jobs (job, arg, status, run_at, created_at) VALUES ('NoteJob', 'legacy', 'queued', ?, ?)", true)
+      db.bind_int(1, Time.now.to_i)
+      db.bind_int(2, Time.now.to_i)
+      db.step
+      db.finalize
+      render plain: "created"
+    end
+  end
+
   def cached
     Rails.cache.delete("count") if params[:reset] == "1"
     count = Rails.cache.fetch("count", expires_in: 5.minutes) { Post.count.to_s }

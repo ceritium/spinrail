@@ -274,7 +274,8 @@ Roughly in priority order within each section.
 - [ ] Threaded jobs on PostgreSQL (the PG battery's state hasn't been checked
       for threads).
 - [ ] Typed arguments (Strings today); `perform_all_later`.
-- [ ] The old `spinrail_jobs` table is left alone, rows and all.
+- [x] The old `spinrail_jobs` table goes at boot: its still queued and
+      running rows move to the new queue, the rest go with the table.
 
 ## Runtime
 
