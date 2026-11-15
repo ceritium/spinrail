@@ -1087,6 +1087,10 @@ module Spinrail
 
     def route_block(route, controllers)
       return action_route_block(route) unless route.controller
+      # Rails' health check: 200 once the app boots.
+      if route.controller == "rails/health" && route.action == "show"
+        return "#{route.verb} #{route.path.inspect} do\n  \"<!DOCTYPE html><html><body style=\\\"background-color: green\\\"></body></html>\"\nend\n"
+      end
       klass = "#{Inflector.camelize(route.controller)}Controller"
       controller = controllers[klass] or raise CompileError, "config/routes.rb: no #{klass} for #{route.path}"
       unless controller[:actions].include?(route.action)

@@ -159,6 +159,7 @@ Roughly in priority order within each section.
       `form_with model: [@post, @comment]`.
 - [x] `.json` suffix on any path sets `format=json`.
 - [x] Route globbing (`*path`) and `constraints: { id: /\d+/ }`.
+- [x] `get "up" => "rails/health#show"` (the `path => endpoint` form and Rails' health check).
 - [x] Path helpers that accept ids as well as records (`to_param`); `_url` helpers.
 
 ## Tooling

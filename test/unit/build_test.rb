@@ -355,6 +355,11 @@ class BuildTest < CompilerTest
     assert_includes ruby, %(Spinrail::Cable.upgrade(req, res, ApplicationCable::Connection.new(req)))
   end
 
+  def test_rails_health_check
+    ruby = build("config/routes.rb" => %(Spinrail.routes.draw do\n get "up" => "rails/health#show", as: :rails_health_check\nend\n))
+    assert_includes ruby, %(get "/up" do\n  "<!DOCTYPE html><html><body style=\\"background-color: green\\"></body></html>"\nend)
+  end
+
   def test_template_reading_an_unassigned_ivar
     error = assert_raises(Spinrail::CompileError) do
       build(

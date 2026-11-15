@@ -102,7 +102,12 @@ module Spinrail
       if scope.kind
         return member_route(node, args, kw)
       end
-      path = Spinrail.literal(args.first).to_s
+      # get "up" => "rails/health#show": the path is the hash's only string key.
+      if args.empty? && (path = kw.keys.find { |k| k.is_a?(String) })
+        kw[:to] = kw.delete(path)
+      else
+        path = Spinrail.literal(args.first).to_s
+      end
       path = "/#{path}" unless path.start_with?("/")
       fail!(node, "#{node.name} needs `to: \"controller#action\"`") unless kw[:to]
       controller, action = endpoint(node, kw[:to])
