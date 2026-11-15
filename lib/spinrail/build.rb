@@ -140,13 +140,16 @@ module Spinrail
     end
 
     # app/models holds records and plain classes (no superclass), as in Rails.
-    def record_files = model_files.reject { |f| plain_model?(f) }
-    def plain_model_files = model_files.select { |f| plain_model?(f) }
+    def record_files = model_files.select { |f| model_kind(f) == :record }
+    def plain_model_files = model_files.select { |f| model_kind(f) == :plain }
+    def current_files = model_files.select { |f| model_kind(f) == :current }
     def model_files = Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }
 
-    def plain_model?(file)
+    def model_kind(file)
       klass = Spinrail.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
-      klass && klass.superclass.nil?
+      return :record unless klass
+      return :current if Current.current?(klass)
+      klass.superclass.nil? ? :plain : :record
     end
 
     def mailer_names = Dir[path("app/mailers/*.rb")].map { |f| Inflector.camelize(File.basename(f, ".rb")) }
@@ -252,6 +255,8 @@ module Spinrail
         assets_source,
         application_record,
         *record_files.map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Model.new(f, schema).to_ruby}" },
+        *current_files.map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Current.new(f, rel(f), self).to_ruby}" },
+        *(current_files.empty? ? ["module Spinrail\n  def self.reset_current = nil\nend\n"] : []),
         *plain_model_files.map { |f| "#{SOURCE_MARK}#{rel(f)}\n" + Lowering.lower(File.read(f), rel(f), Context.new(self, "", view: false)) },
         views,
         mailers_source,
@@ -849,7 +854,7 @@ module Spinrail
         parts << "#{SOURCE_MARK}#{rel(file)}\n" + Lowering.lower(File.read(file), rel(file), Context.new(self, "", view: false, job: true))
         klass.constant_path.slice
       end
-      branches = names.map { |n| "  return #{n}.new.perform(arg) if name == #{n.inspect}" }
+      branches = ["  Spinrail.reset_current"] + names.map { |n| "  return #{n}.new.perform(arg) if name == #{n.inspect}" }
       branches << '  return Spinrail::Mail.from_json(arg).deliver_now.to if name == "Spinrail::Mail"' 
       parts << "module SpinrailJobs\n  def self.dispatch(name, arg)\n#{branches.map { |b| "  #{b}" }.join("\n")}\n" \
                "    raise ArgumentError, \"unknown job \" + name\n  end\nend\n"

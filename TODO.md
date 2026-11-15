@@ -63,6 +63,10 @@ Roughly in priority order within each section.
       true/false instead of the record. `authenticate_by` on the model and relations.
 - [x] `has_secure_token` (alphanumeric, not base58), `regenerate_<attr>`.
 - [x] Plain classes (no superclass) in app/models.
+- [x] `Current < ActiveSupport::CurrentAttributes`: `attribute`, overridable
+      writers with `super`, one instance per fiber, reset per request, job and
+      model test. Not yet: `delegate`, `Current.set { }`, `before_reset`/`resets`.
+- [x] `belongs_to ..., default: -> { ... }`.
 
 ## Controllers
 

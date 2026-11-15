@@ -628,6 +628,7 @@ module Spinrail
       @runs += 1
       db = Spinrail.db
       db.exec("BEGIN")
+      Spinrail.reset_current
       begin
         yield
         print "."
@@ -1112,6 +1113,7 @@ module Spinrail
       @performed = false
       @response_body = ""
       @flash = Tep.str_hash
+      Spinrail.reset_current
       sweep_flash
     end
 

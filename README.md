@@ -139,7 +139,9 @@ to the server.
   `length`, `numericality`, `format`, `inclusion`, `exclusion`, `uniqueness`,
   `validate :method`); callbacks; `belongs_to`, `has_many`, `has_one`;
   `has_secure_password` with `authenticate_by`, `has_secure_token`. Plain classes
-  (no superclass) in app/models compile as written.
+  (no superclass) in app/models compile as written. `Current <
+  ActiveSupport::CurrentAttributes` keeps one instance per fiber, reset for each
+  request; `belongs_to` takes `default: -> { Current.user }`.
 - Controllers: `params[:x]`, `params[:post][:title]`, strong params,
   `request.files["post[avatar]"]` for uploads, `render :action, status:`,
   `render plain:`, `render json:`, `head`, `render view: Views::Stats::Show,

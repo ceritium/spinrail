@@ -118,6 +118,7 @@ module Spinrail
     def association(node)
       args, kw = Spinrail.call_args(node)
       name = Spinrail.literal(args.first).to_s
+      default = kw.delete(:default)
       opts = kw.transform_values { |v| Spinrail.literal(v) }
       return through(node, name, opts) if node.name == :has_many && opts[:through]
       unknown = opts.keys - %i[class_name foreign_key dependent optional]
@@ -132,7 +133,19 @@ module Spinrail
       if dependent && !%i[destroy delete_all].include?(dependent)
         fail!(node, "dependent: only supports :destroy and :delete_all")
       end
+      belongs_to_default(node, fk, default) if default
       @associations << Association.new(node.name, name, class_name, fk, dependent, opts[:optional])
+    end
+
+    # belongs_to :creator, default: -> { Current.user }: filled in on
+    # create when the foreign key is unset.
+    def belongs_to_default(node, fk, default)
+      fail!(node, "belongs_to default: takes a lambda") unless default.is_a?(Prism::LambdaNode) && default.parameters.nil?
+      fail!(node, "default: is for belongs_to") unless node.name == :belongs_to
+      body = default.body&.slice or fail!(node, "default: lambda is empty")
+      @callbacks[:before_validation].unshift(
+        "if !persisted? && @#{fk}.to_i == 0\n  default_record = (#{body})\n  @#{fk} = default_record.id if default_record\nend"
+      )
     end
 
     # has_many :users, through: :memberships: one hop over a has_many whose

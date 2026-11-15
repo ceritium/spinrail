@@ -79,6 +79,38 @@ class BuildTest < CompilerTest
     assert_includes ruby, "class FirstRun\n  def self.create!(name) = User.create!(name: name)\nend"
   end
 
+  def test_current_attributes
+    schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :name\n end\nend\n"
+    current = <<~RUBY
+      class Current < ActiveSupport::CurrentAttributes
+        attribute :session, :user
+
+        def session=(value)
+          super(value)
+          self.user = value.user if value
+        end
+
+        def greeting(prefix, upcase: false) = prefix + user.name
+      end
+    RUBY
+    ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n",
+                 "app/models/current.rb" => current)
+    assert_includes ruby, "class Current < CurrentAttributes"
+    assert_includes ruby, "  def user=(value)\n    @user = value\n  end"
+    assert_includes ruby, "def self.user=(value)\n    instance.user = value\n  end"
+    assert_includes ruby, "def self.greeting(prefix, upcase: false)\n    instance.greeting(prefix, upcase: upcase)\n  end"
+    assert_includes ruby, "INSTANCES[Tep::APP.sched_current + 1] = Current.new"
+    assert_includes ruby, "def self.reset_current = Current.reset"
+    refute_includes ruby, "def self.reset_current = nil"
+  end
+
+  def test_belongs_to_default
+    schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :name\n end\n create_table :rooms do |t|\n t.references :creator, null: false\n end\nend\n"
+    room = %(class Room < ApplicationRecord\n belongs_to :creator, class_name: "User", default: -> { Current.user }\nend\n)
+    ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n", "app/models/room.rb" => room)
+    assert_includes ruby, "if !persisted? && @creator_id.to_i == 0\n      default_record = (Current.user)\n      @creator_id = default_record.id if default_record\n    end"
+  end
+
   def test_time_zone_from_config
     assert_includes build({}), %(ENV["TZ"] = "UTC")
     config = %(Spinrail.application.configure do\n config.time_zone = "Europe/Madrid"\nend\n)
