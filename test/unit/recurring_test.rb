@@ -21,6 +21,37 @@ class RecurringTest < CompilerTest
     assert_raises(Spinrail::CompileError) { slot('"61 * * * *"') }
   end
 
+  def test_more_fugit_phrasings
+    assert_equal "Spinrail::Jobs.interval_slot(t, 172800)", slot("every 2 days")
+    assert_equal "Spinrail::Jobs.interval_slot(t, 1209600)", slot("every 2 weeks")
+    assert_equal %(([0].include?(t.min) && [0].include?(t.hour) && [0].include?(t.wday) ? Spinrail::Jobs.minute_slot(t) : "")),
+                 slot("every week")
+    assert_equal %(([0].include?(t.min) && [0].include?(t.hour) && [1, 2, 3, 4, 5].include?(t.wday) ? Spinrail::Jobs.minute_slot(t) : "")),
+                 slot("every weekday")
+    assert_equal %(([0].include?(t.min) && [0].include?(t.hour) && [0, 6].include?(t.wday) ? Spinrail::Jobs.minute_slot(t) : "")),
+                 slot("every weekend")
+    assert_equal %(([0].include?(t.min) && [9].include?(t.hour) && [1, 2, 3, 4, 5].include?(t.wday) ? Spinrail::Jobs.minute_slot(t) : "")),
+                 slot("every weekday at 9am")
+  end
+
+  def test_cron_with_seconds
+    assert_equal %(([30].include?(t.sec) ? Spinrail::Jobs.second_slot(t) : "")), slot('"30 * * * * *"')
+    assert_equal %(([0, 30].include?(t.sec) && [15].include?(t.min) && [9].include?(t.hour) ? Spinrail::Jobs.second_slot(t) : "")),
+                 slot('"0,30 15 9 * * *"')
+    assert_raises(Spinrail::CompileError) { slot('"61 * * * * *"') }
+    assert_raises(Spinrail::CompileError) { slot('"* * * * * * *"') }
+  end
+
+  def test_erb_in_the_config
+    r = recurring(<<~YAML)
+      t:
+        command: Post.delete_all
+        schedule: every <%= "hour" %>
+    YAML
+    assert_equal ["t"], r.tasks.map(&:key)
+    assert_equal %(([0].include?(t.min) ? Spinrail::Jobs.minute_slot(t) : "")), r.tasks.first.slot
+  end
+
   def test_tasks_by_environment
     r = recurring(<<~YAML)
       production:

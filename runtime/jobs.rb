@@ -560,6 +560,8 @@ module Spinrail
 
     def self.minute_slot(t) = Spinrail.format_time(Time.at(t.to_i - t.sec))
 
+    def self.second_slot(t) = Spinrail.format_time(Time.at(t.to_i))
+
     def self.interval_slot(t, seconds) = Spinrail.format_time(Time.at(t.to_i - t.to_i % seconds))
 
     def self.recur(key, at, name, args, queue, priority)
