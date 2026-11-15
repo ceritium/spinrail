@@ -400,8 +400,9 @@ module Spinrail
           <%= f.submit %>
         <% end %>
       ERB
-      write "app/views/#{plural}/new.html.erb", "<h1>New #{human.downcase}</h1>\n<%= render \"form\", #{single}: @#{single} %>\n<%= link_to \"Back\", #{plural}_path %>\n"
-      write "app/views/#{plural}/edit.html.erb", "<h1>Editing #{human.downcase}</h1>\n<%= render \"form\", #{single}: @#{single} %>\n<%= link_to \"Show\", #{single}_path(@#{single}) %>\n"
+      form = "<%= render \"form\", #{single}: @#{single} %>"
+      write "app/views/#{plural}/new.html.erb", "<h1>New #{human.downcase}</h1>\n#{form}\n<%= link_to \"Back\", #{plural}_path %>\n"
+      write "app/views/#{plural}/edit.html.erb", "<h1>Editing #{human.downcase}</h1>\n#{form}\n<%= link_to \"Show\", #{single}_path(@#{single}) %>\n"
       sample = fields.reject(&:references?).map { |f| "#{"#{single}[#{f.column}]".inspect} => #{sample_value(f).inspect}" }
       params = sample.join(", ").size > 80 ? "{\n      #{sample.join(",\n      ")}\n    }" : "{ #{sample.join(", ")} }"
       write "test/integration/#{plural}_test.rb", <<~RUBY

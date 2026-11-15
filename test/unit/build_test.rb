@@ -553,7 +553,7 @@ class BuildTest < CompilerTest
     assert_includes ruby, %{return "SyncJob" + "/" + (->(id, _) { Post.find(id).author_id }).call(Spinrail::Jobs.arg(args, 0), Spinrail::Jobs.arg(args, 1)).to_s if name == "SyncJob"}
     assert_includes ruby, %{return (2).to_i if name == "SyncJob"}
     assert_includes ruby, %{return (5.minutes).to_i if name == "SyncJob"}
-    assert_includes ruby, %{return true if name == "SyncJob"}
+    assert_includes ruby, %(return true if name == "SyncJob")
     assert_raises(Spinrail::CompileError) { build("app/jobs/a_job.rb" => "class AJob < ApplicationJob\n  limits_concurrency to: 1\nend\n") }
   end
 end

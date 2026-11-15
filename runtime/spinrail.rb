@@ -225,12 +225,12 @@ module Spinrail
     def escape(text)
       out = +""
       text.each_char do |c|
-        if c == "\"" then out << "\\\""
-        elsif c == "\\" then out << "\\\\"
-        elsif c == "\n" then out << "\\n"
-        elsif c == "\t" then out << "\\t"
-        else out << c
-        end
+        out << if c == "\"" then "\\\""
+               elsif c == "\\" then "\\\\"
+               elsif c == "\n" then "\\n"
+               elsif c == "\t" then "\\t"
+               else c
+               end
       end
       out
     end
@@ -1441,7 +1441,8 @@ module Spinrail
     def turbo_stream_tag(action, target, html) = @controller.turbo_stream_tag(action, target, html)
 
     def turbo_stream_from_tag(name, channel)
-      "<turbo-cable-stream-source channel=\"" + h(channel) + "\" signed-stream-name=\"" + h(Spinrail::Cable.signed(channel, name)) + "\"></turbo-cable-stream-source>"
+      signed = Spinrail::Cable.signed(channel, name)
+      "<turbo-cable-stream-source channel=\"" + h(channel) + "\" signed-stream-name=\"" + h(signed) + "\"></turbo-cable-stream-source>"
     end
     def request_base_url = @controller.request_base_url
 
@@ -1518,7 +1519,7 @@ module Spinrail
       html = html + "<a rel=\"prev\" href=\"?page=" + (current - 1).to_s + "\">&lsaquo; Prev</a> " if current > 1
       page = 1
       while page <= total
-        html = html + (page == current ? "<span class=\"current\">" + page.to_s + "</span> " : "<a href=\"?page=" + page.to_s + "\">" + page.to_s + "</a> ")
+        html += (page == current ? "<span class=\"current\">" + page.to_s + "</span> " : "<a href=\"?page=" + page.to_s + "\">" + page.to_s + "</a> ")
         page += 1
       end
       html = html + "<a rel=\"next\" href=\"?page=" + (current + 1).to_s + "\">Next &rsaquo;</a>" if current < total

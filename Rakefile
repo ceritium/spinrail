@@ -12,5 +12,11 @@ task :apps do
   end
 end
 
+# Repo style plus the Spinel cops on what spinel compiles (see .rubocop.yml).
+desc "RuboCop (config in .rubocop.yml)"
+task :lint do
+  sh "bundle", "exec", "rubocop"
+end
+
 task test: %i[unit apps]
 task default: :test

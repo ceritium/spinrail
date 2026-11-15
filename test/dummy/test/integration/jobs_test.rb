@@ -106,6 +106,7 @@ end
 
 class ProcessesTest < Spinrail::IntegrationTest
   include WorkerHelpers
+
   server_env "SPINRAIL_JOBS_INLINE" => "0"
 
   # TERM lets the job at hand finish and hands the queued one back.
@@ -153,6 +154,7 @@ end
 
 class QueueCommandsTest < Spinrail::IntegrationTest
   include WorkerHelpers
+
   server_env "SPINRAIL_JOBS_INLINE" => "0"
 
   def test_pause_resume_retry_and_discard
@@ -189,6 +191,7 @@ end
 
 class RecurringJobsTest < Spinrail::IntegrationTest
   include WorkerHelpers
+
   server_env "SPINRAIL_JOBS_INLINE" => "0"
 
   # Two workers schedule the same tasks; each run is enqueued once.
@@ -219,6 +222,7 @@ end
 
 class ConcurrencyTest < Spinrail::IntegrationTest
   include WorkerHelpers
+
   server_env "SPINRAIL_JOBS_INLINE" => "0"
 
   def test_limits_concurrency

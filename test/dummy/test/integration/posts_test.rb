@@ -48,7 +48,7 @@ class PostsTest < Spinrail::IntegrationTest
     get "/posts/1/edit"
     assert_body_includes '<input type="hidden" name="_method" value="patch">'
     assert_body_includes 'value="Update Post"'
-    assert_body_includes 'checked'
+    assert_body_includes "checked"
 
     post "/posts/1", params: { "_method" => "patch", "post[title]" => "Renamed", "post[published]" => "0" }
     assert_redirected_to "/posts/1"

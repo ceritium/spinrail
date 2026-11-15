@@ -31,6 +31,7 @@ module RuboCop
 
       class DynamicName < Base
         include Literal
+
         MSG = "spinel resolves `%<name>s` at compile time: the name must be a literal Symbol or String."
         RESTRICT_ON_SEND = %i[send public_send __send__ define_method instance_variable_get
                               instance_variable_set const_get method].freeze

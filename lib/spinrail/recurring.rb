@@ -17,7 +17,7 @@ module Spinrail
 
     def initialize(file)
       @file = File.basename(File.dirname(file)) + "/" + File.basename(file)
-      config = File.exist?(file) ? YAML.safe_load(File.read(file), aliases: true) || {} : {}
+      config = File.exist?(file) ? YAML.safe_load_file(file, aliases: true) || {} : {}
       raise CompileError, "#{@file}: expected a mapping" unless config.is_a?(Hash)
       @tasks = config.flat_map do |key, value|
         raise CompileError, "#{@file}: #{key} isn't a task or an environment" unless value.is_a?(Hash)
@@ -80,7 +80,7 @@ module Spinrail
     end
 
     def cron(text, where)
-      parts = text.split(" ")
+      parts = text.split
       raise CompileError, "#{where}: schedule #{text.inspect} is neither cron (5 fields) nor every N minutes/hours, every day at 5am" unless parts.size == 5
       sets = parts.each_with_index.map { |part, i| field(part, *FIELDS[i][1..], i, where) }
       checks = [0, 1, 3].filter_map { |i| "#{sets[i].inspect}.include?(t.#{FIELDS[i][0]})" if sets[i] }
@@ -132,7 +132,8 @@ module Spinrail
         name = t.job || "SpinrailRecurring/#{t.key}"
         list = t.args.empty? ? "Spinrail.no_binds" : t.args.inspect
         queue = t.job ? t.queue : (t.queue.empty? ? "default" : t.queue)
-        "    return Spinrail::Jobs.recur(#{t.key.inspect}, at, #{name.inspect}, #{list}, #{queue.inspect}, #{t.job ? t.priority : [t.priority, 0].max}) if i == #{i}"
+        priority = t.job ? t.priority : [t.priority, 0].max
+        "    return Spinrail::Jobs.recur(#{t.key.inspect}, at, #{name.inspect}, #{list}, #{queue.inspect}, #{priority}) if i == #{i}"
       end
       commands = @tasks.each_with_index.select { |t, _| t.command }.map { |t, i| "  def self.command_#{i}\n#{t.command.gsub(/^/, '    ')}\n    nil\n  end" }
       <<~RUBY
@@ -156,7 +157,9 @@ module Spinrail
     end
 
     def dispatch
-      @tasks.each_with_index.select { |t, _| t.command }.map { |t, i| "    return SpinrailRecurring.command_#{i} if name == #{"SpinrailRecurring/#{t.key}".inspect}" }
+      @tasks.each_with_index.select { |t, _| t.command }.map do |t, i|
+        "    return SpinrailRecurring.command_#{i} if name == #{"SpinrailRecurring/#{t.key}".inspect}"
+      end
     end
   end
 end

@@ -10,7 +10,8 @@ class DocumentsController < ApplicationController
   def show
     file = @document.file
     if file.attached?
-      render plain: [@document.title, file.filename, file.content_type, file.byte_size, file.checksum, rails_blob_path(file), rails_blob_path(file, disposition: "attachment")].join("|")
+      download = rails_blob_path(file, disposition: "attachment")
+      render plain: [@document.title, file.filename, file.content_type, file.byte_size, file.checksum, rails_blob_path(file), download].join("|")
     else
       render plain: @document.title + "|none"
     end

@@ -5,8 +5,9 @@ module Spinrail
   module Delegation
     OPTIONS = %i[to prefix allow_nil].freeze
 
-    def self.delegate?(node) =
+    def self.delegate?(node)
       node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == :delegate && Spinrail.call_args(node)[1].key?(:to)
+    end
 
     # [[name, params], ...] and the Ruby that defines them.
     def self.expand(node, file)

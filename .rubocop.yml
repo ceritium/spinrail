@@ -1,0 +1,195 @@
+# Lint for the framework itself. The Spinel/* cops (lib/spinrail/rubocop.rb)
+# flag what spinel won't compile, and run only where spinel compiles:
+# runtime/ and the example apps' app code. lib/, test/ and exe/ run on CRuby
+# and may use send, method_missing or instance_eval freely.
+#
+# rake lint (bundle exec rubocop).
+require:
+  - spinrail/rubocop
+
+AllCops:
+  TargetRubyVersion: 3.4   # the gemspec's minimum
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - "vendor/**/*"
+    - "**/tmp/**/*"        # generated app source (test/dummy/tmp/spinrail/app.rb)
+    - "**/log/**/*"
+    - "**/db/schema.rb"    # rewritten by db:migrate, as in apps
+
+Spinel:
+  Include:
+    - "runtime/**/*.rb"
+    - "test/dummy/app/**/*.rb"
+    - "test/dummy/config/**/*.rb"
+    - "examples/guestbook/app/**/*.rb"
+    - "examples/guestbook/config/**/*.rb"
+    - "**/db/seeds.rb"
+
+# --- the codebase's own style, kept as is ---
+
+Style/Documentation:
+  Enabled: false                # no doc comment per class
+Style/FrozenStringLiteralComment:
+  Enabled: false                # files carry no magic comment
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+Layout/LineLength:
+  Max: 160                      # generated-code templates run long
+  AutoCorrect: false            # splits interpolations mid-expression
+  Exclude: ["test/unit/**/*"]   # inline app fixtures
+Style/StringConcatenation:
+  Enabled: false                # runtime spells interpolation as + (spinel type-inference discipline)
+Style/LambdaCall:
+  Enabled: false                # build.rb uses the s.(...) shorthand
+Style/EmptyMethod:
+  Enabled: false                # runtime uses def x; end, app templates def x\nend
+Style/FormatStringToken:
+  Enabled: false                # %.1f in runtime, %<name>s in rubocop.rb
+Style/OneClassPerFile:
+  Enabled: false                # runtime/spinrail.rb is one file by design
+Style/IfUnlessModifier:
+  Enabled: false
+Style/WhileUntilModifier:
+  Enabled: false
+Style/NestedTernaryOperator:
+  Enabled: false
+Style/StderrPuts:
+  Enabled: false                # runtime writes to $stderr on purpose
+Style/NumericPredicate:
+  Enabled: false                # x > 0; positive? is untested in spinel
+Style/ZeroLengthPredicate:
+  Enabled: false
+Naming/MethodParameterName:
+  Enabled: false                # n, t, s throughout the runtime
+Naming/AccessorMethodName:
+  Enabled: false                # Cable#set_locale is not a writer
+Naming/PredicateMethod:
+  Enabled: false
+Layout/EmptyLineAfterGuardClause:
+  Enabled: false
+Layout/EmptyLineBetweenDefs:
+  Enabled: false                # endless and regular defs mix
+Lint/MissingSuper:
+  Enabled: false                # initialize with no state in the parent
+Lint/UnusedMethodArgument:
+  Enabled: false                # logger hooks like on_sql(...) take args they don't use
+Lint/UnusedBlockArgument:
+  Enabled: false
+Lint/ToJSON:
+  Enabled: false                # to_json without an argument is spinrail's JSON API
+Lint/RedundantDirGlobSort:
+  Enabled: false                # the .sort is deliberate: Dir[] order is platform-dependent
+
+# --- rewrites not verified against spinel; enable once the rewrite compiles ---
+
+Style/ArgumentsForwarding:
+  Enabled: false                # ... forwarding doesn't compile
+Style/SymbolProc:
+  Enabled: false                # &:x block-pass untested
+Style/SafeNavigation:
+  Enabled: false                # &. untested
+Style/CaseLikeIf:
+  Enabled: false
+Style/HashEachMethods:
+  Enabled: false
+Style/HashExcept:
+  Enabled: false
+Style/ArrayIntersect:
+  Enabled: false
+Style/SelectByKind:
+  Enabled: false
+Style/SelectByRegexp:
+  Enabled: false
+Style/MapJoin:
+  Enabled: false
+Style/NegativeArrayIndex:
+  Enabled: false
+Style/ComparableBetween:
+  Enabled: false
+Style/PredicateWithKind:
+  Enabled: false
+Style/MultipleComparison:
+  Enabled: false                # x == "a" || x == "b" in runtime
+Style/SafeNavigationChainLength:
+  Enabled: false
+
+# --- noise for a prototype with big compiler files and generated templates ---
+
+Metrics:
+  Enabled: false
+Style/MutableConstant:
+  Enabled: false
+Style/NumericLiterals:
+  Enabled: false
+Style/WordArray:
+  Enabled: false
+Style/SymbolArray:
+  Enabled: false
+Style/ParallelAssignment:
+  Enabled: false
+Style/GuardClause:
+  Enabled: false
+Style/TrivialAccessors:
+  Enabled: false
+Style/ClassAndModuleChildren:
+  Enabled: false
+Style/PerlBackrefs:
+  Enabled: false
+Style/SpecialGlobalVars:
+  Enabled: false
+Style/RedundantHeredocDelimiterQuotes:
+  Enabled: false
+Style/EmptyStringInsideInterpolation:  # generated-code templates in build.rb
+  Enabled: false
+Style/StringLiteralsInInterpolation:   # idem
+  Enabled: false
+Style/FileOpen:
+  Enabled: false
+Style/FileWrite:
+  Enabled: false
+Style/FileRead:
+  Enabled: false
+Layout/LineContinuationLeadingSpace:
+  Enabled: false
+Layout/LineEndStringConcatenationIndentation:
+  Enabled: false
+Layout/MultilineOperationIndentation:
+  Enabled: false
+Lint/AmbiguousOperatorPrecedence:
+  Enabled: false                # 69 fixes; first cop to re-enable in a cleanup pass
+Lint/UselessConstantScoping:
+  Enabled: false
+Lint/DuplicateBranch:
+  Enabled: false
+Lint/ElseLayout:
+  Enabled: false
+Lint/EmptyClass:
+  Enabled: false
+Lint/InheritException:
+  Enabled: false
+Lint/StructNewOverride:
+  Enabled: false
+Lint/NonAtomicFileOperation:
+  Enabled: false
+Lint/RedundantRequireStatement:
+  Enabled: false                # require "set": still needed on 3.4
+
+# Publishing the gem is undecided (see TODO); nothing to enforce here yet.
+Gemspec:
+  Enabled: false
+Bundler:
+  Enabled: false
+
+# --- autocorrections that make the code worse or that spinel may not compile ---
+
+Style/RescueModifier:
+  Enabled: false                # `rescue nil` in test cleanup
+Style/RedundantStringCoercion:
+  Exclude: ["runtime/**/*"]     # puts doesn't call to_s on spinel objects
+Naming/RescuedExceptionsVariableName:
+  Enabled: false                # `rescue => e` would shadow a typed parameter
+Style/RedundantBegin:
+  Exclude: ["runtime/**/*"]     # rescue in a do-block is untested in spinel
+Style/RedundantArgument:
+  Exclude: ["runtime/**/*"]     # split(" "): no-argument split is untested in spinel

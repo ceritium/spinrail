@@ -109,7 +109,7 @@ module Spinrail
         [[Schema.index_sql(index)], ["DROP INDEX IF EXISTS #{Schema.index_name(index[:table], index[:columns])}"]]
       when :remove_index
         table = lit.(args[0]).to_s
-        cols = Array(kw[:column] ? lit.(kw[:column]) : lit.(args[1])).map(&:to_s)
+        cols = Array(lit.(kw[:column] || args[1])).map(&:to_s)
         removed = @indexes.find { |i| i[:table] == table && i[:columns] == cols }
         @indexes.delete(removed)
         [["DROP INDEX IF EXISTS #{Schema.index_name(table, cols)}"], removed && [Schema.index_sql(removed)]]

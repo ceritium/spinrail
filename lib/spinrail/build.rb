@@ -172,7 +172,7 @@ module Spinrail
         raise CompileError, "#{rel(f)}: #{model_name(f)} inherits from #{base}, itself a subclass" if sti_base(record_files.find { |b| model_name(b) == base })
         Model.new(f, schema, sti_base: base, build: self)
       end
-      bases = (record_files.reject { |f| sti_base(f) }).map do |f|
+      bases = record_files.reject { |f| sti_base(f) }.map do |f|
         model = Model.new(f, schema, build: self)
         model.sti_children = children.select { |c| c.sti_base == model.name }
         [f, model]
@@ -346,7 +346,7 @@ module Spinrail
         jobs_source,
         cable? ? channels_source : "module Spinrail\n  module Cable\n    def self.subscribe_channel(name, connection, identifier, fd) = false\n  end\nend\n",
         *controllers.sort_by { |name, _| name == "ApplicationController" ? 0 : 1 }
-          .map { |_, c| "#{SOURCE_MARK}#{c[:file]}\n#{c[:source]}" },
+                    .map { |_, c| "#{SOURCE_MARK}#{c[:file]}\n#{c[:source]}" },
         application_controller_support,
         *controllers.map { |name, c| render_methods(name, c) }.compact,
         *@actions.values.map { |a| "#{SOURCE_MARK}#{a.file}\n#{a.source}" },
@@ -388,7 +388,8 @@ module Spinrail
           identities.concat(names.scan(/:(\w+)/).flatten)
           "#{indent}attr_accessor #{names}"
         end
-        parts << "#{SOURCE_MARK}#{rel(connection_file)}\n" + lower_channel(source.sub("ActionCable::Connection::Base", "Spinrail::CableConnection"), connection_file)
+        connection = source.sub("ActionCable::Connection::Base", "Spinrail::CableConnection")
+        parts << "#{SOURCE_MARK}#{rel(connection_file)}\n" + lower_channel(connection, connection_file)
       end
       base = File.exist?(base_file) ? File.read(base_file) : "module ApplicationCable\n  class Channel < ActionCable::Channel::Base\n  end\nend\n"
       parts << "#{SOURCE_MARK}#{rel(base_file)}\n" + lower_channel(base.sub("ActionCable::Channel::Base", "Spinrail::CableChannel"), base_file)
@@ -614,7 +615,7 @@ module Spinrail
         ruby = Erb.compile(File.read(v.template_path), signature, raw: raw, rich: rich_text_names, log_as: rel(v.template_path).delete_prefix("app/"))
         derived = v.computed.map { |n, body| "  #{n} = begin\n#{body.gsub(/^\s*/, '    ')}\n  end\n" }.join
         ruby = ruby.sub(/\A(def [^\n]*\n)/) { "#{$1}#{derived}" }
-        ctx = Context.new(self, File.dirname(v.key.tr('.', '/')), view: true, ivars: false)
+        ctx = Context.new(self, File.dirname(v.key.tr(".", "/")), view: true, ivars: false)
         "#{SOURCE_MARK}erb #{rel(v.template_path)}\n" + Lowering.lower(ruby, rel(v.template_path), ctx)
       end
       defs += @action_views.values.flat_map(&:methods).map do |source|
@@ -936,7 +937,8 @@ module Spinrail
       return nil if name == "ApplicationController"
       declared = controller.fetch(:layout, :none)
       layout = if declared == false then false
-               elsif declared != :none then @templates["layouts/#{declared}"] || raise(CompileError, "#{controller[:file]}: no app/views/layouts/#{declared}.html.erb")
+               elsif declared != :none
+                 @templates["layouts/#{declared}"] || raise(CompileError, "#{controller[:file]}: no app/views/layouts/#{declared}.html.erb")
                else @templates["layouts/#{controller[:dir]}"]
                end
       return nil if layout.nil?
@@ -1225,7 +1227,7 @@ module Spinrail
       required = job.fetch(:required, 1)
       optional = job.fetch(:optional, 0)
       call = ->(n) { "#{job[:name]}.new.perform(#{(0...n).map { |i| "Spinrail::Jobs.arg(args, #{i})" }.join(', ')})" }
-      (required...required + optional).reverse_each.reduce(call.(required + optional)) do |code, n|
+      (required...(required + optional)).reverse_each.reduce(call.(required + optional)) do |code, n|
         "(args.length > #{n} ? #{code} : #{call.(n)})"
       end
     end
@@ -1261,12 +1263,13 @@ module Spinrail
     # SPINRAIL_ROLLBACK=1 undoes the latest applied migration and exits.
     def rollback_code
       branches = migrations.migrations.reverse.map do |m|
-        action = m.down ? "Spinrail.unapply(#{m.version.inspect}, #{m.name.inspect}, #{m.down.inspect})" : "Spinrail.irreversible(#{m.version.inspect}, #{m.name.inspect})"
+        migration = "#{m.version.inspect}, #{m.name.inspect}"
+        action = m.down ? "Spinrail.unapply(#{migration}, #{m.down.inspect})" : "Spinrail.irreversible(#{migration})"
         "elsif latest == #{m.version.inspect}\n      #{action}"
       end
       ['  if ENV.fetch("SPINRAIL_ROLLBACK", "") == "1"',
        "    latest = Spinrail.latest_migration",
-       '    if latest.empty?',
+       "    if latest.empty?",
        '      puts "spinrail: nothing to roll back"',
        *branches.map { |b| "    #{b}" },
        "    end",

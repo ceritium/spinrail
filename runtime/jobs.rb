@@ -12,7 +12,8 @@ module Spinrail
     SCHEMA = [
       "CREATE TABLE IF NOT EXISTS spinrail_queue_jobs (id INTEGER PRIMARY KEY, queue_name TEXT NOT NULL, " \
       "class_name TEXT NOT NULL, arguments TEXT NOT NULL, priority INTEGER NOT NULL DEFAULT 0, " \
-      "executions INTEGER NOT NULL DEFAULT 0, concurrency_key TEXT NOT NULL DEFAULT '', scheduled_at TEXT NOT NULL DEFAULT '', finished_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, " \
+      "executions INTEGER NOT NULL DEFAULT 0, concurrency_key TEXT NOT NULL DEFAULT '', " \
+      "scheduled_at TEXT NOT NULL DEFAULT '', finished_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, " \
       "updated_at TEXT NOT NULL)",
       "CREATE INDEX IF NOT EXISTS index_spinrail_queue_jobs_on_class_name ON spinrail_queue_jobs (class_name)",
       "CREATE INDEX IF NOT EXISTS index_spinrail_queue_jobs_on_finished_at ON spinrail_queue_jobs (finished_at)",
@@ -162,7 +163,8 @@ module Spinrail
       db.bind_str(5, now)
       db.step
       db.finalize
-      db = Spinrail.prepare("UPDATE spinrail_queue_semaphores SET value = value - 1, expires_at = ?, updated_at = ? WHERE key = ? AND value > 0 RETURNING value", true)
+      db = Spinrail.prepare("UPDATE spinrail_queue_semaphores SET value = value - 1, expires_at = ?, updated_at = ? " \
+                            "WHERE key = ? AND value > 0 RETURNING value", true)
       db.bind_str(1, Jobs.expiry(name))
       db.bind_str(2, now)
       db.bind_str(3, key)
@@ -304,8 +306,9 @@ module Spinrail
       db.step
       db.finalize
       # Jobs with a concurrency key go one by one, through their semaphore.
-      db = Spinrail.prepare("SELECT s.job_id, j.class_name, j.concurrency_key, s.queue_name, s.priority FROM spinrail_queue_scheduled_executions s " \
-                            "JOIN spinrail_queue_jobs j ON j.id = s.job_id WHERE s.scheduled_at <= ? ORDER BY s.scheduled_at, s.priority, s.job_id LIMIT 100", true)
+      db = Spinrail.prepare("SELECT s.job_id, j.class_name, j.concurrency_key, s.queue_name, s.priority " \
+                            "FROM spinrail_queue_scheduled_executions s JOIN spinrail_queue_jobs j ON j.id = s.job_id " \
+                            "WHERE s.scheduled_at <= ? ORDER BY s.scheduled_at, s.priority, s.job_id LIMIT 100", true)
       db.bind_str(1, now)
       ids = [0]
       ids.clear
@@ -663,8 +666,8 @@ module Spinrail
       [["ready", "spinrail_queue_ready_executions"], ["scheduled", "spinrail_queue_scheduled_executions"],
        ["claimed", "spinrail_queue_claimed_executions"], ["blocked", "spinrail_queue_blocked_executions"],
        ["failed", "spinrail_queue_failed_executions"],
-       ["processes", "spinrail_queue_processes"]].map { |pair| pair[0] + "=" + Jobs.count("SELECT COUNT(*) FROM " + pair[1]).to_s }
-        .join(" ") + " finished=" + Jobs.count("SELECT COUNT(*) FROM spinrail_queue_jobs WHERE finished_at != ''").to_s
+       ["processes", "spinrail_queue_processes"]].map { |pair| pair[0] + "=" + Jobs.count("SELECT COUNT(*) FROM " + pair[1]).to_s }.join(" ") +
+        " finished=" + Jobs.count("SELECT COUNT(*) FROM spinrail_queue_jobs WHERE finished_at != ''").to_s
     end
 
     def self.paused
@@ -681,7 +684,9 @@ module Spinrail
                             "JOIN spinrail_queue_jobs j ON j.id = f.job_id ORDER BY j.id", true)
       out = [""]
       out.clear
-      out << db.col_int(0).to_s + " " + db.col_str(1) + " " + db.col_str(2) + " " + db.col_str(3) + " " + db.col_str(5) + "  " + db.col_str(4) while db.step == 1
+      while db.step == 1
+        out << db.col_int(0).to_s + " " + db.col_str(1) + " " + db.col_str(2) + " " + db.col_str(3) + " " + db.col_str(5) + "  " + db.col_str(4)
+      end
       db.finalize
       out
     end

@@ -353,7 +353,7 @@ module Spinrail
         system("cc", "-O2", "-I#{include_dir}", "-c", source, "-o", shim) or abort "spinrail: building tep_pg.o failed"
       end
       { "TEP_PG_O" => shim, "TEP_PG_CFLAGS" => "-I#{include_dir}", "TEP_PG_LIBS" => "-L#{lib_dir} -lpq",
-        "LIBRARY_PATH" => [lib_dir, ENV["LIBRARY_PATH"]].compact.join(":") }
+        "LIBRARY_PATH" => [lib_dir, ENV.fetch("LIBRARY_PATH", nil)].compact.join(":") }
     end
 
     # Harmless and not actionable by apps (see the build notes in README).

@@ -198,7 +198,6 @@ module Spinrail
       member_routes = @routes
       @routes = saved
 
-      collection_path = plural ? base : nil
       helper_params = scope.params
       all.each do |action|
         next unless actions.include?(action)
@@ -211,7 +210,7 @@ module Spinrail
         when :create then add(:post, base, controller, action)
         when :show then add(:get, member, controller, action)
         when :edit then add(:get, "#{member}/edit", controller, action)
-        when :update then add(:patch, member, controller, action); add(:put, member, controller, action)
+        when :update then [:patch, :put].each { |verb| add(verb, member, controller, action) }
         when :destroy then add(:delete, member, controller, action)
         end
       end

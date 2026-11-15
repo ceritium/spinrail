@@ -757,7 +757,8 @@ module Spinrail
         body = node.block.body ? @rw.slice(node.block.body) : ""
         if node.name == :button_to
           attrs = html_attrs(kw.reject { |k, _| %i[method params].include?(k) })
-          "out << form_open(#{url}, #{method.inspect}, \" class=\\\"button_to\\\"\")#{hidden_params(kw[:params])} + \"<button type=\\\"submit\\\"\" + #{attrs} + \">\"\n#{body}\nout << \"</button></form>\""
+          "out << form_open(#{url}, #{method.inspect}, \" class=\\\"button_to\\\"\")#{hidden_params(kw[:params])} + " \
+            "\"<button type=\\\"submit\\\"\" + #{attrs} + \">\"\n#{body}\nout << \"</button></form>\""
         else
           "out << \"<a href=\\\"\" + h(#{url}) + \"\\\"\" + #{html_attrs(kw)} + \">\"\n#{body}\nout << \"</a>\""
         end
@@ -1162,7 +1163,8 @@ module Spinrail
                when nil then '""'
                when Array
                  method, keywords, locals = content
-                 "#{@ctx.view? ? 'self' : 'ApplicationView.new(self)'}.#{method}(#{locals.map { |k, v| keywords ? "#{k}: #{@rw.slice(v)}" : @rw.slice(v) }.join(', ')})"
+                 passed = locals.map { |k, v| keywords ? "#{k}: #{@rw.slice(v)}" : @rw.slice(v) }
+                 "#{@ctx.view? ? 'self' : 'ApplicationView.new(self)'}.#{method}(#{passed.join(', ')})"
                else "(#{@rw.slice(content)}).to_s"
                end
         "turbo_stream_tag(#{node.name.to_s.inspect}, (#{@rw.slice(args.first)}).to_s, #{html})"

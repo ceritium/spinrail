@@ -130,7 +130,10 @@ module Spinrail
 
     private
 
-    STI_UNSUPPORTED = %i[has_many has_one belongs_to scope enum has_secure_password has_secure_token has_rich_text has_one_attached has_many_attached generates_token_for].freeze
+    def scope_sig(params) = params.empty? ? "" : "(#{params.join(', ')})"
+
+    STI_UNSUPPORTED = %i[has_many has_one belongs_to scope enum has_secure_password has_secure_token has_rich_text
+                         has_one_attached has_many_attached generates_token_for].freeze
 
     def collect(stmt)
       call = stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? ? stmt.name : nil
@@ -819,7 +822,7 @@ module Spinrail
           def self.group_count(name) = all.group_count(name)
         #{indent(join_sql_method, 2)}
         #{indent(preload_method, 2)}
-        #{indent(@scopes.map { |n, ps, _| sig = ps.empty? ? '' : "(#{ps.join(', ')})"; "def self.#{n}#{sig} = all.#{n}#{sig}" }, 2)}
+        #{indent(@scopes.map { |n, ps, _| "def self.#{n}#{scope_sig(ps)} = all.#{n}#{scope_sig(ps)}" }, 2)}
         #{indent(plucks, 2)}
 
           def self.find(id)

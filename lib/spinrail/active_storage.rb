@@ -206,7 +206,9 @@ module Spinrail
     RUBY
 
     def self.source(schema)
-      raise CompileError, "has_one_attached needs the #{TABLES.join(' and ')} tables (bin/rails active_storage:install's migration)" unless TABLES.all? { |t| schema.table(t) }
+      unless TABLES.all? { |t| schema.table(t) }
+        raise CompileError, "has_one_attached needs the #{TABLES.join(' and ')} tables (bin/rails active_storage:install's migration)"
+      end
 
       "module ActiveStorage\nend\n\n" + yield(BLOB, "active_storage_blobs", "active_storage/blob.rb") + "\n" +
         yield(ATTACHMENT, "active_storage_attachments", "active_storage/attachment.rb") + "\n" + SUPPORT

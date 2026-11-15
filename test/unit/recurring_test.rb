@@ -33,8 +33,8 @@ class RecurringTest < CompilerTest
         command: Post.delete_all
         schedule: every minute
     YAML
-    assert_equal [["cleanup", "production", "CleanupJob", %w[1 two], 3], ["everywhere", "", nil, [], -1]],
-                 r.tasks.map { |t| [t.key, t.env, t.job, t.args, t.priority] }
+    assert_equal([["cleanup", "production", "CleanupJob", %w[1 two], 3], ["everywhere", "", nil, [], -1]],
+                 r.tasks.map { |t| [t.key, t.env, t.job, t.args, t.priority] })
     assert_includes r.to_ruby, %(return Spinrail::Jobs.recur("cleanup", at, "CleanupJob", ["1", "two"], "", 3) if i == 0)
     assert_includes r.to_ruby, %(def self.command_1\n    Post.delete_all\n    nil\n  end)
     assert_equal [%(    return SpinrailRecurring.command_1 if name == "SpinrailRecurring/everywhere")], r.dispatch
