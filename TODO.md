@@ -256,7 +256,8 @@ Roughly in priority order within each section.
 - [ ] A single-threaded worker heartbeats between jobs: one running longer
       than the alive threshold gets it pruned. `-c N` heartbeats from the main
       thread.
-- [ ] Hostname of a process (spinel has no Socket; `HOSTNAME` if set).
+- [x] Hostname of a process (spinel has no Socket; `HOSTNAME` if set, else
+      `/proc/sys/kernel/hostname` or `/etc/hostname`).
 - [x] Queue pauses, retrying and discarding failed jobs, clearing finished
       ones (by hand, and after `SPINRAIL_JOBS_CLEAR_FINISHED_AFTER`, a day).
 - [x] Recurring tasks (`config/recurring.yml`): cron and Fugit's common
