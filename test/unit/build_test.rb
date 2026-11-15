@@ -91,6 +91,14 @@ class BuildTest < CompilerTest
         end
 
         def greeting(prefix, upcase: false) = prefix + user.name
+
+        delegate :name, to: :user, prefix: true, allow_nil: true
+        before_reset :forget
+        resets { Spinrail.set_locale("") }
+
+        private
+
+        def forget = nil
       end
     RUBY
     ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n",
@@ -99,7 +107,13 @@ class BuildTest < CompilerTest
     assert_includes ruby, "  def user=(value)\n    @user = value\n  end"
     assert_includes ruby, "def self.user=(value)\n    instance.user = value\n  end"
     assert_includes ruby, "def self.greeting(prefix, upcase: false)\n    instance.greeting(prefix, upcase: upcase)\n  end"
-    assert_includes ruby, "INSTANCES[Tep::APP.sched_current + 1] = Current.new"
+    assert_includes ruby, "fresh = Current.new\n    INSTANCES[Tep::APP.sched_current + 1] = fresh\n    fresh.spinrail_after_reset"
+    assert_includes ruby, "def spinrail_before_reset\n    forget\n  end"
+    assert_includes ruby, "def spinrail_after_reset\n    Spinrail.set_locale(\"\")\n  end"
+    assert_includes ruby, "def user_name\n    user&.name\n  end"
+    assert_includes ruby, "def self.user_name\n    instance.user_name\n  end"
+    assert_includes ruby, "def self.set(session: nil, user: nil)"
+    assert_includes ruby, "    current.user = user unless user.nil?"
     assert_includes ruby, "def self.reset_current = Current.reset"
     refute_includes ruby, "def self.reset_current = nil"
   end
@@ -109,6 +123,20 @@ class BuildTest < CompilerTest
     room = %(class Room < ApplicationRecord\n belongs_to :creator, class_name: "User", default: -> { Current.user }\nend\n)
     ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n", "app/models/room.rb" => room)
     assert_includes ruby, "if !persisted? && @creator_id.to_i == 0\n      default_record = (Current.user)\n      @creator_id = default_record.id if default_record\n    end"
+  end
+
+  def test_delegate
+    schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :name\n end\n create_table :rooms do |t|\n t.references :user\n end\nend\n"
+    room = %(class Room < ApplicationRecord\n belongs_to :user\n delegate :name, :name=, to: :user\n delegate :count, to: :class, prefix: :all\nend\n)
+    ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n", "app/models/room.rb" => room)
+    assert_includes ruby, "def name\n    user.name\n  end"
+    assert_includes ruby, "def name=(value)\n    user.name = value\n  end"
+    assert_includes ruby, "def all_count\n    self.class.count\n  end"
+    error = assert_raises(Spinrail::CompileError) do
+      build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n",
+            "app/models/room.rb" => "class Room < ApplicationRecord\n delegate :name, to: :user, private: true\nend\n")
+    end
+    assert_match(/unsupported delegate option private/, error.message)
   end
 
   def test_time_zone_from_config

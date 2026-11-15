@@ -141,7 +141,8 @@ to the server.
   `has_secure_password` with `authenticate_by`, `has_secure_token`. Plain classes
   (no superclass) in app/models compile as written. `Current <
   ActiveSupport::CurrentAttributes` keeps one instance per fiber, reset for each
-  request; `belongs_to` takes `default: -> { Current.user }`.
+  request, with `Current.set { }` and reset callbacks; `belongs_to` takes
+  `default: -> { Current.user }`; `delegate` (methods without arguments).
 - Controllers: `params[:x]`, `params[:post][:title]`, strong params,
   `request.files["post[avatar]"]` for uploads, `render :action, status:`,
   `render plain:`, `render json:`, `head`, `render view: Views::Stats::Show,

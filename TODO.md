@@ -64,8 +64,11 @@ Roughly in priority order within each section.
 - [x] `has_secure_token` (alphanumeric, not base58), `regenerate_<attr>`.
 - [x] Plain classes (no superclass) in app/models.
 - [x] `Current < ActiveSupport::CurrentAttributes`: `attribute`, overridable
-      writers with `super`, one instance per fiber, reset per request, job and
-      model test. Not yet: `delegate`, `Current.set { }`, `before_reset`/`resets`.
+      writers with `super`, one instance per fiber, reset around each request
+      and before each job and model test; `before_reset`/`after_reset`/`resets`;
+      `Current.set(user: u) { }` (a nil value leaves the attribute as it is).
+- [x] `delegate :a, :b=, to: :x, prefix:, allow_nil:` (methods without
+      arguments, and writers).
 - [x] `belongs_to ..., default: -> { ... }`.
 
 ## Controllers

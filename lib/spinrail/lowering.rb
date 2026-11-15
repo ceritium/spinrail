@@ -76,6 +76,11 @@ module Spinrail
     BUILDER = (FIELDS.keys + %i[label text_area textarea check_box checkbox select collection_select file_field submit]).freeze
 
     def visit_call_node(node)
+      if !@ctx.view? && Delegation.delegate?(node)
+        _, source = Delegation.expand(node, @file)
+        @rw.replace(node) { source }
+        return
+      end
       check_n_plus_one(node)
       if @ctx.test? && node.receiver.nil? && lower_test_call(node)
         super

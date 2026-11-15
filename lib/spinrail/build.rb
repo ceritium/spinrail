@@ -1030,6 +1030,7 @@ module Spinrail
             c.render_error(500, Spinrail.env == "development" ? e.class.name + ": " + e.message : "Something went wrong")
           end
           Spinrail.log.finish(res.status)
+          Spinrail.reset_current
           c.response_body
         end
       RUBY

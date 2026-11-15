@@ -6,6 +6,7 @@ module Tep
   class Request
     def remote_ip = @remote_host
     def user_agent = @req_headers["user-agent"]
+    def protocol = ssl? ? "https://" : "http://"
   end
 
   class UploadedFile
