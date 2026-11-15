@@ -93,4 +93,8 @@ class LoweringTest < CompilerTest
     assert_includes lower(%(image_tag "a.svg", size: 20, class: "x"), view: true), %( width=\\"20\\" height=\\"20\\")
     assert_includes lower(%(image_tag "a.svg", size: "20x30"), view: true), %( width=\\"20\\" height=\\"30\\")
   end
+
+  def test_block_pass_skips_the_n_plus_one_check
+    assert_equal "threads.each(&:join)", lower("threads.each(&:join)")
+  end
 end

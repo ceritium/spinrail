@@ -295,7 +295,7 @@ module Spinrail
     # queries once per post. A heuristic: the block variable's name gives
     # the model.
     def check_n_plus_one(node)
-      return unless %i[each map each_with_index].include?(node.name) && node.receiver && node.block
+      return unless %i[each map each_with_index].include?(node.name) && node.receiver && node.block.is_a?(Prism::BlockNode)
       var = node.block.parameters&.parameters&.requireds&.first
       return unless var.respond_to?(:name)
       assocs = @ctx.associations_of(Inflector.camelize(var.name.to_s))
