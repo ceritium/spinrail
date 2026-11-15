@@ -29,8 +29,7 @@ module Spinrail
     until Jobs::STOP[0]
       sleep 0.2
       next if Spinrail.clock - beaten < Jobs.heartbeat_interval
-      Jobs.heartbeat(id)
-      Jobs.prune(id)
+      Jobs.maintain(id)
       beaten = Spinrail.clock
     end
     threads.each(&:join)

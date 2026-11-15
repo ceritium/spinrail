@@ -184,7 +184,9 @@ to the server.
   retries don't wait. Each worker registers in `spinrail_queue_processes` and
   heartbeats; TERM or Ctrl+C finishes the jobs at hand and hands claimed ones
   back, and a worker silent for 5 minutes is pruned, its claimed jobs failed.
-  `spinrail jobs status` prints the counts.
+  `spinrail jobs status|failed` inspect the queue; `pause QUEUE`/`resume QUEUE`,
+  `retry ID|all` and `discard ID|all` (failed jobs) and `clear` (finished ones)
+  act on it. Workers delete finished jobs after a day.
   `spinrail jobs -c N` works N at once on spinel threads, each with its own
   connection.
 - Gems: the default group of the app's Gemfile is compiled into the binary, as

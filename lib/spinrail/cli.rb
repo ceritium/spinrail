@@ -23,7 +23,7 @@ module Spinrail
       "routes" => "List the routes",
       "check" => "Run the build's static checks without compiling",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
-      "jobs" => "Work background jobs until Ctrl+C (-c THREADS, -q QUEUES); jobs status",
+      "jobs" => "Work background jobs until Ctrl+C (-c THREADS, -q QUEUES); jobs status|failed|pause Q|resume Q|retry ID|discard ID|clear",
       "runner" => "Compile and run a script against the app: runner FILE or runner -e CODE",
       "db:migrate" => "Apply db/migrate and rewrite db/schema.rb from it",
       "db:rollback" => "Undo the latest applied migration",
@@ -240,7 +240,7 @@ module Spinrail
       if command
         build(binary) if stale?
         Dir.chdir(@app)
-        exec({ "SPINRAIL_JOBS" => command }, binary)
+        exec({ "SPINRAIL_JOBS" => ([command] + @argv).join(" ") }, binary)
       end
       if threads > 1
         output = flavored(File.join(@app, "tmp", "#{File.basename(@app)}-jobs"))

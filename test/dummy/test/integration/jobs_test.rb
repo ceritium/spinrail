@@ -82,18 +82,18 @@ class QueuesTest < Spinrail::IntegrationTest
   end
 end
 
-class ProcessesTest < Spinrail::IntegrationTest
-  server_env "SPINRAIL_JOBS_INLINE" => "0"
-
+module WorkerHelpers
   def worker(log, env = {})
     Process.spawn({ "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path, "SPINRAIL_JOBS" => "1", "SPINRAIL_ENV" => "test",
                     "SPINRAIL_JOBS_INLINE" => "0" }.merge(env), ENV.fetch("SPINRAIL_BINARY"), out: log, err: log)
   end
 
-  def status
-    IO.popen({ "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path, "SPINRAIL_JOBS" => "status", "SPINRAIL_ENV" => "test" },
-             [ENV.fetch("SPINRAIL_BINARY")], &:read).lines.last.strip
+  def jobs(command)
+    IO.popen({ "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path, "SPINRAIL_JOBS" => command, "SPINRAIL_ENV" => "test" },
+             [ENV.fetch("SPINRAIL_BINARY")], &:read).lines.map(&:strip).reject { |l| l.start_with?("SQL") || l.empty? }
   end
+
+  def status = jobs("status").first
 
   def wait_for(log, text)
     50.times do
@@ -102,6 +102,11 @@ class ProcessesTest < Spinrail::IntegrationTest
     end
     assert_includes File.read(log), text
   end
+end
+
+class ProcessesTest < Spinrail::IntegrationTest
+  include WorkerHelpers
+  server_env "SPINRAIL_JOBS_INLINE" => "0"
 
   # TERM lets the job at hand finish and hands the queued one back.
   def test_term_finishes_the_job_at_hand
@@ -138,6 +143,42 @@ class ProcessesTest < Spinrail::IntegrationTest
     wait_for(log, "working jobs")
     sleep 0.3
     assert_equal "ready=0 scheduled=0 claimed=0 failed=1 processes=1 finished=1", status
+  ensure
+    if pid
+      Process.kill("KILL", pid) rescue nil
+      Process.wait(pid) rescue nil
+    end
+  end
+end
+
+class QueueCommandsTest < Spinrail::IntegrationTest
+  include WorkerHelpers
+  server_env "SPINRAIL_JOBS_INLINE" => "0"
+
+  def test_pause_resume_retry_and_discard
+    get "/models/seed"
+    get "/models/shout?broken=1"
+    assert_equal ["paused default"], jobs("pause default")
+    assert_equal ["ready=2 scheduled=0 claimed=0 failed=0 processes=0 finished=0", "paused: default"], jobs("status")
+    log = File.join(Dir.tmpdir, "spinrail-pause-#{Process.pid}.log")
+    pid = worker(log)
+    wait_for(log, "working jobs")
+    sleep 0.5
+    assert_equal "ready=2 scheduled=0 claimed=0 failed=0 processes=1 finished=0", status
+    jobs("resume default")
+    wait_for(log, "Failed BrokenJob")
+    sleep 0.2
+    assert_equal "ready=0 scheduled=0 claimed=0 failed=1 processes=1 finished=1", status
+    assert_match(/\A\d+ BrokenJob default \["x"\] \S+ \S+  ArgumentError: broken x\z/, jobs("failed").last)
+    jobs("retry all")
+    50.times do
+      break if File.read(log).scan("Failed BrokenJob #2").size == 2
+      sleep 0.1
+    end
+    sleep 0.2
+    assert_equal "ready=0 scheduled=0 claimed=0 failed=1 processes=1 finished=1", status
+    assert_equal "ready=0 scheduled=0 claimed=0 failed=0 processes=1 finished=1", jobs("discard 2").last
+    assert_equal "ready=0 scheduled=0 claimed=0 failed=0 processes=1 finished=0", jobs("clear").last
   ensure
     if pid
       Process.kill("KILL", pid) rescue nil

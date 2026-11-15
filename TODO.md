@@ -257,8 +257,10 @@ Roughly in priority order within each section.
       than the alive threshold gets it pruned. `-c N` heartbeats from the main
       thread.
 - [ ] Hostname of a process (spinel has no Socket; `HOSTNAME` if set).
-- [ ] Recurring tasks (`config/recurring.yml`), `limits_concurrency`, queue
-      pauses, clearing finished jobs.
+- [x] Queue pauses, retrying and discarding failed jobs, clearing finished
+      ones (by hand, and after `SPINRAIL_JOBS_CLEAR_FINISHED_AFTER`, a day).
+- [ ] Recurring tasks (`config/recurring.yml`), `limits_concurrency`.
+- [ ] A dashboard (Mission Control).
 - [ ] Threaded jobs on PostgreSQL (the PG battery's state hasn't been checked
       for threads).
 - [ ] Typed arguments (Strings today); `perform_all_later`.

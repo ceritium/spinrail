@@ -35,7 +35,9 @@ module Spinrail
       "CREATE TABLE IF NOT EXISTS spinrail_queue_processes (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, " \
       "pid INTEGER NOT NULL, hostname TEXT NOT NULL DEFAULT '', metadata TEXT NOT NULL DEFAULT '', " \
       "last_heartbeat_at TEXT NOT NULL, created_at TEXT NOT NULL)",
-      "CREATE INDEX IF NOT EXISTS index_spinrail_queue_processes_on_last_heartbeat_at ON spinrail_queue_processes (last_heartbeat_at)"
+      "CREATE INDEX IF NOT EXISTS index_spinrail_queue_processes_on_last_heartbeat_at ON spinrail_queue_processes (last_heartbeat_at)",
+      "CREATE TABLE IF NOT EXISTS spinrail_queue_pauses (id INTEGER PRIMARY KEY, queue_name TEXT NOT NULL, created_at TEXT NOT NULL)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS index_spinrail_queue_pauses_on_queue_name ON spinrail_queue_pauses (queue_name)"
     ].freeze
 
     def self.schema
@@ -199,11 +201,11 @@ module Spinrail
     # "*" polls every queue by priority; otherwise queues in the order
     # given, "name*" matching a prefix.
     def self.poll_sql(queue)
-      sql = "SELECT job_id FROM spinrail_queue_ready_executions"
+      sql = "SELECT job_id FROM spinrail_queue_ready_executions WHERE queue_name NOT IN (SELECT queue_name FROM spinrail_queue_pauses)"
       if queue.end_with?("*") && queue != "*"
-        sql += " WHERE queue_name LIKE '" + queue.delete_suffix("*").gsub("'", "''") + "%'"
+        sql += " AND queue_name LIKE '" + queue.delete_suffix("*").gsub("'", "''") + "%'"
       elsif queue != "*"
-        sql += " WHERE queue_name = '" + queue.gsub("'", "''") + "'"
+        sql += " AND queue_name = '" + queue.gsub("'", "''") + "'"
       end
       sql + " ORDER BY priority, job_id LIMIT 1 /*SKIP LOCKED*/"
     end
@@ -373,6 +375,19 @@ module Spinrail
       end
     end
 
+    def self.clear_finished_after = ENV.fetch("SPINRAIL_JOBS_CLEAR_FINISHED_AFTER", "86400").to_i
+
+    # Finished jobs are kept a day (SPINRAIL_JOBS_CLEAR_FINISHED_AFTER), then
+    # deleted 500 at a time so the write lock stays short.
+    def self.clear_finished(all)
+      cutoff = all ? "9999" : Spinrail.format_time(Time.now - Jobs.clear_finished_after)
+      db = Spinrail.prepare("DELETE FROM spinrail_queue_jobs WHERE id IN (SELECT id FROM spinrail_queue_jobs " \
+                            "WHERE finished_at != '' AND finished_at < ? ORDER BY id LIMIT 500)", true)
+      db.bind_str(1, cutoff)
+      db.step
+      db.finalize
+    end
+
     # Processes silent past the alive threshold died mid-job: as in Solid
     # Queue, their claimed jobs fail (they may have run partly) and the
     # process row goes. So do claims whose process row is already gone.
@@ -400,6 +415,12 @@ module Spinrail
       end
     end
 
+    def self.maintain(process_id)
+      Jobs.heartbeat(process_id)
+      Jobs.prune(process_id)
+      Jobs.clear_finished(false)
+    end
+
     def self.delete_where(sql, id)
       db = Spinrail.prepare(sql, true)
       db.bind_int(1, id)
@@ -418,8 +439,7 @@ module Spinrail
       beaten = Spinrail.clock
       until STOP[0]
         if beat && Spinrail.clock - beaten >= Jobs.heartbeat_interval
-          Jobs.heartbeat(process_id)
-          Jobs.prune(process_id)
+          Jobs.maintain(process_id)
           beaten = Spinrail.clock
         end
         if Spinrail.clock - dispatched >= 1.0
@@ -454,16 +474,101 @@ module Spinrail
         .join(" ") + " finished=" + Jobs.count("SELECT COUNT(*) FROM spinrail_queue_jobs WHERE finished_at != ''").to_s
     end
 
-    # SPINRAIL_JOBS: 1 works jobs, status prints the queue's counts.
-    def self.command(name)
-      return if name.empty?
+    def self.paused
+      db = Spinrail.prepare("SELECT queue_name FROM spinrail_queue_pauses ORDER BY queue_name", true)
+      out = [""]
+      out.clear
+      out << db.col_str(0) while db.step == 1
+      db.finalize
+      out
+    end
+
+    def self.failures
+      db = Spinrail.prepare("SELECT j.id, j.class_name, j.queue_name, j.arguments, f.error, f.created_at FROM spinrail_queue_failed_executions f " \
+                            "JOIN spinrail_queue_jobs j ON j.id = f.job_id ORDER BY j.id", true)
+      out = [""]
+      out.clear
+      out << db.col_int(0).to_s + " " + db.col_str(1) + " " + db.col_str(2) + " " + db.col_str(3) + " " + db.col_str(5) + "  " + db.col_str(4) while db.step == 1
+      db.finalize
+      out
+    end
+
+    # Pausing keeps a queue's jobs ready but unclaimed, as in Solid Queue.
+    def self.pause(queue)
+      db = Spinrail.prepare("INSERT INTO spinrail_queue_pauses (queue_name, created_at) VALUES (?, ?) ON CONFLICT DO NOTHING", true)
+      db.bind_str(1, queue)
+      db.bind_str(2, Jobs.now)
+      db.step
+      db.finalize
+    end
+
+    def self.resume(queue)
+      db = Spinrail.prepare("DELETE FROM spinrail_queue_pauses WHERE queue_name = ?", true)
+      db.bind_str(1, queue)
+      db.step
+      db.finalize
+    end
+
+    # A failed job (id 0: all of them) goes back to ready, the same job row.
+    def self.retry_failed(id)
+      Spinrail.transaction do
+        db = Spinrail.prepare("INSERT INTO spinrail_queue_ready_executions (job_id, queue_name, priority, created_at) " \
+                              "SELECT j.id, j.queue_name, j.priority, ? FROM spinrail_queue_jobs j " \
+                              "JOIN spinrail_queue_failed_executions f ON f.job_id = j.id WHERE ? = 0 OR j.id = ? ON CONFLICT DO NOTHING", true)
+        db.bind_str(1, Jobs.now)
+        db.bind_int(2, id)
+        db.bind_int(3, id)
+        db.step
+        db.finalize
+        Jobs.delete_failed("DELETE FROM spinrail_queue_failed_executions WHERE ? = 0 OR job_id = ?", id)
+      end
+    end
+
+    def self.discard_failed(id)
+      Spinrail.transaction do
+        Jobs.delete_failed("DELETE FROM spinrail_queue_jobs WHERE id IN (SELECT job_id FROM spinrail_queue_failed_executions WHERE ? = 0 OR job_id = ?)", id)
+        Jobs.delete_failed("DELETE FROM spinrail_queue_failed_executions WHERE ? = 0 OR job_id = ?", id)
+      end
+    end
+
+    def self.delete_failed(sql, id)
+      db = Spinrail.prepare(sql, true)
+      db.bind_int(1, id)
+      db.bind_int(2, id)
+      db.step
+      db.finalize
+    end
+
+    # SPINRAIL_JOBS: "1" works jobs; "status", "failed", "pause QUEUE",
+    # "resume QUEUE", "retry ID|all", "discard ID|all" and "clear" (finished
+    # jobs) act on the queue and exit.
+    def self.command(line)
+      return if line.empty?
+      Jobs.start if line == "1"
+      words = line.split(" ")
+      name = words[0]
+      arg = words.length > 1 ? words[1] : ""
+      id = arg == "all" ? 0 : arg.to_i
       if name == "status"
         puts Jobs.status
-        exit(0)
+        paused = Jobs.paused
+        puts "paused: " + paused.join(",") unless paused.empty?
+      elsif name == "failed"
+        Jobs.failures.each { |f| puts f }
+      elsif (name == "pause" || name == "resume") && !arg.empty?
+        name == "pause" ? Jobs.pause(arg) : Jobs.resume(arg)
+        puts name + "d " + arg
+      elsif (name == "retry" || name == "discard") && (arg == "all" || id > 0)
+        name == "retry" ? Jobs.retry_failed(id) : Jobs.discard_failed(id)
+        puts Jobs.status
+      elsif name == "clear"
+        Jobs.clear_finished(true) while Jobs.count("SELECT COUNT(*) FROM spinrail_queue_jobs WHERE finished_at != ''") > 0
+        puts Jobs.status
+      else
+        $stderr.puts "spinrail: jobs takes status, failed, pause QUEUE, resume QUEUE, retry ID|all, discard ID|all or clear"
+        exit(1)
       end
-      Jobs.start if name == "1"
-      $stderr.puts "spinrail: unknown jobs command " + name
-      exit(1)
+      exit(0)
     end
 
     def self.stop(process_id)
