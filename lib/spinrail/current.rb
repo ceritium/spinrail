@@ -77,7 +77,7 @@ module Spinrail
     private
 
     # Written out: spinel loses an inherited attr_accessor writer called
-    # through an Array element here.
+    # through an Array element here (ceritium/spinrail#1).
     def accessors
       @attributes.map { |a| "def #{a} = @#{a}\n\ndef #{a}=(value)\n  @#{a} = value\nend\n" }.join("\n")
     end
