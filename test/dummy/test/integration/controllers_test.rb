@@ -37,6 +37,12 @@ class ControllersTest < Spinrail::IntegrationTest
     assert_equal "updated Renamed", response.body
   end
 
+  def test_any_rack_status_symbol
+    patch "/widgets/1", params: { title: "taken", token: "secret" }
+    assert_response :conflict
+    assert_equal "409", response.code
+  end
+
   def test_head
     delete "/widgets/2?token=secret"
     assert_response :no_content

@@ -14,6 +14,7 @@ class WidgetsController < ApplicationController
   end
 
   def update
+    return render(plain: "taken", status: :conflict) if params[:title] == "taken"
     @widget.update(title: params[:title])
     render plain: "updated " + @widget.title
   end

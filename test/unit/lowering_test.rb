@@ -23,6 +23,8 @@ class LoweringTest < CompilerTest
     assert_equal "head(204)", lower("head :no_content")
     assert_equal %(render_json("{" + "\\"ok\\":" + (true).to_json + "}", 200)), lower("render json: { ok: true }")
     assert_equal "render_json((@post).to_json, 201)", lower("render json: @post, status: :created")
+    assert_equal "head(429)", lower("head :too_many_requests")
+    assert_equal "head(422)", lower("head :unprocessable_entity")
   end
 
   def test_query_forms
