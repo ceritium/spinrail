@@ -136,7 +136,7 @@ module Spinrail
     def translate(sql)
       return table_info(sql) if sql.start_with?("PRAGMA table_info(")
       out = sql.sub("INTEGER PRIMARY KEY", "BIGSERIAL PRIMARY KEY").gsub(" REAL", " DOUBLE PRECISION")
-               .gsub(" LIMIT -1", " LIMIT ALL").sub("BEGIN IMMEDIATE", "BEGIN")
+               .gsub(" LIMIT -1", " LIMIT ALL").sub("BEGIN IMMEDIATE", "BEGIN").sub("/*SKIP LOCKED*/", "FOR UPDATE SKIP LOCKED")
       if out.start_with?("INSERT OR REPLACE INTO spinrail_cache")
         out = out.sub("INSERT OR REPLACE INTO", "INSERT INTO") +
               " ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = EXCLUDED.expires_at"

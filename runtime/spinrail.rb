@@ -931,106 +931,6 @@ module Spinrail
     exit(1)
   end
 
-  # Background jobs: app/jobs classes with perform(arg), arg a String.
-  # perform_later enqueues into spinrail_jobs; `spinrail jobs` drains it.
-  class Job
-    def perform(arg)
-      "" + arg
-    end
-  end
-
-  JOB_ATTEMPTS = 3
-
-  def self.jobs_schema
-    Spinrail.db.exec("CREATE TABLE IF NOT EXISTS spinrail_jobs (id INTEGER PRIMARY KEY, job TEXT NOT NULL, " \
-                   "arg TEXT NOT NULL, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, " \
-                   "run_at INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)")
-  end
-
-  # Tests run jobs right away unless SPINRAIL_JOBS_INLINE=0.
-  def self.enqueue(job, arg)
-    if ENV.fetch("SPINRAIL_JOBS_INLINE", Spinrail.env == "test" ? "1" : "0") == "1"
-      SpinrailJobs.dispatch(job, arg)
-      return 0
-    end
-    Spinrail.jobs_schema
-    db = Spinrail.prepare("INSERT INTO spinrail_jobs (job, arg, status, run_at, created_at) VALUES (?, ?, 'queued', ?, ?)", true)
-    db.bind_str(1, job)
-    db.bind_str(2, arg)
-    db.bind_int(3, Time.now.to_i)
-    db.bind_int(4, Time.now.to_i)
-    db.step
-    db.finalize
-    db.last_rowid
-  end
-
-  # Claims the oldest due job inside BEGIN IMMEDIATE, so two workers can't
-  # take the same row. Returns "id|attempts|job|arg" or "".
-  def self.claim_job
-    db = Spinrail.db
-    # Busy past busy_timeout: claim nothing rather than race outside a transaction.
-    return "" unless db.exec("BEGIN IMMEDIATE")
-    db.prepare("SELECT id, attempts, job, arg FROM spinrail_jobs WHERE status = 'queued' AND run_at <= ? ORDER BY id LIMIT 1")
-    db.bind_int(1, Time.now.to_i)
-    claimed = ""
-    id = 0
-    if db.step == 1
-      id = db.col_int(0)
-      claimed = id.to_s + "|" + db.col_int(1).to_s + "|" + db.col_str(2) + "|" + db.col_str(3)
-    end
-    db.finalize
-    if id > 0
-      db.prepare("UPDATE spinrail_jobs SET status = 'running' WHERE id = ?")
-      db.bind_int(1, id)
-      db.step
-      db.finalize
-    end
-    db.exec("COMMIT")
-    claimed
-  end
-
-  def self.finish_job(id, status, attempts, run_at, error)
-    db = Spinrail.db
-    db.prepare("UPDATE spinrail_jobs SET status = ?, attempts = ?, run_at = ?, error = ? WHERE id = ?")
-    db.bind_str(1, status)
-    db.bind_int(2, attempts)
-    db.bind_int(3, run_at)
-    db.bind_str(4, error)
-    db.bind_int(5, id)
-    db.step
-    db.finalize
-  end
-
-  # The `spinrail jobs` loop: failures retry after 2, 4... seconds, then stay failed.
-  def self.work_jobs
-    Spinrail.jobs_schema
-    puts "spinrail: working jobs (Ctrl+C to stop)"
-    $stdout.flush
-    loop { sleep 1 unless Spinrail.work_job }
-  end
-
-  # Claims and performs one job; false when none was due.
-  def self.work_job
-    claimed = Spinrail.claim_job
-    return false if claimed.empty?
-    parts = claimed.split("|", 4)
-    id = parts[0].to_i
-    attempts = parts[1].to_i + 1
-    t0 = Spinrail.clock
-    begin
-      SpinrailJobs.dispatch(parts[2], parts[3])
-      Spinrail.finish_job(id, "done", attempts, Time.now.to_i, "")
-      Spinrail.say("Performed " + parts[2] + " #" + id.to_s + " in " + format("%.1f", (Spinrail.clock - t0) * 1000.0) + "ms")
-    rescue StandardError => e
-      retry_job = attempts < JOB_ATTEMPTS
-      wait = 2
-      (attempts - 1).times { wait *= 2 }
-      Spinrail.finish_job(id, retry_job ? "queued" : "failed", attempts, Time.now.to_i + wait, e.class.name + ": " + e.message)
-      Spinrail.say("Failed " + parts[2] + " #" + id.to_s + ": " + e.message + (retry_job ? " (retrying in " + wait.to_s + "s)" : ""))
-    end
-    true
-  end
-
   def self.say(line)
     Spinrail.synchronize do
       puts line
@@ -1464,7 +1364,7 @@ module Spinrail
     end
 
     def deliver_later
-      Spinrail.enqueue("Spinrail::Mail", to_json)
+      Spinrail::Jobs.enqueue("Spinrail::Mail", [to_json], "", -1, "")
       self
     end
 

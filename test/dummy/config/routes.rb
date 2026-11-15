@@ -48,6 +48,7 @@ Spinrail.routes.draw do
   get "/models/big", to: "models#big"
   get "/models/joins", to: "models#joins"
   get "/models/shout", to: "models#shout"
+  get "/models/enqueue", to: "models#enqueue"
   get "/models/cached", to: "models#cached"
   get "/models/signed", to: "models#signed"
   get "/models/scopes", to: "models#scopes"

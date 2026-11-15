@@ -183,6 +183,14 @@ class ModelsController < ApplicationController
     render plain: "queued"
   end
 
+  def enqueue
+    NoteJob.set(wait: 2.seconds).perform_later("later")
+    NoteJob.perform_later("low")
+    NoteJob.set(queue: :default, priority: 5).perform_later("d", "5")
+    NoteJob.set(queue: :default, priority: 0).perform_later("d", "0")
+    render plain: "queued"
+  end
+
   def cached
     Rails.cache.delete("count") if params[:reset] == "1"
     count = Rails.cache.fetch("count", expires_in: 5.minutes) { Post.count.to_s }

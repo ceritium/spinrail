@@ -5,6 +5,13 @@ class InlineJobsTest < Spinrail::IntegrationTest
     get "/models/authors"
     assert_equal "Ana!,Bea", response.body
   end
+
+  def test_scheduled_jobs_run_right_away_in_tests
+    get "/models/seed"
+    get "/models/enqueue"
+    get "/models/authors"
+    assert_equal "Ana,Bea,later,low,d5,d0", response.body
+  end
 end
 
 class QueuedJobsTest < Spinrail::IntegrationTest
@@ -28,6 +35,37 @@ class QueuedJobsTest < Spinrail::IntegrationTest
     sleep 0.3
     assert_includes File.read(log), "Performed ShoutJob"
     assert_includes File.read(log), "Failed BrokenJob"
+  ensure
+    Process.kill("KILL", worker) if worker
+    Process.wait(worker) if worker
+  end
+end
+
+class QueuesTest < Spinrail::IntegrationTest
+  server_env "SPINRAIL_JOBS_INLINE" => "0"
+
+  # Queues in the order given, then priority (lower first); "later" waits 2s.
+  def test_queues_priorities_and_scheduled_jobs
+    get "/models/seed"
+    get "/models/enqueue"
+    enqueued = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    log = File.join(Dir.tmpdir, "spinrail-queues-#{Process.pid}.log")
+    worker = Process.spawn({ "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path, "SPINRAIL_JOBS" => "1", "SPINRAIL_ENV" => "test",
+                             "SPINRAIL_JOBS_INLINE" => "0", "SPINRAIL_JOBS_QUEUES" => "default,low" },
+                           ENV.fetch("SPINRAIL_BINARY"), out: log, err: log)
+    50.times do
+      get "/models/authors"
+      break if response.body.end_with?(",low")
+      sleep 0.1
+    end
+    assert_equal "Ana,Bea,d0,d5,low", response.body
+    50.times do
+      get "/models/authors"
+      break if response.body.end_with?(",later")
+      sleep 0.1
+    end
+    assert_equal "Ana,Bea,d0,d5,low,later", response.body
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - enqueued, :>=, 1.5
   ensure
     Process.kill("KILL", worker) if worker
     Process.wait(worker) if worker

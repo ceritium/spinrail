@@ -11,15 +11,14 @@ module Spinrail
   end
 
   def self.work_jobs_threaded(count)
-    Spinrail.jobs_schema
     (count - 1).times { DBS << Database.new }
-    puts "spinrail: working jobs on " + count.to_s + " threads (Ctrl+C to stop)"
+    puts "spinrail: working jobs on " + count.to_s + " threads, queues " + Spinrail::Jobs.queues.join(",") + " (Ctrl+C to stop)"
     $stdout.flush
     threads = []
     count.times do |i|
       threads << Thread.new(i) do |slot|
         Thread.current[:spinrail_db] = slot
-        loop { sleep 1 unless Spinrail.work_job }
+        Spinrail::Jobs.work(0)
       end
     end
     threads.each(&:join)

@@ -241,14 +241,21 @@ Roughly in priority order within each section.
 
 ## Jobs
 
-- [x] `app/jobs` with `perform_later`/`perform_now`, a SQLite queue claimed under
-      `BEGIN IMMEDIATE`, retries with backoff, `spinrail jobs`; inline in tests.
+- [x] `app/jobs` with `perform_later`/`perform_now`, `spinrail jobs`; inline in tests.
 - [x] `spinrail jobs -c N`: N threads in a binary of its own (the server keeps
       the single-threaded runtime), a connection each.
+- [x] Solid Queue's tables (`spinrail_queue_jobs` plus ready, scheduled, claimed
+      and failed executions), named queues polled in order with prefixes,
+      priorities, `set(wait:, wait_until:, queue:, priority:)`, `queue_as`,
+      `queue_with_priority`, several arguments (Strings, optional ones too).
+- [ ] `retry_on`/`discard_on` (dropped at build time; a failure is final).
+- [ ] Processes with heartbeats; claimed jobs of a dead worker go back to ready.
+- [ ] Recurring tasks (`config/recurring.yml`), `limits_concurrency`, queue
+      pauses, clearing finished jobs.
 - [ ] Threaded jobs on PostgreSQL (the PG battery's state hasn't been checked
       for threads).
-- [ ] Several arguments and typed arguments (one String argument today);
-      `set(wait:)`, scheduled jobs.
+- [ ] Typed arguments (Strings today); `perform_all_later`.
+- [ ] The old `spinrail_jobs` table is left alone, rows and all.
 
 ## Runtime
 

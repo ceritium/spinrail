@@ -97,4 +97,15 @@ class LoweringTest < CompilerTest
   def test_block_pass_skips_the_n_plus_one_check
     assert_equal "threads.each(&:join)", lower("threads.each(&:join)")
   end
+
+  def test_job_calls
+    assert_equal %(Spinrail::Jobs.enqueue("ShoutJob", [(id).to_s, ("x").to_s], "", -1, "")), lower(%(ShoutJob.perform_later(id, "x")))
+    assert_equal %(Spinrail::Jobs.enqueue("PingJob", Spinrail.no_binds, "", -1, "")), lower("PingJob.perform_later")
+    assert_equal %(Spinrail::Jobs.enqueue("ShoutJob", [(id).to_s], (:low).to_s, (5).to_i, Spinrail.format_time(Time.now + (5.minutes)))),
+                 lower("ShoutJob.set(queue: :low, priority: 5, wait: 5.minutes).perform_later(id)")
+    assert_equal %(Spinrail::Jobs.enqueue("ShoutJob", [(id).to_s], "", -1, Spinrail.format_time(Spinrail.to_time(t)))),
+                 lower("ShoutJob.set(wait_until: t).perform_later(id)")
+    assert_equal "ShoutJob.new.perform((id).to_s)", lower("ShoutJob.perform_now(id)")
+    assert_raises(Spinrail::CompileError) { lower("ShoutJob.set(retry: 1).perform_later(id)") }
+  end
 end

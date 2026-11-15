@@ -172,8 +172,13 @@ to the server.
   with `SPINRAIL_MAIL_DELIVERY=file` (request tests read them via `deliveries`), or
   to an HTTP API with `SPINRAIL_MAIL_DELIVERY=http`, `SPINRAIL_MAIL_URL` and
   `SPINRAIL_MAIL_TOKEN` (JSON `{from, to, subject, text, html}`, as Resend takes).
-- Jobs: `app/jobs/*_job.rb` with `perform(arg)`, `perform_later` into a SQLite
-  queue drained by `spinrail jobs` (3 attempts with backoff); inline in tests.
+- Jobs: `app/jobs/*_job.rb`, on Solid Queue's model: `perform_later(a, b)` (or
+  `set(queue:, priority:, wait:, wait_until:)` first) writes a job row and a
+  ready or scheduled execution to `spinrail_queue_*` tables; `spinrail jobs`
+  moves due scheduled jobs to ready, claims them by queue order (`-q
+  "real_time,background*"`, `*` by default) then priority (lower first), and
+  leaves failures as failed executions. `queue_as` and `queue_with_priority`
+  set a job's defaults. Arguments arrive as Strings. Inline in tests.
   `spinrail jobs -c N` works N at once on spinel threads, each with its own
   connection.
 - Gems: the default group of the app's Gemfile is compiled into the binary, as

@@ -426,7 +426,7 @@ module Spinrail
     def postgres? = ENV.fetch("SPINRAIL_DATABASE", "sqlite") == "postgres"
 
     def runtime_source
-      source = File.read(RUNTIME) + "\n" + File.read(File.join(File.dirname(RUNTIME), "html.rb"))
+      source = %w[html.rb jobs.rb].reduce(File.read(RUNTIME)) { |s, f| s + "\n" + File.read(File.join(File.dirname(RUNTIME), f)) }
       source = threaded(source) if @threads
       return source unless postgres?
       source.sub("@conn = Tep::SQLite.new", "@conn = Spinrail::PgConnection.new")
@@ -1064,17 +1064,69 @@ module Spinrail
       base = files.find { |f| f.end_with?("/application_job.rb") }
       jobs = files - [base]
       parts = [base ? File.read(base).sub(/<\s*(ActiveJob::Base|Spinrail::Job)/, "< Spinrail::Job") : "class ApplicationJob < Spinrail::Job\nend\n"]
-      names = jobs.map do |file|
-        klass = Spinrail.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) } or
-          raise CompileError, "#{rel(file)}: expected a job class"
+      defaults = base ? job_options(base).slice(:queue, :priority) : {}
+      specs = jobs.map do |file|
         parts << "#{SOURCE_MARK}#{rel(file)}\n" + Lowering.lower(File.read(file), rel(file), Context.new(self, "", view: false, job: true))
-        klass.constant_path.slice
+        defaults.merge(job_options(file))
       end
-      branches = ["  Spinrail.reset_current"] + names.map { |n| "  return #{n}.new.perform(arg) if name == #{n.inspect}" }
-      branches << '  return Spinrail::Mail.from_json(arg).deliver_now.to if name == "Spinrail::Mail"' 
-      parts << "module SpinrailJobs\n  def self.dispatch(name, arg)\n#{branches.map { |b| "  #{b}" }.join("\n")}\n" \
-               "    raise ArgumentError, \"unknown job \" + name\n  end\nend\n"
+      dispatch = specs.map { |j| "    return #{perform_call(j)} if name == #{j[:name].inspect}" }
+      queues = specs.filter_map { |j| "    return #{j[:queue].inspect} if name == #{j[:name].inspect}" if j[:queue] }
+      priorities = specs.filter_map { |j| "    return #{j[:priority]} if name == #{j[:name].inspect}" if j[:priority] }
+      parts << <<~RUBY
+        module SpinrailJobs
+          def self.dispatch(name, args)
+            Spinrail.reset_current
+        #{dispatch.join("\n")}
+            return Spinrail::Mail.from_json(Spinrail::Jobs.arg(args, 0)).deliver_now.to if name == "Spinrail::Mail"
+            raise ArgumentError, "unknown job " + name
+          end
+
+          def self.queue_for(name)
+        #{queues.join("\n")}
+            #{(defaults[:queue] || "default").inspect}
+          end
+
+          def self.priority_for(name)
+        #{priorities.join("\n")}
+            #{defaults[:priority] || 0}
+          end
+        end
+      RUBY
       parts.join("\n")
+    end
+
+    # queue_as, queue_with_priority and perform's arity, read at build time
+    # since spinel can't dispatch on a class looked up by name.
+    def job_options(file)
+      klass = Spinrail.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) } or
+        raise CompileError, "#{rel(file)}: expected a job class"
+      spec = { name: klass.constant_path.slice }
+      (klass.body&.body || []).each do |stmt|
+        if stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && %i[queue_as queue_with_priority].include?(stmt.name)
+          value = stmt.arguments&.arguments&.first
+          literal = value && Spinrail.literal(value)
+          raise CompileError, "#{rel(file)}: #{stmt.name} takes a literal" if literal.nil?
+          stmt.name == :queue_as ? spec[:queue] = literal.to_s : spec[:priority] = Integer(literal)
+        elsif stmt.is_a?(Prism::DefNode) && stmt.name == :perform && stmt.receiver.nil?
+          params = stmt.parameters
+          if params&.rest || params&.keywords&.any? || params&.keyword_rest
+            raise CompileError, "#{rel(file)}: perform takes positional arguments only"
+          end
+          spec[:required] = params ? params.requireds.size : 0
+          spec[:optional] = params ? params.optionals.size : 0
+        end
+      end
+      spec
+    end
+
+    # perform(a, b = "x"): args[1] only when the job was enqueued with it.
+    def perform_call(job)
+      required = job.fetch(:required, 1)
+      optional = job.fetch(:optional, 0)
+      call = ->(n) { "#{job[:name]}.new.perform(#{(0...n).map { |i| "Spinrail::Jobs.arg(args, #{i})" }.join(', ')})" }
+      (required...required + optional).reverse_each.reduce(call.(required + optional)) do |code, n|
+        "(args.length > #{n} ? #{code} : #{call.(n)})"
+      end
     end
 
     # test/models/*_test.rb: class PostTest < Spinrail::ModelTest (or
@@ -1158,11 +1210,12 @@ module Spinrail
           end
           db = Spinrail.db
         #{statements.join("\n")}
+          Spinrail::Jobs.schema
           boot_sql = ENV.fetch("SPINRAIL_BOOT_SQL", "")
           Spinrail.run_sql_file(boot_sql) unless boot_sql.empty?
         #{seeds ? "  if ENV.fetch(\"SPINRAIL_SEED\", \"\") == \"1\"\n    SpinrailSeeds.run\n    puts \"spinrail: seeded\"\n    exit(0)\n  end" : ""}
         #{@tests ? test_runner : ''}
-          #{@threads ? 'Spinrail.work_jobs_threaded(ENV.fetch("SPINRAIL_JOB_THREADS", "2").to_i)' : 'Spinrail.work_jobs if ENV.fetch("SPINRAIL_JOBS", "") == "1"'}
+          #{@threads ? 'Spinrail.work_jobs_threaded(ENV.fetch("SPINRAIL_JOB_THREADS", "2").to_i)' : 'Spinrail::Jobs.start if ENV.fetch("SPINRAIL_JOBS", "") == "1"'}
         #{@script ? "  SpinrailRunner.run\n    exit(0)" : ''}
           Spinrail::DB.close
         end

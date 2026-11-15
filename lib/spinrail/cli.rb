@@ -23,7 +23,7 @@ module Spinrail
       "routes" => "List the routes",
       "check" => "Run the build's static checks without compiling",
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
-      "jobs" => "Work background jobs (app/jobs) until Ctrl+C (-c THREADS)",
+      "jobs" => "Work background jobs (app/jobs) until Ctrl+C (-c THREADS, -q QUEUES)",
       "runner" => "Compile and run a script against the app: runner FILE or runner -e CODE",
       "db:migrate" => "Apply db/migrate and rewrite db/schema.rb from it",
       "db:rollback" => "Undo the latest applied migration",
@@ -231,8 +231,11 @@ module Spinrail
 
     # -c N > 1 works N jobs at once on spinel threads, in a binary of its
     # own so the server keeps the single-threaded runtime.
+    # -q "real_time,background*" polls those queues in that order.
     def jobs
       threads = option("-c").to_i
+      queues = option("-q")
+      ENV["SPINRAIL_JOBS_QUEUES"] = queues if queues
       if threads > 1
         output = flavored(File.join(@app, "tmp", "#{File.basename(@app)}-jobs"))
         compile(output, threads: true) or abort "spinrail: build failed" if !File.exist?(output) || input_mtimes.values.max > File.mtime(output)

@@ -42,8 +42,8 @@ is easy to revisit.
   longer drops connections in bursts (fixed in the fork).
 - The gemspec says MIT and lists you as author; the repo has no LICENSE
   yet. Confirm before publishing anything.
-- Jobs take a single argument, passed as a String (perform(id) gets "3").
-  Enough, or encode several typed arguments?
+- Jobs take several arguments, but as Strings (perform(id) gets "3"). Typing
+  them needs the lowering to convert by perform's signature. Worth it?
 - Spinel segfaulted (exit 139, in unrelated requests) when a subclass of
   Spinrail::Controller redefined initialize with a different arity; mailers
   now share a ViewContext base instead. Worth a minimal repro for matz/spinel?

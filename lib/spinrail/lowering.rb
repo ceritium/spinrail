@@ -194,11 +194,8 @@ module Spinrail
       elsif BROADCAST.match?(node.name.to_s)
         lower_broadcast(node)
       elsif job_call?(node)
-        arg = node.arguments&.arguments&.first
-        value = arg ? "(#{@rw.slice(arg)}).to_s" : '""'
-        name = node.receiver.slice
-        @rw.replace(node) { node.name == :perform_later ? "Spinrail.enqueue(#{name.inspect}, #{value})" : "#{name}.new.perform(#{value})" }
-      elsif node.receiver.nil? && @ctx.job? && %i[queue_as retry_on discard_on].include?(node.name)
+        lower_job_call(node)
+      elsif node.receiver.nil? && @ctx.job? && JOB_DSL.include?(node.name)
         @rw.replace(node) { "" }
       elsif node.receiver.nil? && @ctx.controller? && CONTROLLER_DSL.include?(node.name)
         @rw.replace(node) { "" }
@@ -430,11 +427,45 @@ module Spinrail
       end
     end
 
-    # WelcomeJob.perform_later(x): jobs take one argument, passed as a String.
+    JOB_DSL = %i[queue_as queue_with_priority retry_on discard_on].freeze
+    JOB_SET = %i[queue priority wait wait_until].freeze
+
+    # WelcomeJob.perform_later(x, y), or WelcomeJob.set(...).perform_later:
+    # arguments go as Strings.
     def job_call?(node)
-      %i[perform_later perform_now].include?(node.name) &&
-        (node.receiver.is_a?(Prism::ConstantReadNode) || node.receiver.is_a?(Prism::ConstantPathNode)) &&
-        node.receiver.slice.end_with?("Job") && (node.arguments.nil? || node.arguments.arguments.size == 1)
+      return false unless %i[perform_later perform_now].include?(node.name)
+      klass = node.receiver
+      klass = klass.receiver if node.name == :perform_later && klass.is_a?(Prism::CallNode) && klass.name == :set
+      (klass.is_a?(Prism::ConstantReadNode) || klass.is_a?(Prism::ConstantPathNode)) && klass.slice.end_with?("Job")
+    end
+
+    def lower_job_call(node)
+      args = node.arguments&.arguments || []
+      fail!(node, "job arguments are positional") if args.any? { |a| a.is_a?(Prism::KeywordHashNode) || a.is_a?(Prism::SplatNode) }
+      strings = -> { args.map { |a| "(#{@rw.slice(a)}).to_s" } }
+      if node.name == :perform_now
+        @rw.replace(node) { "#{node.receiver.slice}.new.perform(#{strings.().join(', ')})" }
+        return
+      end
+      klass = node.receiver
+      options = {}
+      if klass.is_a?(Prism::CallNode)
+        _, options = Spinrail.call_args(klass)
+        unknown = options.keys - JOB_SET
+        fail!(node, "set takes #{JOB_SET.join(', ')}; not #{unknown.join(', ')}") if unknown.any?
+        klass = klass.receiver
+      end
+      @rw.replace(node) do
+        opt = ->(k) { @rw.slice(options[k]) }
+        queue = options[:queue] ? "(#{opt.(:queue)}).to_s" : '""'
+        priority = options[:priority] ? "(#{opt.(:priority)}).to_i" : "-1"
+        at = if options[:wait_until] then "Spinrail.format_time(Spinrail.to_time(#{opt.(:wait_until)}))"
+             elsif options[:wait] then "Spinrail.format_time(Time.now + (#{opt.(:wait)}))"
+             else '""'
+             end
+        list = args.empty? ? "Spinrail.no_binds" : "[#{strings.().join(', ')}]"
+        "Spinrail::Jobs.enqueue(#{klass.slice.inspect}, #{list}, #{queue}, #{priority}, #{at})"
+      end
     end
 
     def request_params?(node)
