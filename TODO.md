@@ -19,7 +19,8 @@ Roughly in priority order within each section.
 - [x] Callbacks: `before/after_validation|save|create|update|destroy`.
 - [x] Column types: boolean (`published?`), float/decimal, `default:`.
 - [x] Building through associations: `post.comments.create(...)`, `.new`, `.build`.
-- [x] `scope :name, ->(args) { ... }` (chainable), `update_all`.
+- [x] `scope :name, ->(args) { ... }` (chainable), `update_all`; `def self.x`
+      also runs on relations, scoped to them; `last(n)` in scope bodies.
 - [x] Pagination: `page(n).per(k)`, `current_page`, `total_pages`, `<%= paginate @posts %>`.
 - [x] Eager loading: `includes`/`preload` run one query per association.
 - [x] `joins(:assoc)` with `where(table: { column: value })`, `group(:col).count`.
@@ -92,7 +93,8 @@ Roughly in priority order within each section.
 - [x] `render json:` (literals encoded at build time, models and relations
       have `to_json`), `head :no_content`.
 - [x] `respond_to` with `format.html` / `format.json` (Accept or `?format=`).
-- [x] Turbo Streams: `format.turbo_stream`, `render turbo_stream:` (one or a list),
+- [x] Turbo Streams: `format.turbo_stream` (with a block, or rendering
+      `<action>.turbo_stream.erb`), `render turbo_stream:` (one or a list),
       `turbo_stream.append/prepend/replace/update/remove/before/after` with a
       partial or HTML.
 - [x] File uploads (tep fork): `f.file_field` makes `form_with` multipart,
@@ -103,13 +105,15 @@ Roughly in priority order within each section.
 - [x] JSON request bodies become params (`{"post": {"title": ...}}` -> `post[title]`).
 - [x] PATCH/PUT/DELETE from HTML forms (`_method` override).
 - [x] Only public methods are actions.
+- [x] Controller concerns (app/controllers/concerns): `included do`, methods,
+      pasted where included. No `class_methods` or nested `include` yet.
 - [x] `rescue_from`; `RecordInvalid` answers 422.
 - [x] `http_basic_authenticate_with name:, password:, only:/except:`.
 
 ## Views
 
 - [x] Helpers: `link_to`, `button_to`, `form_with` and field helpers.
-- [x] `truncate`, `simple_format`, `number_with_delimiter`, `dom_id`.
+- [x] `truncate`, `simple_format`, `number_with_delimiter`, `dom_id` (with a prefix).
 - [x] `stylesheet_link_tag`, `javascript_include_tag`, `image_tag`.
 - [x] Asset fingerprinting: app/assets files are also served as name-<digest>.ext,
       which the tag helpers use.

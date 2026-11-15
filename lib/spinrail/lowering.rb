@@ -107,9 +107,9 @@ module Spinrail
       elsif @ctx.view? && node.receiver.nil? && node.name == :paginate && node.arguments&.arguments&.size == 1
         arg = node.arguments.arguments.first
         @rw.replace(node) { "pagination_links((#{@rw.slice(arg)}).current_page, (#{@rw.slice(arg)}).total_pages)" }
-      elsif @ctx.view? && node.receiver.nil? && node.name == :dom_id && node.arguments&.arguments&.size == 1
-        arg = node.arguments.arguments.first
-        @rw.replace(node) { "(#{@rw.slice(arg)}).dom_id" }
+      elsif @ctx.view? && node.receiver.nil? && node.name == :dom_id && [1, 2].include?(node.arguments&.arguments&.size)
+        record, prefix = node.arguments.arguments
+        @rw.replace(node) { prefix ? "(#{@rw.slice(record)}).dom_id_with((#{@rw.slice(prefix)}).to_s)" : "(#{@rw.slice(record)}).dom_id" }
       elsif @ctx.view? && node.receiver.nil? && %i[stylesheet_link_tag javascript_include_tag image_tag].include?(node.name)
         args, kw = Spinrail.call_args(node)
         @rw.replace(node) { "#{node.name}((#{@rw.slice(args.first)}).to_s, #{html_attrs(kw)})" }
@@ -224,7 +224,8 @@ module Spinrail
       when :pluck then args.size == 1 && args.first.is_a?(Prism::SymbolNode)
       when :order then (args.size == 1 && args.first.is_a?(Prism::StringNode)) || (args.any? && args.all? { |a| a.is_a?(Prism::SymbolNode) })
       when :exists? then args.size == 1
-      when :includes, :preload, :eager_load then !node.receiver.nil?
+      when :last then args.size == 1 && @ctx.relation?
+      when :includes, :preload, :eager_load then !node.receiver.nil? || @ctx.relation?
       when :joins, :left_joins, :left_outer_joins then args.any? && args.all? { |a| a.is_a?(Prism::SymbolNode) }
       when :where then args.size == 1 && args.first.is_a?(Prism::KeywordHashNode) && args.first.elements.any? { |e| e.value.is_a?(Prism::HashNode) }
       when :count then node.receiver.is_a?(Prism::CallNode) && node.receiver.name == :group && args.empty?
@@ -617,17 +618,28 @@ module Spinrail
         unless stmt.is_a?(Prism::CallNode) && local?(stmt.receiver, var) && %i[html json turbo_stream].include?(stmt.name)
           fail!(stmt, "respond_to supports format.html, format.json and format.turbo_stream")
         end
-        [stmt.name, stmt.block&.body]
+        [stmt.name, stmt.block ? stmt.block.body : format_template(stmt)]
       end
       # Turbo Stream first: Turbo's Accept header also lists text/html.
       tests = { turbo_stream: "wants_turbo_stream?", json: "wants_json?", html: "!wants_json?" }
       branches = branches.sort_by { |format, _| tests.keys.index(format) }
       @rw.replace(node) do
         code = branches.map.with_index do |(format, body), i|
-          "#{i.zero? ? 'if' : 'elsif'} #{tests[format]}\n#{body ? @rw.slice(body) : 'nil'}"
+          code = body.is_a?(String) ? body : (body ? @rw.slice(body) : "nil")
+          "#{i.zero? ? 'if' : 'elsif'} #{tests[format]}\n#{code}"
         end
         code.join("\n") + "\nelse\nhead(406)\nend"
       end
+    end
+
+    # format.html / format.turbo_stream without a block render the action's
+    # template for that format.
+    def format_template(stmt)
+      return nil if stmt.name == :json
+      key = "#{@ctx.dir}/#{@ctx.current_def}#{stmt.name == :turbo_stream ? '.turbo_stream' : ''}"
+      method = @ctx.render_method(key) or fail!(stmt, "missing template app/views/#{key}#{stmt.name == :html ? '.html' : ''}.erb")
+      @ctx.record_response(key, where(stmt))
+      "#{method}(200)"
     end
 
     # Stored on the controller: the page and its layout are rendered by
@@ -788,6 +800,7 @@ module Spinrail
         when :pluck then "#{prefix.call}pluck_#{arg.unescaped}"
         when :order then order_call(prefix.call, node.arguments.arguments)
         when :exists? then "#{prefix.call}where(#{@rw.slice(arg)}).exists?"
+        when :last then "#{prefix.call}last_n(#{@rw.slice(arg)})"
         when :includes, :preload, :eager_load
           names = node.arguments.arguments.map { |a| Spinrail.literal(a).to_s }
           "#{prefix.call}with_includes(#{names.inspect})"
@@ -945,7 +958,7 @@ module Spinrail
                when nil then '""'
                when Array
                  method, keywords, locals = content
-                 "ApplicationView.new(self).#{method}(#{locals.map { |k, v| keywords ? "#{k}: #{@rw.slice(v)}" : @rw.slice(v) }.join(', ')})"
+                 "#{@ctx.view? ? 'self' : 'ApplicationView.new(self)'}.#{method}(#{locals.map { |k, v| keywords ? "#{k}: #{@rw.slice(v)}" : @rw.slice(v) }.join(', ')})"
                else "(#{@rw.slice(content)}).to_s"
                end
         "turbo_stream_tag(#{node.name.to_s.inspect}, (#{@rw.slice(args.first)}).to_s, #{html})"

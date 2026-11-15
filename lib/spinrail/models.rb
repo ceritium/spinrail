@@ -44,6 +44,8 @@ module Spinrail
       @enums = {}
       @extra_virtual = []
       @body = []
+      @relation_methods = []
+      @constants = []
       (klass.body&.body || []).each { |stmt| collect(stmt) }
     end
 
@@ -75,7 +77,11 @@ module Spinrail
       elsif call == :has_secure_token
         secure_token(stmt)
       else
-        @body << stmt.slice.gsub(/^ {#{stmt.location.start_column}}/, "")
+        source = stmt.slice.gsub(/^ {#{stmt.location.start_column}}/, "")
+        @body << source
+        # Class methods also run on a relation, scoped to it, as in Rails.
+        @constants << stmt.name.to_s if stmt.is_a?(Prism::ConstantWriteNode)
+        @relation_methods << source.sub(/\Adef self\./, "def ") if stmt.is_a?(Prism::DefNode) && stmt.receiver.is_a?(Prism::SelfNode)
       end
     end
 
@@ -570,6 +576,7 @@ module Spinrail
           def self.exists? = all.exists?
           def self.delete_all = all.delete_all
           def self.find_by(conditions) = all.where(conditions).first
+          def self.find_by!(conditions) = all.find_by!(conditions)
           #{@secure_password ? "def self.authenticate_by(conditions) = all.authenticate_by(conditions)" : ""}
           def self.update_all(changes) = all.update_all(changes)
           def self.with_includes(names) = all.with_includes(names)
@@ -609,6 +616,7 @@ module Spinrail
           def to_param = @id.to_s
           def cache_key = #{"#{@table.name}/".inspect} + @id.to_s#{@table.column("updated_at") ? ' + "-" + @updated_at.strftime("%Y%m%d%H%M%S%6N")' : ''}
           def dom_id = @id > 0 ? #{"#{Inflector.underscore(@name)}_".inspect} + @id.to_s : #{"new_#{Inflector.underscore(@name)}".inspect}
+          def dom_id_with(prefix) = @id > 0 ? prefix + #{"_#{Inflector.underscore(@name)}_".inspect} + @id.to_s : prefix + #{"_#{Inflector.underscore(@name)}".inspect}
           def persisted? = @id > 0
           def new_record? = @id == 0
         #{indent(predicates, 2)}
@@ -702,7 +710,15 @@ module Spinrail
       source = @scopes.map do |name, params, body|
         "def #{name}#{params.empty? ? '' : "(#{params.join(', ')})"}\n#{body.gsub(/^\s*/, '  ')}\nend"
       end.join("\n\n")
-      [Lowering.lower(source, @file, Build::Context.new(nil, "", view: false))]
+      [Lowering.lower(source, @file, Build::Context.new(nil, "", view: false, relation: true))]
+    end
+
+    # Scope bodies run in the relation class, so they see the model's constants.
+    def relation_constants = @constants.map { |c| "#{c} = #{@name}::#{c}" }
+
+    def relation_methods
+      return [] if @relation_methods.empty?
+      [Lowering.lower(@relation_methods.join("\n\n"), @file, Build::Context.new(nil, "", view: false, relation: true))]
     end
 
     def create_kwargs = (assignable.map { |c| "#{c.name}: #{c.default_literal}" } + virtual.map { |v| "#{v}: \"\"" }).join(", ")
@@ -1115,6 +1131,21 @@ module Spinrail
           end
 
           def find_by(conditions) = where(conditions).first
+
+          def find_by!(conditions)
+            record = find_by(conditions)
+            raise Spinrail::RecordNotFound, "Couldn't find #{@name}" unless record
+            record
+          end
+
+          # last(n), lowered from scope bodies: the last n rows in order.
+          def last_n(n)
+            raise ArgumentError, "last needs an order by column, not SQL" if @raw_order.length > 0
+            relation = spawn
+            relation.reverse_order
+            relation.set_limit(n)
+            relation.to_a.reverse
+          end
         #{indent(authenticate_by_method, 2)}
 
           def last
@@ -1174,7 +1205,9 @@ module Spinrail
             Spinrail.write(db, #{"#{@name} Update All".inspect}, statement, t0)
           end
 
+        #{indent(relation_constants, 2)}
         #{indent(scope_methods, 2)}
+        #{indent(relation_methods, 2)}
 
           def delete_all
             raise ArgumentError, "delete_all doesn't support joins" unless @join_names.empty?

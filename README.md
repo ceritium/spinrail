@@ -134,7 +134,7 @@ to the server.
   zero default (`""`, `0`, `false`, the epoch) and its reader never returns nil, which
   spinel compiles to a single type; declare it wherever nil can't happen. `all`,
   `where`, `where.not`, `order`, `limit`, `offset`, `first`, `last`, `count`,
-  `exists?`, `pluck`, `find`, `find_by`, `create`, `save`, `update`,
+  `exists?`, `pluck`, `find`, `find_by` (and `find_by!`), `create`, `save`, `update`,
   `destroy` and their `!` forms, `transaction`; validations (`presence`,
   `length`, `numericality`, `format`, `inclusion`, `exclusion`, `uniqueness`,
   `validate :method`); callbacks; `belongs_to`, `has_many`, `has_one`;

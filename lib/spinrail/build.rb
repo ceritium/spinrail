@@ -15,6 +15,7 @@ module Spinrail
     Template = Struct.new(:path, :dir, :name, :exposures) do
       def partial? = name.start_with?("_")
       def text? = name.end_with?(".text")
+      def turbo_stream? = name.end_with?(".turbo_stream")
 
       # Rails 7.1 strict locals: <%# locals: (entry:, compact: false) %>
       def strict_locals = @strict_locals ||= [File.read(path)[/\A<%#\s*locals:\s*\((.*?)\)\s*-?%>/m, 1]]
@@ -67,9 +68,10 @@ module Spinrail
     class Context
       attr_reader :dir, :exposures, :assigns, :responses
 
-      def initialize(build, dir, view:, ivars: true, action: nil, controller: false, test: false, job: false, mailer: false)
+      def initialize(build, dir, view:, ivars: true, action: nil, controller: false, test: false, job: false, mailer: false, relation: false)
         @build = build
         @mailer = mailer
+        @relation = relation
         @job = job
         @controller = controller
         @test = test
@@ -87,6 +89,7 @@ module Spinrail
       def test? = @test
       def job? = @job
       def mailer? = @mailer
+      def relation? = @relation
       def mailer_names = @build ? @build.mailer_names : []
       def template(key) = @build&.templates&.[](key)
       def assigned = @assigns[@current].to_a
@@ -227,7 +230,7 @@ module Spinrail
 
     def generate
       schema = migrations.any? ? Schema.from_migrations(migrations) : Schema.new(path("db/schema.rb"))
-      @templates = Dir[path("app/views/**/*.{html,text}.erb")].to_h do |file|
+      @templates = Dir[path("app/views/**/*.{html,text,turbo_stream}.erb")].to_h do |file|
         key = rel(file).delete_prefix("app/views/").delete_suffix(".erb").delete_suffix(".html")
         [key, Template.new(file, File.dirname(key), File.basename(key), [])]
       end
@@ -568,7 +571,7 @@ module Spinrail
       Dir[path("app/controllers/**/*_controller.rb")].sort.each do |file|
         dir = rel(file).delete_prefix("app/controllers/").delete_suffix("_controller.rb")
         name = "#{Inflector.camelize(dir)}Controller"
-        source = File.read(file)
+        source = expand_concerns(File.read(file), rel(file))
         klass = Spinrail.parse(source, rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
         expected = "#{dir.split('/').map { |s| Inflector.camelize(s) }.join('::')}Controller"
         unless klass&.constant_path&.slice == expected
@@ -595,6 +598,37 @@ module Spinrail
       }
       @controllers = controllers
     end
+
+    # A controller concern is pasted where it is included: its included
+    # block runs in place, as in Rails, so callback order is kept.
+    def expand_concerns(source, file)
+      klass = Spinrail.parse(source, file).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
+      includes = (klass&.body&.body || []).select do |stmt|
+        stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && stmt.name == :include && stmt.arguments&.arguments&.size == 1 &&
+          File.exist?(concern_path(stmt.arguments.arguments.first.slice))
+      end
+      includes.reverse_each do |stmt|
+        name = stmt.arguments.arguments.first.slice
+        concern_file = rel(concern_path(name))
+        mod = Spinrail.parse(File.read(concern_path(name)), concern_file).statements.body.find { |n| n.is_a?(Prism::ModuleNode) }
+        raise CompileError, "#{concern_file}: expected module #{name}" unless mod&.constant_path&.slice == name
+        body = (mod.body&.body || []).flat_map do |s|
+          next [] if s.is_a?(Prism::CallNode) && s.name == :extend && s.arguments&.slice == "ActiveSupport::Concern"
+          if s.is_a?(Prism::CallNode) && s.receiver.nil? && s.name == :included && s.block
+            next (s.block.body&.body || []).map(&:slice)
+          end
+          if s.is_a?(Prism::CallNode) && s.receiver.nil? && %i[class_methods include].include?(s.name)
+            raise CompileError, "#{concern_file}:#{s.location.start_line}: #{s.name} is not supported in a controller concern"
+          end
+          [s.slice]
+        end
+        loc = stmt.location
+        source = source.byteslice(0, loc.start_offset) + (body + ["public"]).join("\n\n") + source.byteslice(loc.end_offset..)
+      end
+      source
+    end
+
+    def concern_path(name) = path("app/controllers/concerns/#{Inflector.underscore(name)}.rb")
 
     # Public methods are actions; filters and rescue_from are read here
     # and dropped from the generated class.
@@ -742,9 +776,9 @@ module Spinrail
       defs = used.uniq.map do |key|
         t = @templates[key]
         args = t.exposures.map { |n| "@#{n}" }.join(", ")
-        "  def #{t.render_method}(status, layout = \"\")\n" \
-          "    render_with_layout(ApplicationView.new(self).#{t.method_name}#{args.empty? ? '' : "(#{args})"}, status, layout)\n" \
-          "  end"
+        html = "ApplicationView.new(self).#{t.method_name}#{args.empty? ? '' : "(#{args})"}"
+        body = t.turbo_stream? ? "render_turbo_stream(#{html}, status)" : "render_with_layout(#{html}, status, layout)"
+        "  def #{t.render_method}(status, layout = \"\")\n    #{body}\n  end"
       end
       "class #{name}\n#{[*defs, override].compact.join("\n\n")}\nend\n"
     end

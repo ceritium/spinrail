@@ -162,6 +162,97 @@ class BuildTest < CompilerTest
     assert_match(/config.cache_store is not supported/, error.message)
   end
 
+  def test_scopes_and_class_methods_run_on_relations
+    schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :name\n end\n " \
+             "create_table :messages do |t|\n t.references :creator\n t.string :body\n t.timestamps\n end\nend\n"
+    model = <<~RUBY
+      class Message < ApplicationRecord
+        PAGE_SIZE = 40
+        belongs_to :creator, class_name: "User"
+        scope :ordered, -> { order(:created_at) }
+        scope :with_creator, -> { includes(:creator) }
+        scope :last_page, -> { ordered.last(PAGE_SIZE) }
+
+        def self.original
+          order(:created_at).first
+        end
+      end
+    RUBY
+    ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n",
+                 "app/models/message.rb" => model)
+    relation = ruby[/^class MessageRelation.*?^end$/m]
+    assert_includes relation, "PAGE_SIZE = Message::PAGE_SIZE"
+    assert_includes relation, %(with_includes(["creator"]))
+    assert_includes relation, "ordered.last_n(PAGE_SIZE)"
+    assert_match(/def original\n\s*order\(created_at: :asc\)\.first/, relation)
+    assert_includes ruby, "def self.find_by!(conditions) = all.find_by!(conditions)"
+  end
+
+  def test_controller_concerns_are_pasted_where_included
+    ruby = build(
+      "config/routes.rb" => %(Spinrail.routes.draw do\n get "/", to: "posts#index"\n get "/x", to: "posts#visit"\nend\n),
+      "app/controllers/concerns/loads_post.rb" => <<~RUBY,
+        module LoadsPost
+          extend ActiveSupport::Concern
+
+          included do
+            before_action :load
+          end
+
+          def visit
+            @post = "visited"
+          end
+
+          private
+
+          def load
+            @post = "x"
+          end
+        end
+      RUBY
+      "app/controllers/posts_controller.rb" => "class PostsController < ApplicationController\n include LoadsPost\n\n def index\n end\nend\n",
+      "app/views/posts/index.html.erb" => "<%= @post %>",
+      "app/views/posts/visit.html.erb" => "<%= @post %>"
+    )
+    assert ruby.include?("    load\n    unless performed?\n      index\n"), "the concern's filter runs"
+    refute_includes ruby, "include LoadsPost"
+    error = assert_raises(Spinrail::CompileError) do
+      build("app/controllers/concerns/loads_post.rb" => "module LoadsPost\n class_methods do\n end\nend\n",
+            "app/controllers/posts_controller.rb" => "class PostsController < ApplicationController\n include LoadsPost\nend\n")
+    end
+    assert_match(/class_methods is not supported/, error.message)
+  end
+
+  def test_turbo_stream_templates
+    files = {
+      "config/routes.rb" => %(Spinrail.routes.draw do\n post "/posts", to: "posts#create"\nend\n),
+      "db/schema.rb" => "Spinrail::Schema.define do\n create_table :posts do |t|\n t.string :title\n end\nend\n",
+      "app/models/post.rb" => "class Post < ApplicationRecord\nend\n",
+      "app/controllers/posts_controller.rb" => <<~RUBY,
+        class PostsController < ApplicationController
+          def create
+            @post = Post.create!(title: "x")
+            respond_to do |format|
+              format.turbo_stream
+              format.html { redirect_to "/" }
+            end
+          end
+        end
+      RUBY
+      "app/views/posts/_post.html.erb" => "<p><%= post.title %></p>",
+      "app/views/posts/create.turbo_stream.erb" =>
+        '<%= turbo_stream.append dom_id(@post, :list), partial: "posts/post", locals: { post: @post } %>'
+    }
+    ruby = build(files)
+    assert_includes ruby, "if wants_turbo_stream?\nrender_view_posts_create_turbo_stream(200)"
+    assert_includes ruby, "render_turbo_stream(ApplicationView.new(self).view_posts_create_turbo_stream(@post), status)"
+    assert_includes ruby, 'turbo_stream_tag("append", ((iv_post).dom_id_with((:list).to_s)).to_s, self.partial_posts_post(iv_post)'
+    assert_includes ruby, %(def dom_id_with(prefix) = @id > 0 ? prefix + "_post_" + @id.to_s : prefix + "_post")
+    files.delete("app/views/posts/create.turbo_stream.erb")
+    error = assert_raises(Spinrail::CompileError) { build(files) }
+    assert_match(%r{missing template app/views/posts/create.turbo_stream.erb}, error.message)
+  end
+
   def test_template_reading_an_unassigned_ivar
     error = assert_raises(Spinrail::CompileError) do
       build(

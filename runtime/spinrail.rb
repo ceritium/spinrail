@@ -1105,6 +1105,11 @@ module Spinrail
     def form_authenticity_token = ""
     def request_base_url = "http://localhost"
     def h(value) = Tep.h(value)
+
+    def turbo_stream_tag(action, target, html)
+      return "<turbo-stream action=\"" + action + "\" target=\"" + h(target) + "\"></turbo-stream>" if action == "remove"
+      "<turbo-stream action=\"" + action + "\" target=\"" + h(target) + "\"><template>" + html + "</template></turbo-stream>"
+    end
   end
 
   class Controller < ViewContext
@@ -1200,11 +1205,6 @@ module Spinrail
     def render_turbo_stream(html, status)
       @res.headers["Content-Type"] = "text/vnd.turbo-stream.html; charset=utf-8"
       render_html(html, status)
-    end
-
-    def turbo_stream_tag(action, target, html)
-      return "<turbo-stream action=\"" + action + "\" target=\"" + h(target) + "\"></turbo-stream>" if action == "remove"
-      "<turbo-stream action=\"" + action + "\" target=\"" + h(target) + "\"><template>" + html + "</template></turbo-stream>"
     end
 
     def wants_json?
@@ -1391,6 +1391,7 @@ module Spinrail
     def session_get(key) = @controller.session_get(key)
     def param(name) = @controller.param(name)
     def form_authenticity_token = @controller.form_authenticity_token
+    def turbo_stream_tag(action, target, html) = @controller.turbo_stream_tag(action, target, html)
     def request_base_url = @controller.request_base_url
 
     def form_open(action, method, attrs)
