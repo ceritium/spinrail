@@ -125,7 +125,7 @@ to the server.
 ## Supported so far
 
 - Routes: `root`, `resources`/`resource` (with `only:`/`except:`, nesting,
-  `member`, `collection`), `namespace`, `get/post/... "path", to:`; `_path`
+  `member`, `collection`), `namespace`, `scope` (with `module:`, `as:`, `defaults:`), `get/post/... "path", to:`; `_path`
   and `_url` helpers.
 - Models: columns from `create_table` (`string`, `text`, `integer`, `float`,
   `boolean`, `datetime`, `references`, `timestamps`, `default:`); `datetime`
@@ -139,7 +139,8 @@ to the server.
   `destroy` and their `!` forms, `transaction`; validations (`presence`,
   `length`, `numericality`, `format`, `inclusion`, `exclusion`, `uniqueness`,
   `validate :method`); callbacks; `belongs_to`, `has_many`, `has_one`;
-  `has_secure_password` with `authenticate_by`, `has_secure_token`. Plain classes
+  `has_secure_password` with `authenticate_by`, `has_secure_token`,
+  `generates_token_for` with `find_by_token_for`. Plain classes
   (no superclass) in app/models compile as written. `Current <
   ActiveSupport::CurrentAttributes` keeps one instance per fiber, reset for each
   request, with `Current.set { }` and reset callbacks; `belongs_to` takes

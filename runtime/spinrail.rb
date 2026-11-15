@@ -26,6 +26,8 @@ class String
   def to_html = Tep.h(self)
   # Helpers that end in html_safe are emitted raw; the build decides.
   def html_safe = self
+  def first(n = 1) = self[0, n]
+  def last(n = 1) = n >= length ? self : self[length - n, n]
 end
 
 class Integer
@@ -1661,6 +1663,28 @@ module Spinrail
     return nil if cut.nil?
     value = raw[0, cut]
     Tep.timing_safe_eq(raw[cut + 2, raw.length - cut - 2], Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, value)) ? value : nil
+  end
+
+  # generates_token_for: "id.expires_at.hmac" (expires_at 0: never), the
+  # HMAC covering the purpose and the record's token data too.
+  def self.token_for(id, purpose, ttl, data)
+    payload = id.to_s + "." + (ttl > 0 ? (Time.now.to_i + ttl).to_s : "0")
+    payload + "." + Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, purpose + "." + payload + "." + data)
+  end
+
+  # The record id of a well-formed, unexpired token; 0 otherwise.
+  def self.token_record_id(token)
+    parts = token.to_s.split(".")
+    return 0 unless parts.length == 3 && parts[0].to_i.to_s == parts[0] && parts[1].to_i.to_s == parts[1]
+    expires = parts[1].to_i
+    return 0 if expires != 0 && expires < Time.now.to_i
+    parts[0].to_i
+  end
+
+  def self.token_matches?(token, purpose, data)
+    cut = token.rindex(".")
+    payload = token[0, cut]
+    Tep.timing_safe_eq(token[cut + 1, token.length - cut - 1], Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, purpose + "." + payload + "." + data))
   end
 
   class CableSub

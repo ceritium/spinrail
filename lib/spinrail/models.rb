@@ -53,7 +53,13 @@ module Spinrail
       @relation_methods = []
       @constants = []
       @rich_texts = []
+      @token_purposes = []
       (klass.body&.body || []).each { |stmt| collect(stmt) }
+      if @token_methods
+        generate, find = @token_methods.call
+        @body << generate << find
+        @relation_methods << find.sub(/\Adef self\./, "def ")
+      end
     end
 
     def to_ruby
@@ -123,7 +129,7 @@ module Spinrail
 
     private
 
-    STI_UNSUPPORTED = %i[has_many has_one belongs_to scope enum has_secure_password has_secure_token has_rich_text].freeze
+    STI_UNSUPPORTED = %i[has_many has_one belongs_to scope enum has_secure_password has_secure_token has_rich_text generates_token_for].freeze
 
     def collect(stmt)
       call = stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? ? stmt.name : nil
@@ -149,6 +155,8 @@ module Spinrail
         @secure_password_validations = !(kw[:validations] && Spinrail.literal(kw[:validations]) == false)
       elsif call == :has_secure_token
         secure_token(stmt)
+      elsif call == :generates_token_for
+        token_for(stmt)
       elsif call == :has_rich_text
         rich_text(stmt)
       elsif stmt.is_a?(Prism::SingletonClassNode)
@@ -188,6 +196,35 @@ module Spinrail
       fail!(node, "has_secure_token needs the #{attr} column") unless @table.column(attr)
       @callbacks[:before_create] << "@#{attr} = SecureRandom.alphanumeric(24) if @#{attr}.to_s.empty?"
       @body << "def regenerate_#{attr} = update!(#{attr}: SecureRandom.alphanumeric(24))"
+    end
+
+    # generates_token_for :purpose, expires_in: d { data }: signed tokens naming
+    # the record, void once expired or once the block's value changes.
+    def token_for(node)
+      args, kw = Spinrail.call_args(node)
+      fail!(node, "unsupported generates_token_for option #{(kw.keys - [:expires_in]).first}") if (kw.keys - [:expires_in]).any?
+      purpose = Spinrail.literal(args.first).to_s
+      ttl = kw[:expires_in] ? "(#{kw[:expires_in].slice})" : "0"
+      data = node.block&.body ? node.block.body.slice : "nil"
+      first = @token_purposes.empty?
+      @token_purposes << purpose
+      @body << "def token_data_for_#{purpose} = (#{data}).to_s"
+      @body << "def token_ttl_for_#{purpose} = #{ttl}"
+      return unless first
+
+      dispatch = lambda do |call|
+        "case purpose\n" + @token_purposes.map { |p| "when :#{p} then #{call.call(p)}\n" }.join +
+          "else raise ArgumentError, \"unknown token purpose \#{purpose}\"\nend"
+      end
+      # Built lazily: later generates_token_for calls add their purposes.
+      @token_methods = lambda do
+        generate = "def generate_token_for(purpose)\n" +
+                   dispatch.call(->(p) { "Spinrail.token_for(@id, #{p.inspect}, token_ttl_for_#{p}, token_data_for_#{p})" }) + "\nend"
+        find = "def self.find_by_token_for(purpose, token)\n  id = Spinrail.token_record_id(token)\n  return nil if id == 0\n" \
+               "  record = find_by(id: id)\n  return nil if record.nil?\n" +
+               dispatch.call(->(p) { "Spinrail.token_matches?(token, #{p.inspect}, record.token_data_for_#{p}) ? record : nil" }) + "\nend"
+        [generate, find]
+      end
     end
 
     # has_rich_text :body: an ActionText::RichText row per record, loaded
@@ -701,7 +738,7 @@ module Spinrail
           COLUMNS = #{columns.map(&:name).inspect}
           attr_accessor #{columns.map { |c| ":#{c.name}" }.join(', ')}
           attr_reader :errors
-        #{@extra_virtual.empty? ? '' : "  attr_accessor #{@extra_virtual.map { |v| ":#{v}" }.join(', ')}\n"}        #{@secure_password ? "  attr_reader :password\n  attr_accessor :password_confirmation\n\n  def password=(plain)\n    @password = plain\n    @password_digest = Tep::Password.hash(plain) unless plain.empty?\n  end\n\n  # true or false (Rails returns the record or false).\n  def authenticate(plain) = !@password_digest.to_s.empty? && Tep::Password.verify(plain, @password_digest)\n" : ""}
+        #{@extra_virtual.empty? ? '' : "  attr_accessor #{@extra_virtual.map { |v| ":#{v}" }.join(', ')}\n"}        #{@secure_password ? "  attr_reader :password\n  attr_accessor :password_confirmation\n\n  def password=(plain)\n    @password = plain\n    @password_digest = Tep::Password.hash(plain) unless plain.empty?\n  end\n\n  # true or false (Rails returns the record or false).\n  def authenticate(plain) = !@password_digest.to_s.empty? && Tep::Password.verify(plain, @password_digest)\n\n  def password_salt = @password_digest.to_s.split(\"$\").fetch(2, \"\")\n" : ""}
           def initialize(#{kwargs})
         #{indent(columns.map { |c| "@#{c.name} = #{c.name}" }, 4)}
         #{indent((@secure_password ? ["@password = \"\"", *secure_assign] : []) + @extra_virtual.map { |v| "@#{v} = #{v}" }, 4)}

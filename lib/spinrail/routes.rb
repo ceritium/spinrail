@@ -13,7 +13,7 @@ module Spinrail
 
     # One level of nesting: where paths, helper names and controllers start.
     # base_path/base_helper exclude resource nesting, for shallow routes.
-    Scope = Struct.new(:path, :helper, :module, :params, :kind, :base_path, :base_helper, :shallow)
+    Scope = Struct.new(:path, :helper, :module, :params, :kind, :base_path, :base_helper, :shallow, :defaults)
 
     attr_reader :routes, :helpers
 
@@ -21,7 +21,7 @@ module Spinrail
       @file = file
       @routes = []
       @helpers = {} # name => [params, ruby expression]
-      @scopes = [Scope.new("", "", "", [], nil, "", "", false)]
+      @scopes = [Scope.new("", "", "", [], nil, "", "", false, {})]
       @concerns = {}
       root = Spinrail.parse(File.read(file), file)
       draw = find_draw(root) or fail!(root, "expected Spinrail.routes.draw do ... end")
@@ -73,19 +73,22 @@ module Spinrail
       args, = Spinrail.call_args(node)
       name = Spinrail.literal(args.first).to_s
       within(Scope.new("#{scope.path}/#{name}", "#{scope.helper}#{name}_", "#{scope.module}#{name}/", scope.params, nil,
-                       "#{scope.base_path}/#{name}", "#{scope.base_helper}#{name}_", scope.shallow)) do
+                       "#{scope.base_path}/#{name}", "#{scope.base_helper}#{name}_", scope.shallow, scope.defaults)) do
         body(node.block)
       end
     end
 
-    # scope "/prefix", module: "admin", as: "admin" -- each part optional.
+    # scope "/prefix", module: "admin", as: "admin", defaults: { user_id: "me" }
+    # -- each part optional; a default makes that helper argument optional.
     def path_scope(node)
       args, kw = Spinrail.call_args(node)
+      defaults = scope.defaults.dup
+      (kw[:defaults]&.elements || []).each { |e| defaults[Spinrail.literal(e.key).to_s] = Spinrail.literal(e.value).to_s }
       prefix = args.first ? "/#{Spinrail.literal(args.first).to_s.delete_prefix('/')}" : ""
       mod = kw[:module] ? "#{Spinrail.literal(kw[:module])}/" : ""
       as = kw[:as] ? "#{Spinrail.literal(kw[:as])}_" : ""
       within(Scope.new("#{scope.path}#{prefix}", "#{scope.helper}#{as}", "#{scope.module}#{mod}", scope.params, nil,
-                       "#{scope.base_path}#{prefix}", "#{scope.base_helper}#{as}", scope.shallow)) do
+                       "#{scope.base_path}#{prefix}", "#{scope.base_helper}#{as}", scope.shallow, defaults)) do
         body(node.block)
       end
     end
@@ -226,7 +229,7 @@ module Spinrail
         nested_path = plural ? "#{base}/:#{nested_param}" : base
         nested_params = plural ? helper_params + [nested_param] : helper_params
         within(Scope.new(nested_path, "#{@resource[:helper_single]}_", scope.module, nested_params, nil,
-                         scope.base_path, scope.base_helper, scope.shallow || kw[:shallow] && Spinrail.literal(kw[:shallow]))) do
+                         scope.base_path, scope.base_helper, scope.shallow || kw[:shallow] && Spinrail.literal(kw[:shallow]), scope.defaults)) do
           deferred.each { |stmt| statement(stmt) }
         end
       end
@@ -245,7 +248,8 @@ module Spinrail
     end
 
     def helper(name, params, expr)
-      @helpers["#{name}_path"] = [params, expr]
+      optional = params.reverse.take_while { |p| scope.defaults.key?(p) }
+      @helpers["#{name}_path"] = [params, expr, *(optional.empty? ? [] : [optional.to_h { |p| [p, scope.defaults[p]] }])]
     end
 
     # "/posts/:post_id/comments/:id" -> "/posts/" + post_id.to_param + ...

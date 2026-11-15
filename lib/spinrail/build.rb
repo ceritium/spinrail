@@ -548,11 +548,13 @@ module Spinrail
     end
 
     def path_helpers
-      routes.helpers.flat_map do |name, (params, expr)|
-        sig = params.empty? ? "" : "(#{params.join(', ')})"
+      routes.helpers.flat_map do |name, (params, expr, defaults)|
+        defaults ||= {}
+        sig = params.empty? ? "" : "(#{params.map { |p| defaults.key?(p) ? "#{p} = #{defaults[p].inspect}" : p }.join(', ')})"
+        call = params.empty? ? "" : "(#{params.join(', ')})"
         url = name.sub(/_path\z/, "_url")
         ["  def #{name}#{sig}\n    #{expr}\n  end",
-         "  def #{url}#{sig}\n    request_base_url + #{name}#{sig}\n  end"]
+         "  def #{url}#{sig}\n    request_base_url + #{name}#{call}\n  end"]
       end.join("\n\n")
     end
 

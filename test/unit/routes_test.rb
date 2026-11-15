@@ -24,6 +24,12 @@ class RoutesTest < CompilerTest
     assert_includes table(r), "GET /admin/users admin/users#index"
   end
 
+  def test_scope_defaults_make_helper_arguments_optional
+    r = routes("resources :users, only: :show do\n scope module: \"users\" do\n scope defaults: { user_id: \"me\" } do\n resource :profile\n end\n end\nend")
+    assert_equal [["user_id"], %("/users/" + user_id.to_param + "/profile"), { "user_id" => "me" }], r.helpers["user_profile_path"]
+    assert_includes table(r), "GET /users/:user_id/profile users/profiles#show"
+  end
+
   def test_action_class_targets
     r = routes("get \"/stats\", to: Actions::Stats::Show")
     assert_equal [nil, "stats.show"], [r.routes.first.controller, r.routes.first.action]

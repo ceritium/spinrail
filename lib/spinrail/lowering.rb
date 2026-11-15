@@ -118,7 +118,14 @@ module Spinrail
         @rw.replace(node) { prefix ? "(#{@rw.slice(record)}).dom_id_with((#{@rw.slice(prefix)}).to_s)" : "(#{@rw.slice(record)}).dom_id" }
       elsif @ctx.view? && node.receiver.nil? && %i[stylesheet_link_tag javascript_include_tag image_tag].include?(node.name)
         args, kw = Spinrail.call_args(node)
-        @rw.replace(node) { "#{node.name}((#{@rw.slice(args.first)}).to_s, #{html_attrs(kw)})" }
+        size = node.name == :image_tag && kw.delete(:size)
+        dims = ""
+        if size
+          w, hh = Spinrail.literal(size).to_s.split("x")
+          fail!(node, "image_tag size: takes a literal like 20 or \"20x30\"") unless w&.match?(/\A\d+\z/) && (hh.nil? || hh.match?(/\A\d+\z/))
+          dims = %( + #{%( width="#{w}" height="#{hh || w}").inspect})
+        end
+        @rw.replace(node) { "#{node.name}((#{@rw.slice(args.first)}).to_s, #{html_attrs(kw)}#{dims})" }
       elsif @ctx.view? && node.receiver.nil? && node.name == :javascript_importmap_tags
         args, = Spinrail.call_args(node)
         @rw.replace(node) { "javascript_importmap_tags(#{args.first ? "(#{@rw.slice(args.first)}).to_s" : '"application"'})" }
@@ -488,7 +495,7 @@ module Spinrail
     def lower_form(node)
       args, kw = Spinrail.call_args(node)
       fail!(node, "form_with takes keyword options") unless args.empty?
-      var = node.block.parameters&.parameters&.requireds&.first&.name or fail!(node, "form_with needs a block parameter")
+      var = node.block.parameters&.parameters&.requireds&.first&.name || :_form
       model = kw[:model]
       parent = nil
       if model.is_a?(Prism::ArrayNode)

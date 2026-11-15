@@ -82,4 +82,9 @@ class LoweringTest < CompilerTest
     assert_includes out, %(out << form_open((path).to_s, "delete", " class=\\"button_to\\"") + "<button type=\\"submit\\"" + " class=\\"b\\"" + ">")
     assert_includes out, %(out << "</button></form>")
   end
+
+  def test_image_tag_size
+    assert_includes lower(%(image_tag "a.svg", size: 20, class: "x"), view: true), %( width=\\"20\\" height=\\"20\\")
+    assert_includes lower(%(image_tag "a.svg", size: "20x30"), view: true), %( width=\\"20\\" height=\\"30\\")
+  end
 end

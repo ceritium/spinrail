@@ -26,6 +26,17 @@ class BuildTest < CompilerTest
     assert_match(/needs the auth_token column/, error.message)
   end
 
+  def test_generates_token_for
+    schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :password_digest\n end\nend\n"
+    model = "class User < ApplicationRecord\n has_secure_password\n generates_token_for :transfer, expires_in: 4.hours do\n password_salt&.last(10)\n end\n generates_token_for :unsubscribe\nend\n"
+    ruby = build("db/schema.rb" => schema, "app/models/user.rb" => model)
+    assert_includes ruby, "def token_data_for_transfer = (password_salt&.last(10)).to_s"
+    assert_includes ruby, "def token_ttl_for_transfer = (4.hours)"
+    assert_includes ruby, %(when :unsubscribe then Spinrail.token_for(@id, "unsubscribe", token_ttl_for_unsubscribe, token_data_for_unsubscribe))
+    assert_includes ruby, "def self.find_by_token_for(purpose, token)"
+    assert_includes ruby, "def find_by_token_for(purpose, token)"
+  end
+
   def test_records_inspect_like_rails
     schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :name\n t.string :password_digest\n end\nend\n"
     ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n")
