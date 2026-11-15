@@ -139,6 +139,14 @@ class BuildTest < CompilerTest
     assert_match(/unsupported delegate option private/, error.message)
   end
 
+  def test_rails_inflections
+    schema = "Spinrail::Schema.define do\n create_table :people do |t|\n t.string :name\n end\n create_table :analyses do |t|\n t.references :person\n end\nend\n"
+    ruby = build("db/schema.rb" => schema, "app/models/person.rb" => "class Person < ApplicationRecord\n has_many :analyses\nend\n",
+                 "app/models/analysis.rb" => "class Analysis < ApplicationRecord\n belongs_to :person\nend\n")
+    assert_includes ruby, "FROM people"
+    assert_includes ruby, "def analyses\n    relation = Analysis.where(person_id: @id)"
+  end
+
   def test_time_zone_from_config
     assert_includes build({}), %(ENV["TZ"] = "UTC")
     config = %(Spinrail.application.configure do\n config.time_zone = "Europe/Madrid"\nend\n)

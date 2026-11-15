@@ -8,6 +8,7 @@ Gem::Specification.new do |spec|
   spec.files = Dir["lib/**/*.rb", "runtime/**/*.rb", "exe/*", "toolchain.mk", "README.md"]
   spec.bindir = "exe"
   spec.executables = ["spinrail"]
+  spec.add_dependency "activesupport", ">= 8.0"
   spec.add_dependency "prism"
   spec.add_dependency "minitest"
   spec.add_dependency "base64"

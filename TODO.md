@@ -4,6 +4,9 @@ Roughly in priority order within each section.
 
 ## Models
 
+- [x] Table, class and association names inflect with Rails' own
+      `ActiveSupport::Inflector`, at build time.
+- [ ] App inflections (`config/initializers/inflections.rb`).
 - [x] Associations: `belongs_to` (required unless `optional: true`), `has_many`,
       `has_one`, `dependent: :destroy | :delete_all`.
 - [x] One connection per process, statements fixed at build time cached.
