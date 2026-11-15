@@ -189,8 +189,13 @@ class ModelsController < ApplicationController
   end
 
   def serial
-    %w[a a a b].each { |group| SerialJob.perform_later(group) }
-    2.times { OnceJob.perform_later("x") }
+    groups = params[:groups].to_s
+    if groups.empty?
+      %w[a a a b].each { |group| SerialJob.perform_later(group) }
+      2.times { OnceJob.perform_later("x") }
+    else
+      groups.split(",").each { |group| SerialJob.perform_later(group) }
+    end
     render plain: "queued"
   end
 

@@ -265,8 +265,8 @@ Roughly in priority order within each section.
       seconds, hash arguments, ERB in recurring.yml.
 - [x] `limits_concurrency` (semaphores and blocked executions; `on_conflict:
       :discard`); semaphores expire after `duration:` (3 minutes).
-- [ ] Retrying a failed job or handing back a stopped worker's jobs skips the
-      concurrency limit, as their semaphore slot may still be held.
+- [x] Retried jobs take a semaphore slot again; pruned workers' jobs give
+      theirs back. A stopped worker's jobs keep theirs, as in Solid Queue.
 - [ ] A dashboard (Mission Control).
 - [ ] Threaded jobs on PostgreSQL (the PG battery's state hasn't been checked
       for threads).

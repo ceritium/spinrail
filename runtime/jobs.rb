@@ -501,7 +501,8 @@ module Spinrail
       db.finalize
     end
 
-    # On a clean exit what the process had claimed goes back to ready.
+    # On a clean exit what the process had claimed goes back to ready. Those
+    # jobs still hold their semaphore slots, so they skip the limit, as in Solid Queue.
     def self.deregister(process_id)
       Spinrail.transaction do
         db = Spinrail.prepare("INSERT INTO spinrail_queue_ready_executions (job_id, queue_name, priority, created_at) " \
@@ -581,24 +582,37 @@ module Spinrail
     end
 
     # Processes silent past the alive threshold died mid-job: as in Solid
-    # Queue, their claimed jobs fail (they may have run partly) and the
-    # process row goes. So do claims whose process row is already gone.
+    # Queue, their claimed jobs fail (they may have run partly), give their
+    # semaphore slots back, and the process row goes. So do claims whose
+    # process row is already gone.
     def self.prune(process_id)
       cutoff = Spinrail.format_time(Time.now - Jobs.alive_threshold)
       Spinrail.transaction do
-        db = Spinrail.prepare("INSERT INTO spinrail_queue_failed_executions (job_id, error, created_at) " \
-                              "SELECT c.job_id, ?, ? FROM spinrail_queue_claimed_executions c " \
-                              "LEFT JOIN spinrail_queue_processes p ON p.id = c.process_id " \
-                              "WHERE c.process_id != ? AND (p.id IS NULL OR p.last_heartbeat_at < ?) ON CONFLICT DO NOTHING", true)
-        db.bind_str(1, "ProcessPrunedError: the worker stopped sending heartbeats")
-        db.bind_str(2, Jobs.now)
-        db.bind_int(3, process_id)
-        db.bind_str(4, cutoff)
-        db.step
+        db = Spinrail.prepare("SELECT c.job_id, j.class_name, j.concurrency_key FROM spinrail_queue_claimed_executions c " \
+                              "JOIN spinrail_queue_jobs j ON j.id = c.job_id LEFT JOIN spinrail_queue_processes p ON p.id = c.process_id " \
+                              "WHERE c.process_id != ? AND (p.id IS NULL OR p.last_heartbeat_at < ?) ORDER BY c.job_id", true)
+        db.bind_int(1, process_id)
+        db.bind_str(2, cutoff)
+        ids = [0]
+        ids.clear
+        rows = [""]
+        rows.clear
+        while db.step == 1
+          ids << db.col_int(0)
+          rows << db.col_str(1)
+          rows << db.col_str(2)
+        end
         db.finalize
-        db = Spinrail.prepare("DELETE FROM spinrail_queue_claimed_executions WHERE job_id IN (SELECT job_id FROM spinrail_queue_failed_executions)", true)
-        db.step
-        db.finalize
+        ids.each_with_index do |id, i|
+          Jobs.release(id)
+          db = Spinrail.prepare("INSERT INTO spinrail_queue_failed_executions (job_id, error, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING", true)
+          db.bind_int(1, id)
+          db.bind_str(2, "ProcessPrunedError: the worker stopped sending heartbeats")
+          db.bind_str(3, Jobs.now)
+          db.step
+          db.finalize
+          Jobs.signal(rows[i * 2], rows[i * 2 + 1])
+        end
         db = Spinrail.prepare("DELETE FROM spinrail_queue_processes WHERE id != ? AND last_heartbeat_at < ?", true)
         db.bind_int(1, process_id)
         db.bind_str(2, cutoff)
@@ -708,17 +722,31 @@ module Spinrail
     end
 
     # A failed job (id 0: all of them) goes back to ready, the same job row.
+    # Failing gave its semaphore slot back, so it takes one again or waits.
     def self.retry_failed(id)
       Spinrail.transaction do
-        db = Spinrail.prepare("INSERT INTO spinrail_queue_ready_executions (job_id, queue_name, priority, created_at) " \
-                              "SELECT j.id, j.queue_name, j.priority, ? FROM spinrail_queue_jobs j " \
-                              "JOIN spinrail_queue_failed_executions f ON f.job_id = j.id WHERE ? = 0 OR j.id = ? ON CONFLICT DO NOTHING", true)
-        db.bind_str(1, Jobs.now)
+        db = Spinrail.prepare("SELECT j.id, j.class_name, j.concurrency_key, j.queue_name, j.priority FROM spinrail_queue_jobs j " \
+                              "JOIN spinrail_queue_failed_executions f ON f.job_id = j.id WHERE ? = 0 OR j.id = ? ORDER BY j.id", true)
+        db.bind_int(1, id)
         db.bind_int(2, id)
-        db.bind_int(3, id)
-        db.step
+        ids = [0]
+        ids.clear
+        rows = [""]
+        rows.clear
+        prios = [0]
+        prios.clear
+        while db.step == 1
+          ids << db.col_int(0)
+          rows << db.col_str(1)
+          rows << db.col_str(2)
+          rows << db.col_str(3)
+          prios << db.col_int(4)
+        end
         db.finalize
         Jobs.delete_failed("DELETE FROM spinrail_queue_failed_executions WHERE ? = 0 OR job_id = ?", id)
+        ids.each_with_index do |job_id, i|
+          Jobs.make_ready(job_id, rows[i * 3], rows[i * 3 + 1], rows[i * 3 + 2], prios[i])
+        end
       end
     end
 

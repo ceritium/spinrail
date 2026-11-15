@@ -244,6 +244,50 @@ class ConcurrencyTest < Spinrail::IntegrationTest
       Process.wait(pid) rescue nil
     end
   end
+
+  # Failing gave the slot back: a retried job waits for it again.
+  def test_retried_jobs_take_a_slot
+    get "/models/serial?groups=bad"
+    log = File.join(Dir.tmpdir, "spinrail-serial-retry-#{Process.pid}.log")
+    pid = worker(log)
+    wait_for(log, "Failed SerialJob")
+    Process.kill("KILL", pid)
+    Process.wait(pid)
+    pid = nil
+    get "/models/serial?groups=bad"
+    assert_equal "ready=1 scheduled=0 claimed=0 blocked=0 failed=1 processes=1 finished=0", status
+    assert_equal "ready=1 scheduled=0 claimed=0 blocked=1 failed=0 processes=1 finished=0", jobs("retry all").last
+  ensure
+    if pid
+      Process.kill("KILL", pid) rescue nil
+      Process.wait(pid) rescue nil
+    end
+  end
+
+  # A pruned worker's job fails and lets the next one with its key in.
+  def test_pruning_frees_the_slot
+    get "/models/serial?groups=slow,slow"
+    assert_equal "ready=1 scheduled=0 claimed=0 blocked=1 failed=0 processes=0 finished=0", status
+    log = File.join(Dir.tmpdir, "spinrail-serial-kill-#{Process.pid}.log")
+    pid = worker(log)
+    50.times do
+      break if status.include?("claimed=1")
+      sleep 0.1
+    end
+    Process.kill("KILL", pid)
+    Process.wait(pid)
+    sleep 1.1
+    log = File.join(Dir.tmpdir, "spinrail-serial-prune-#{Process.pid}.log")
+    pid = worker(log, "SPINRAIL_JOBS_ALIVE_THRESHOLD" => "1")
+    wait_for(log, "working jobs")
+    sleep 0.3
+    assert_equal "ready=0 scheduled=0 claimed=1 blocked=0 failed=1 processes=1 finished=0", status
+  ensure
+    if pid
+      Process.kill("KILL", pid) rescue nil
+      Process.wait(pid) rescue nil
+    end
+  end
 end
 
 class ThreadedJobsTest < Spinrail::IntegrationTest
