@@ -159,6 +159,18 @@ module Spinrail
 
     private
 
+    # { post: { title: "x" } } -> [["post[title]", "x"]], as Rails tests send it.
+    def flatten_params(params, prefix = nil)
+      params.flat_map do |k, v|
+        key = prefix ? "#{prefix}[#{k}]" : k.to_s
+        case v
+        when Hash then flatten_params(v, key)
+        when Array then v.map { |e| ["#{key}[]", e.is_a?(Upload) ? e : e.to_s] }
+        else [[key, v.is_a?(Upload) ? v : v.to_s]]
+        end
+      end
+    end
+
     def local_path(location)
       uri = URI(location)
       uri.host ? uri.request_uri : location
@@ -166,16 +178,17 @@ module Spinrail
 
     def request(klass, path, params, headers, json = nil)
       req = klass.new(path, headers)
+      fields = params && flatten_params(params)
       if json
         req.body = JSON.generate(json)
         req["Content-Type"] = "application/json"
-      elsif params&.values&.any?(Upload)
-        req.set_form(params.map do |k, v|
-          next [k.to_s, v.to_s] unless v.is_a?(Upload)
-          [k.to_s, StringIO.new(File.binread(v.path)), { filename: File.basename(v.path), content_type: v.content_type }]
+      elsif fields&.any? { |_, v| v.is_a?(Upload) }
+        req.set_form(fields.map do |k, v|
+          next [k, v] unless v.is_a?(Upload)
+          [k, StringIO.new(File.binread(v.path)), { filename: File.basename(v.path), content_type: v.content_type }]
         end, "multipart/form-data")
-      elsif params
-        req.set_form_data(params.transform_keys(&:to_s))
+      elsif fields
+        req.set_form_data(fields)
       end
       req["Cookie"] = @cookies.map { |k, v| "#{k}=#{v}" }.join("; ") unless @cookies.empty?
       @response = Net::HTTP.start("127.0.0.1", @port, read_timeout: 3) { |http| http.request(req) }
