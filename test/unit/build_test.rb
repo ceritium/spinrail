@@ -176,6 +176,14 @@ class BuildTest < CompilerTest
         def self.original
           order(:created_at).first
         end
+
+        class << self
+          def recent = order(:created_at)
+
+          private
+
+          def helper = 1
+        end
       end
     RUBY
     ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n",
@@ -186,6 +194,10 @@ class BuildTest < CompilerTest
     assert_includes relation, "ordered.last_n(PAGE_SIZE)"
     assert_match(/def original\n\s*order\(created_at: :asc\)\.first/, relation)
     assert_includes ruby, "def self.find_by!(conditions) = all.find_by!(conditions)"
+    assert_includes ruby, "def self.recent = order(created_at: :asc)"
+    assert_includes ruby, "def self.helper = 1"
+    assert_includes relation, "def recent = order(created_at: :asc)"
+    refute_includes relation, "def helper"
   end
 
   def test_single_table_inheritance

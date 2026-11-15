@@ -20,7 +20,7 @@ Roughly in priority order within each section.
 - [x] Column types: boolean (`published?`), float/decimal, `default:`.
 - [x] Building through associations: `post.comments.create(...)`, `.new`, `.build`.
 - [x] `scope :name, ->(args) { ... }` (chainable), `update_all`; `def self.x`
-      also runs on relations, scoped to them; `last(n)` in scope bodies.
+      (or in `class << self`) also runs on relations, scoped to them; `last(n)` in scope bodies.
 - [x] Pagination: `page(n).per(k)`, `current_page`, `total_pages`, `<%= paginate @posts %>`.
 - [x] Eager loading: `includes`/`preload` run one query per association.
 - [x] `joins(:assoc)` with `where(table: { column: value })`, `group(:col).count`.

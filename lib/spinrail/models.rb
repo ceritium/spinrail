@@ -147,12 +147,31 @@ module Spinrail
         @secure_password_validations = !(kw[:validations] && Spinrail.literal(kw[:validations]) == false)
       elsif call == :has_secure_token
         secure_token(stmt)
+      elsif stmt.is_a?(Prism::SingletonClassNode)
+        singleton_class_body(stmt)
       else
         source = stmt.slice.gsub(/^ {#{stmt.location.start_column}}/, "")
         @body << source
         # Class methods also run on a relation, scoped to it, as in Rails.
         @constants << stmt.name.to_s if stmt.is_a?(Prism::ConstantWriteNode)
         @relation_methods << source.sub(/\Adef self\./, "def ") if !@sti_base && stmt.is_a?(Prism::DefNode) && stmt.receiver.is_a?(Prism::SelfNode)
+      end
+    end
+
+    # class << self: each def is a def self.x; private ones stay off relations.
+    def singleton_class_body(node)
+      fail!(node, "only class << self is supported") unless node.expression.is_a?(Prism::SelfNode)
+      visible = true
+      (node.body&.body || []).each do |stmt|
+        if stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && %i[private public].include?(stmt.name) && stmt.arguments.nil?
+          visible = stmt.name == :public
+        elsif stmt.is_a?(Prism::DefNode) && stmt.receiver.nil?
+          source = "def self." + stmt.slice.gsub(/^ {#{stmt.location.start_column}}/, "").delete_prefix("def ")
+          @body << source
+          @relation_methods << source.sub(/\Adef self\./, "def ") if visible && !@sti_base
+        else
+          fail!(stmt, "class << self supports only def, private and public")
+        end
       end
     end
 
