@@ -146,7 +146,7 @@ to the server.
   `default: -> { Current.user }`; `delegate` (methods without arguments).
 - Controllers: `params[:x]`, `params[:post][:title]`, strong params,
   `request.files["post[avatar]"]` for uploads, `render :action, status:`,
-  `render plain:`, `render json:`, `head`, `render view: Views::Stats::Show,
+  `render plain:` (with `content_type:`), `render json:`, `head`, `expires_in`, `render view: Views::Stats::Show,
   exposure: value`, `redirect_to path, status:, notice:`, implicit render;
   `before_action`/`after_action`/`skip_*`, `rescue_from`, `session`, `flash`,
   CSRF protection, `_method` override.
@@ -170,6 +170,10 @@ to the server.
   queue drained by `spinrail jobs` (3 attempts with backoff); inline in tests.
   `spinrail jobs -c N` works N at once on spinel threads, each with its own
   connection.
+- Gems: the default group of the app's Gemfile is compiled into the binary, as
+  `Bundler.require` would load it; a gem marked `require: false` stays out even
+  when another gem requires it (rqrcode's PNG export needs `chunky_png`, which
+  spinel can't compile). The gem must compile with spinel.
 - i18n: `config/locales/*.yml`, `t(".title")`, `t("greeting", name: x)`,
   `I18n.locale = params[:locale]`, translated validation messages.
 

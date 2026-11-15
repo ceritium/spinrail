@@ -196,6 +196,8 @@ Roughly in priority order within each section.
 - [x] CI (self-hosted runner).
 - [x] Package as a gem (`gem build spinrail.gemspec`); the toolchain goes to
       `SPINRAIL_VENDOR` or `~/.cache/spinrail/vendor` outside a checkout.
+- [x] Gems from the app's Gemfile, resolved by Bundler and spliced into the
+      generated source (tep has no `-I`).
 - [ ] Publish the gem (name, license and ownership to decide).
 - [ ] A console, once spinel can compile a line against a program that is already
       running: see `docs/internals/interactive-design.md` on the `interactive-spinel` branch of

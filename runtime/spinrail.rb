@@ -35,10 +35,17 @@ class Integer
   def minutes = self * 60
   def hours = self * 3600
   def days = self * 86400
+  def weeks = self * 604800
+  # Rails' lengths: a twelfth of a Gregorian year, and the year itself.
+  def months = self * 2629746
+  def years = self * 31556952
   alias second seconds
   alias minute minutes
   alias hour hours
   alias day days
+  alias week weeks
+  alias month months
+  alias year years
   def ago = Time.now - self
   def from_now = Time.now + self
 end
@@ -1338,9 +1345,13 @@ module Spinrail
       render_html("", status)
     end
 
-    def render_plain(text, status)
-      @res.headers["Content-Type"] = "text/plain; charset=utf-8"
+    def render_plain(text, status, content_type = "text/plain")
+      @res.headers["Content-Type"] = content_type + "; charset=utf-8"
       render_html(text, status)
+    end
+
+    def expires_in(seconds, public: false)
+      @res.headers["Cache-Control"] = "max-age=#{seconds}" + (public ? ", public" : ", private")
     end
 
     def h(value)

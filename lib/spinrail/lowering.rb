@@ -987,7 +987,8 @@ module Spinrail
         @rw.replace(node) { "render_json(#{json(kw[:json])}, #{status})" }
       elsif kw[:plain]
         @ctx.record_response(nil, where(node))
-        @rw.replace(node) { "render_plain(#{@rw.slice(kw[:plain])}, #{status})" }
+        type = kw[:content_type] ? ", #{@rw.slice(kw[:content_type])}" : ""
+        @rw.replace(node) { "render_plain(#{@rw.slice(kw[:plain])}, #{status}#{type})" }
       elsif args.first
         name = Spinrail.literal(args.first).to_s
         template = name.include?("/") ? name : "#{@ctx.dir}/#{name}"
