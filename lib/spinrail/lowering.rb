@@ -162,9 +162,10 @@ module Spinrail
       elsif turbo_stream_call?(node)
         lower_turbo_stream(node)
       elsif @ctx.view? && node.receiver.nil? && node.name == :turbo_stream_from
-        args, = Spinrail.call_args(node)
+        args, kw = Spinrail.call_args(node)
         fail!(node, "turbo_stream_from needs a stream") if args.empty?
-        @rw.replace(node) { "turbo_stream_from_tag(#{stream_name(args)})" }
+        channel = kw[:channel] ? kw[:channel].slice.delete('"') : "Turbo::StreamsChannel"
+        @rw.replace(node) { "turbo_stream_from_tag(#{stream_name(args)}, #{channel.inspect})" }
       elsif BROADCAST.match?(node.name.to_s)
         lower_broadcast(node)
       elsif job_call?(node)

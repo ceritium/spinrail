@@ -299,6 +299,7 @@ module Spinrail
         views,
         mailers_source,
         jobs_source,
+        cable? ? channels_source : "module Spinrail\n  module Cable\n    def self.subscribe_channel(name, connection, identifier, fd) = false\n  end\nend\n",
         *controllers.sort_by { |name, _| name == "ApplicationController" ? 0 : 1 }
           .map { |_, c| "#{SOURCE_MARK}#{c[:file]}\n#{c[:source]}" },
         application_controller_support,
@@ -310,7 +311,7 @@ module Spinrail
         schema_setup(schema),
         method_override,
         asset_cache_headers,
-        *(cable? ? ["get \"/cable\" do\n  Spinrail::Cable.upgrade(req, res)\nend\n"] : []),
+        *(cable? ? ["get \"/cable\" do\n  Spinrail::Cable.upgrade(req, res, #{connection_class}.new(req))\nend\n"] : []),
         *routes.routes.map { |r| route_block(r, controllers) },
         not_found_block
       ].join("\n").gsub(/__PARTIAL_LOCALS__(.+?)__/) do
@@ -323,6 +324,56 @@ module Spinrail
     def cable?
       Dir[path("app/**/*.{rb,erb}")].any? { |f| File.read(f).match?(/\b(turbo_stream_from|broadcast_\w+_to)\b/) }
     end
+
+    def connection_file = path("app/channels/application_cable/connection.rb")
+    def connection_class = File.exist?(connection_file) ? "ApplicationCable::Connection" : "Spinrail::CableConnection"
+
+    # app/channels: ApplicationCable::Connection (identified_by names
+    # become accessors that channels delegate to), ApplicationCable::Channel,
+    # each channel, and the dispatcher subscriptions go through by name
+    # (spinel can't look classes up at runtime).
+    def channels_source
+      base_file = path("app/channels/application_cable/channel.rb")
+      parts = []
+      identities = []
+      if File.exist?(connection_file)
+        source = File.read(connection_file).gsub(/^([ \t]*)identified_by[ \t]+(.+)$/) do
+          indent, names = Regexp.last_match.captures
+          identities.concat(names.scan(/:(\w+)/).flatten)
+          "#{indent}attr_accessor #{names}"
+        end
+        parts << "#{SOURCE_MARK}#{rel(connection_file)}\n" + lower_channel(source.sub("ActionCable::Connection::Base", "Spinrail::CableConnection"), connection_file)
+      end
+      base = File.exist?(base_file) ? File.read(base_file) : "module ApplicationCable\n  class Channel < ActionCable::Channel::Base\n  end\nend\n"
+      parts << "#{SOURCE_MARK}#{rel(base_file)}\n" + lower_channel(base.sub("ActionCable::Channel::Base", "Spinrail::CableChannel"), base_file)
+      unless identities.empty?
+        parts << "module ApplicationCable\n  class Channel\n#{identities.map { |i| "    def #{i} = connection.#{i}\n" }.join}  end\nend\n"
+      end
+      files = Dir[path("app/channels/**/*.rb")].sort.reject { |f| f.include?("/application_cable/") || f.include?("/concerns/") }
+      names = files.map do |file|
+        klass = Spinrail.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) } or
+          raise CompileError, "#{rel(file)}: expected a channel class"
+        parts << "#{SOURCE_MARK}#{rel(file)}\n" + lower_channel(File.read(file), file)
+        klass.constant_path.slice
+      end
+      branches = names.map do |n|
+        <<~RUBY.gsub(/^/, "      ")
+          if name == #{n.inspect}
+            channel = #{n}.new(identifier)
+            channel.connection = connection
+            channel.subscribed
+            return false if channel.rejected?
+            channel.streams.each { |stream| Cable.subscribe(fd, identifier, stream) }
+            return true
+          end
+        RUBY
+      end
+      parts << "module Spinrail\n  module Cable\n    def self.subscribe_channel(name, connection, identifier, fd)\n" \
+               "#{branches.join}      false\n    end\n  end\nend\n"
+      parts.join("\n")
+    end
+
+    def lower_channel(source, file) = Lowering.lower(source, rel(file), Context.new(self, "", view: false))
 
     # SPINRAIL_DATABASE=postgres (at build time) swaps Tep::SQLite for the
     # PG adapter and reads DATABASE_URL instead of DATABASE_PATH.

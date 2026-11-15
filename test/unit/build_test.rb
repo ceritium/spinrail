@@ -307,16 +307,52 @@ class BuildTest < CompilerTest
       "app/views/comments/_comment.html.erb" => "<p><%= comment.body %></p>"
     }
     ruby = build(files)
-    assert_includes ruby, %(out << (turbo_stream_from_tag((iv_post).to_stream_name + ":" + "comments")).to_s)
+    assert_includes ruby, %(out << (turbo_stream_from_tag((iv_post).to_stream_name + ":" + "comments", "Turbo::StreamsChannel")).to_s)
     assert_includes ruby, 'Spinrail::Cable.broadcast((post).to_stream_name + ":" + "comments", Spinrail::Cable.view.turbo_stream_tag("append", ' \
                           '(post).dom_id_with("comments"), ApplicationView.new(Spinrail::Cable.view).partial_comments_comment(self)))'
     assert_includes ruby, %(Spinrail::Cable.broadcast((post).to_stream_name, Spinrail::Cable.view.turbo_stream_tag("remove", self.dom_id, "")))
     assert_includes ruby, %(def to_stream_name = "posts/" + @id.to_s)
-    assert_includes ruby, %(get "/cable" do\n  Spinrail::Cable.upgrade(req, res))
+    assert_includes ruby, %(get "/cable" do\n  Spinrail::Cable.upgrade(req, res, Spinrail::CableConnection.new(req)))
 
     files["app/views/posts/show.html.erb"] = "<%= @post.title %>"
     files["app/models/comment.rb"] = "class Comment < ApplicationRecord\n belongs_to :post\nend\n"
     refute_includes build(files), %(get "/cable")
+  end
+
+  def test_cable_channels
+    files = {
+      "config/routes.rb" => %(Spinrail.routes.draw do\n get "/", to: "posts#index"\nend\n),
+      "db/schema.rb" => "Spinrail::Schema.define do\n create_table :posts do |t|\n t.string :title\n end\nend\n",
+      "app/models/post.rb" => "class Post < ApplicationRecord\nend\n",
+      "app/controllers/posts_controller.rb" => "class PostsController < ApplicationController\n def index\n end\nend\n",
+      "app/views/posts/index.html.erb" => %(<%= turbo_stream_from :posts, channel: "PostsChannel" %>),
+      "app/channels/application_cable/connection.rb" => <<~RUBY,
+        module ApplicationCable
+          class Connection < ActionCable::Connection::Base
+            identified_by :current_user
+
+            def connect
+              self.current_user = cookies.signed[:user] || reject_unauthorized_connection
+            end
+          end
+        end
+      RUBY
+      "app/channels/posts_channel.rb" => <<~RUBY
+        class PostsChannel < ApplicationCable::Channel
+          def subscribed
+            current_user == "admin" ? stream_from(verified_stream_name_from_params) : reject
+          end
+        end
+      RUBY
+    }
+    ruby = build(files)
+    assert_includes ruby, %(turbo_stream_from_tag("posts", "PostsChannel"))
+    assert_includes ruby, "class Connection < Spinrail::CableConnection\n    attr_accessor :current_user"
+    assert_includes ruby, %(self.current_user = cookie_get_signed("user") || reject_unauthorized_connection)
+    assert_includes ruby, "class Channel < Spinrail::CableChannel"
+    assert_includes ruby, "def current_user = connection.current_user"
+    assert_includes ruby, %(if name == "PostsChannel"\n        channel = PostsChannel.new(identifier))
+    assert_includes ruby, %(Spinrail::Cable.upgrade(req, res, ApplicationCable::Connection.new(req)))
   end
 
   def test_template_reading_an_unassigned_ivar

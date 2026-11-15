@@ -1179,14 +1179,7 @@ module Spinrail
     end
 
     # value--hmac, verified with the session secret.
-    def cookie_get_signed(key)
-      raw = @req.cookies[key]
-      return nil if raw.nil?
-      cut = raw.rindex("--")
-      return nil if cut.nil?
-      value = raw[0, cut]
-      Tep.timing_safe_eq(raw[cut + 2, raw.length - cut - 2], Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, value)) ? value : nil
-    end
+    def cookie_get_signed(key) = Spinrail.verify_signed(@req.cookies[key])
 
     def cookie_delete(key)
       opts = Tep.str_hash
@@ -1394,8 +1387,8 @@ module Spinrail
     def form_authenticity_token = @controller.form_authenticity_token
     def turbo_stream_tag(action, target, html) = @controller.turbo_stream_tag(action, target, html)
 
-    def turbo_stream_from_tag(name)
-      "<turbo-cable-stream-source channel=\"" + Spinrail::Cable::CHANNEL + "\" signed-stream-name=\"" + h(Spinrail::Cable.signed(name)) + "\"></turbo-cable-stream-source>"
+    def turbo_stream_from_tag(name, channel)
+      "<turbo-cable-stream-source channel=\"" + h(channel) + "\" signed-stream-name=\"" + h(Spinrail::Cable.signed(channel, name)) + "\"></turbo-cable-stream-source>"
     end
     def request_base_url = @controller.request_base_url
 
@@ -1581,26 +1574,96 @@ end
 # turbo-rails client works unchanged. Only Turbo::StreamsChannel: a
 # subscription is authorized by its signed stream name, as in turbo-rails.
 module Spinrail
+  def self.verify_signed(raw)
+    return nil if raw.nil?
+    cut = raw.rindex("--")
+    return nil if cut.nil?
+    value = raw[0, cut]
+    Tep.timing_safe_eq(raw[cut + 2, raw.length - cut - 2], Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, value)) ? value : nil
+  end
+
+  class CableSub
+    attr_reader :fd, :identifier, :stream
+
+    def initialize(fd, identifier, stream)
+      @fd = fd
+      @identifier = identifier
+      @stream = stream
+    end
+  end
+
+  # ActionCable::Connection::Base: built from the upgrade request.
+  class CableConnection
+    def initialize(req)
+      @req = req
+      @rejected = false
+    end
+
+    def connect = nil
+    def rejected? = @rejected
+    def cookie_get_signed(key) = Spinrail.verify_signed(@req.cookies[key])
+
+    def reject_unauthorized_connection
+      @rejected = true
+      nil
+    end
+  end
+
+  # ActionCable::Channel::Base: subscribed decides the streams or rejects.
+  class CableChannel
+    attr_accessor :connection
+    attr_reader :streams
+
+    def initialize(identifier)
+      @identifier = identifier
+      @streams = []
+      @rejected = false
+    end
+
+    def subscribed = nil
+    def rejected? = @rejected
+    def param(key) = Tep::Json.get_str(@identifier, key)
+    def verified_stream_name_from_params = Spinrail::Cable.verified(param("channel"), param("signed_stream_name"))
+
+    def stream_from(name)
+      @streams << name
+      nil
+    end
+
+    def reject
+      @rejected = true
+      nil
+    end
+  end
+
   module Cable
     PROTOCOL = "actioncable-v1-json".freeze
     CHANNEL = "Turbo::StreamsChannel".freeze
     PING_TOPIC = "spinrail:cable:ping".freeze
     PINGER = [false]
+    SUBS = [Spinrail::CableSub.new(-1, "", "")]
+    SUBS.delete_at(0)
 
-    def self.upgrade(req, res)
+    def self.upgrade(req, res, connection)
       hs = Tep::WebSocket::Handshake.check(req)
       unless hs.valid
         res.set_status(400)
         return ""
       end
+      connection.connect
       driver = Tep::WebSocket::Driver.new(0)
       driver.set_subprotocol(PROTOCOL) if hs.protocols.include?(PROTOCOL)
       on_open = Spinrail::CableOpen.new
       on_open.ws = driver
+      on_open.connection = connection
       on_message = Spinrail::CableMessage.new
       on_message.ws = driver
+      on_message.connection = connection
+      on_close = Spinrail::CableClose.new
+      on_close.ws = driver
       driver.set_on_open(on_open)
       driver.set_on_message(on_message)
+      driver.set_on_close(on_close)
       res.start_websocket(hs.accept_key, driver)
       ""
     end
@@ -1620,42 +1683,67 @@ module Spinrail
       end
     end
 
-    def self.signed(name) = name + "--" + Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, "turbo:" + name)
+    # Signed for one channel: a name a guarded channel hands out can't be
+    # replayed through Turbo::StreamsChannel, which checks nothing else.
+    def self.signed(channel, name) = name + "--" + Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, "turbo:" + channel + ":" + name)
 
-    def self.verified(signed)
+    def self.verified(channel, signed)
       cut = signed.rindex("--")
       return "" if cut.nil?
       name = signed[0, cut]
-      Tep.timing_safe_eq(signed, Cable.signed(name)) ? name : ""
+      Tep.timing_safe_eq(signed, Cable.signed(channel, name)) ? name : ""
     end
 
-    # The identifier the client sends: JSON.stringify of its params.
-    def self.identifier(name) = "{\"channel\":\"" + CHANNEL + "\",\"signed_stream_name\":\"" + Cable.signed(name) + "\"}"
-
-    def self.receive(ws, data)
+    def self.receive(ws, data, connection)
+      return if connection.rejected?
       command = Tep::Json.get_str(data, "command")
       identifier = Tep::Json.get_str(data, "identifier")
-      name = Cable.verified(Tep::Json.get_str(identifier, "signed_stream_name"))
-      ok = !name.empty? && Tep::Json.get_str(identifier, "channel") == CHANNEL
+      channel = Tep::Json.get_str(identifier, "channel")
       if command == "subscribe"
-        Tep::Broadcast.subscribe_ws("turbo:" + name, ws.fd) if ok
+        Cable.unsubscribe(ws.fd, identifier)
+        ok = channel == CHANNEL ? Cable.subscribe_turbo(identifier, ws.fd) : Cable.subscribe_channel(channel, connection, identifier, ws.fd)
         ws.text("{\"identifier\":" + Tep::Json.quote(identifier) + ",\"type\":\"" + (ok ? "confirm" : "reject") + "_subscription\"}")
-      elsif command == "unsubscribe" && ok
-        Cable.unsubscribe(ws.fd, "turbo:" + name)
+      elsif command == "unsubscribe"
+        Cable.unsubscribe(ws.fd, identifier)
       end
     end
 
-    def self.unsubscribe(fd, topic)
-      subs = Tep::APP.broadcast_subs
-      i = subs.length - 1
+    def self.subscribe_turbo(identifier, fd)
+      name = Cable.verified(CHANNEL, Tep::Json.get_str(identifier, "signed_stream_name"))
+      return false if name.empty?
+      Cable.subscribe(fd, identifier, name)
+      true
+    end
+
+    def self.subscribe(fd, identifier, stream)
+      SUBS << Spinrail::CableSub.new(fd, identifier, stream)
+    end
+
+    def self.unsubscribe(fd, identifier)
+      i = SUBS.length - 1
       while i >= 0
-        subs.delete_at(i) if subs[i].fd == fd && subs[i].topic == topic
+        SUBS.delete_at(i) if SUBS[i].fd == fd && SUBS[i].identifier == identifier
         i -= 1
       end
     end
 
-    def self.broadcast(name, html)
-      Tep::Broadcast.publish("turbo:" + name, "{\"identifier\":" + Tep::Json.quote(Cable.identifier(name)) + ",\"message\":" + Tep::Json.quote(html) + "}")
+    def self.drop(fd)
+      i = SUBS.length - 1
+      while i >= 0
+        SUBS.delete_at(i) if SUBS[i].fd == fd
+        i -= 1
+      end
+    end
+
+    # Each subscriber gets the message under its own identifier, as the
+    # client matches on it.
+    def self.broadcast(stream, html)
+      message = Tep::Json.quote(html)
+      SUBS.each do |sub|
+        next unless sub.stream == stream
+        Tep::WebSocket::Driver.send_frame(sub.fd, Tep::WebSocket::OPCODE_TEXT,
+                                          "{\"identifier\":" + Tep::Json.quote(sub.identifier) + ",\"message\":" + message + "}")
+      end
     end
 
     # Partials rendered outside a request (model broadcasts).
@@ -1663,9 +1751,13 @@ module Spinrail
   end
 
   class CableOpen < Tep::WebSocket::Handler
-    attr_accessor :ws
+    attr_accessor :ws, :connection
 
     def handle_event(evt)
+      if @connection.rejected?
+        @ws.text("{\"type\":\"disconnect\",\"reason\":\"unauthorized\",\"reconnect\":false}")
+        return 0
+      end
       @ws.text("{\"type\":\"welcome\"}")
       Tep::Broadcast.subscribe_ws(Spinrail::Cable::PING_TOPIC, @ws.fd)
       Spinrail::Cable.start_pinger
@@ -1674,10 +1766,19 @@ module Spinrail
   end
 
   class CableMessage < Tep::WebSocket::Handler
+    attr_accessor :ws, :connection
+
+    def handle_event(evt)
+      Spinrail::Cable.receive(@ws, evt.data, @connection)
+      0
+    end
+  end
+
+  class CableClose < Tep::WebSocket::Handler
     attr_accessor :ws
 
     def handle_event(evt)
-      Spinrail::Cable.receive(@ws, evt.data)
+      Spinrail::Cable.drop(@ws.fd)
       0
     end
   end

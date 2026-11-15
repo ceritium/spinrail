@@ -102,9 +102,14 @@ Roughly in priority order within each section.
       partial or HTML.
 - [x] Live Turbo Streams over ActionCable's protocol (turbo-rails' client):
       `turbo_stream_from` in views, `broadcast_<action>_to` in models, a
-      `/cable` route when the app uses either. Signed stream names only; no
-      channel classes or per-subscription authorization yet, and no
-      `broadcasts_to` / `_later` variants.
+      `/cable` route when the app uses either. Stream names are signed per
+      channel. No `broadcasts_to` / `_later` variants yet.
+- [x] Channels (app/channels): `ApplicationCable::Connection` with
+      `identified_by`, `connect`, `cookies.signed`,
+      `reject_unauthorized_connection`; channels with `subscribed`,
+      `stream_from`, `reject`, `verified_stream_name_from_params`, picked by
+      `turbo_stream_from ..., channel:`. No `perform`/`transmit` or
+      client-sent actions yet.
 - [x] File uploads (tep fork): `f.file_field` makes `form_with` multipart,
       `request.files["post[avatar]"]` (`original_filename`, `content_type`,
       `read`, `size`), `fixture_file_upload` in tests. Held in memory; no
