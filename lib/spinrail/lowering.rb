@@ -711,16 +711,16 @@ module Spinrail
       if recv.name == :now && bare?(recv.receiver, :flash) && node.name == :[]=
         return [:flash_now, :set]
       end
-      # cookies.signed / cookies.permanent / cookies.permanent.signed
+      # cookies.signed / cookies.permanent / both, in either order
       if %i[signed permanent].include?(recv.name)
         chain = [recv.name]
         base = recv.receiver
-        if base.is_a?(Prism::CallNode) && base.name == :permanent && base.arguments.nil?
-          chain.unshift(:permanent)
+        if base.is_a?(Prism::CallNode) && %i[signed permanent].include?(base.name) && base.name != recv.name && base.arguments.nil?
+          chain << base.name
           base = base.receiver
         end
         return nil unless bare?(base, :cookies)
-        kind = chain.join("_")
+        kind = chain.sort.join("_")
         return [:cookie, node.name == :[]= ? :"set_#{kind}" : :"get_#{kind}"] if %i[[] []=].include?(node.name)
       end
       return nil unless recv.receiver.nil? && %i[session flash cookies].include?(recv.name)
@@ -738,6 +738,8 @@ module Spinrail
       key, value = node.arguments.arguments
       @rw.replace(node) do
         k = key.is_a?(Prism::SymbolNode) || key.is_a?(Prism::StringNode) ? key.unescaped.inspect : "(#{@rw.slice(key)}).to_s"
+        next cookie_write(node, k, op, value) if store == :cookie && op.to_s.start_with?("set") &&
+                                                (value.is_a?(Prism::HashNode) || value.is_a?(Prism::KeywordHashNode))
         case op
         when :get then "#{store}_get(#{k})"
         when :set then "#{store}_set(#{k}, #{@rw.slice(value)})"
@@ -747,6 +749,22 @@ module Spinrail
         else fail!(node, "unsupported cookies access")
         end
       end
+    end
+
+    # cookies[...] = { value: v, httponly: true, same_site: :lax }
+    def cookie_write(node, key, op, hash)
+      opts = hash.elements.to_h do |e|
+        fail!(node, "cookie options take literal keys") unless e.is_a?(Prism::AssocNode) && e.key.is_a?(Prism::SymbolNode)
+        [e.key.unescaped.to_sym, e.value]
+      end
+      unknown = opts.keys - %i[value httponly same_site]
+      fail!(node, "unsupported cookie option #{unknown.first}") if unknown.any?
+      fail!(node, "a cookie hash needs value:") unless opts[:value]
+      httponly = opts[:httponly] ? Spinrail.literal(opts[:httponly]) : false
+      fail!(node, "httponly: takes true or false") unless [true, false].include?(httponly)
+      same_site = opts[:same_site] ? Spinrail.literal(opts[:same_site]).to_s.capitalize : "Lax"
+      fail!(node, "same_site: takes :lax, :strict or :none") unless %w[Lax Strict None].include?(same_site)
+      "cookie_write(#{key}, #{@rw.slice(opts[:value])}, #{op.to_s.include?('permanent')}, #{op.to_s.include?('signed')}, #{httponly}, #{same_site.inspect})"
     end
 
     # order("sql") as is; order(:a, :b) as order(a: :asc, b: :asc).

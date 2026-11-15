@@ -12,6 +12,20 @@ class BuildTest < CompilerTest
     refute_includes off, "can't be blank"
   end
 
+  def test_secure_token_authenticate_by_and_destroy_bang
+    schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :email_address\n t.string :password_digest\n t.string :token\n end\nend\n"
+    ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\n has_secure_password\n has_secure_token\nend\n")
+    assert_includes ruby, "@token = SecureRandom.alphanumeric(24) if @token.to_s.empty?"
+    assert_includes ruby, "def regenerate_token = update!(token: SecureRandom.alphanumeric(24))"
+    assert_includes ruby, "def self.authenticate_by(conditions) = all.authenticate_by(conditions)"
+    assert_includes ruby, "record.authenticate(password) ? record : nil"
+    assert_includes ruby, "def destroy!"
+    error = assert_raises(Spinrail::CompileError) do
+      build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\n has_secure_token :auth_token\nend\n")
+    end
+    assert_match(/needs the auth_token column/, error.message)
+  end
+
   def test_records_inspect_like_rails
     schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :name\n t.string :password_digest\n end\nend\n"
     ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n")
@@ -56,6 +70,13 @@ class BuildTest < CompilerTest
       "app/models/membership.rb" => "class Membership < ApplicationRecord\n belongs_to :room\n belongs_to :user\nend\n"
     )
     assert_includes ruby, %(def users = User.all.where_subquery("id", "SELECT user_id FROM memberships WHERE room_id = ?", @id.to_s))
+  end
+
+  def test_plain_classes_in_app_models
+    schema = "Spinrail::Schema.define do\n create_table :users do |t|\n t.string :name\n end\nend\n"
+    ruby = build("db/schema.rb" => schema, "app/models/user.rb" => "class User < ApplicationRecord\nend\n",
+                 "app/models/first_run.rb" => "class FirstRun\n  def self.create!(name) = User.create!(name: name)\nend\n")
+    assert_includes ruby, "class FirstRun\n  def self.create!(name) = User.create!(name: name)\nend"
   end
 
   def test_time_zone_from_config

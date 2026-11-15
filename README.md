@@ -137,7 +137,9 @@ to the server.
   `exists?`, `pluck`, `find`, `find_by`, `create`, `save`, `update`,
   `destroy` and their `!` forms, `transaction`; validations (`presence`,
   `length`, `numericality`, `format`, `inclusion`, `exclusion`, `uniqueness`,
-  `validate :method`); callbacks; `belongs_to`, `has_many`, `has_one`.
+  `validate :method`); callbacks; `belongs_to`, `has_many`, `has_one`;
+  `has_secure_password` with `authenticate_by`, `has_secure_token`. Plain classes
+  (no superclass) in app/models compile as written.
 - Controllers: `params[:x]`, `params[:post][:title]`, strong params,
   `request.files["post[avatar]"]` for uploads, `render :action, status:`,
   `render plain:`, `render json:`, `head`, `render view: Views::Stats::Show,

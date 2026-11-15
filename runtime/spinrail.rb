@@ -5,6 +5,7 @@
 module Tep
   class Request
     def remote_ip = @remote_host
+    def user_agent = @req_headers["user-agent"]
   end
 
   class UploadedFile
@@ -34,6 +35,8 @@ class Integer
   alias minute minutes
   alias hour hours
   alias day days
+  def ago = Time.now - self
+  def from_now = Time.now + self
 end
 
 class Float
@@ -53,6 +56,8 @@ class Time
   def self.current = Time.now
 
   def to_json = "\"" + iso8601(3) + "\""
+  def before?(other) = self < other
+  def after?(other) = self > other
 end
 
 class NilClass
@@ -332,6 +337,7 @@ module Spinrail
   end
 
   class RecordInvalid < StandardError; end
+  class RecordNotDestroyed < StandardError; end
   class ParameterMissing < StandardError; end
 
   # A JSON request body flattened into form-style names: {"post": {"title":
@@ -481,6 +487,9 @@ module Spinrail
       return "" unless has?(key)
       @source[full(key)].dup.force_encoding("UTF-8").scrub("")
     end
+
+    # user_params[:name]: "" when absent or not permitted.
+    def [](key) = get(key.to_s)
 
     def full(key) = @prefix.empty? ? key : @prefix + "[" + key + "]"
 
@@ -1090,6 +1099,7 @@ module Spinrail
 
     def content_for?(key) = !content_for_get(key).empty?
     def session_get(key) = Tep.str_hash[key]
+    def param(name) = ""
     def form_authenticity_token = ""
     def request_base_url = "http://localhost"
     def h(value) = Tep.h(value)
@@ -1142,19 +1152,21 @@ module Spinrail
 
     def cookie_get(key) = @req.cookies[key]
 
-    def cookie_set(key, value)
-      opts = Tep.str_hash
-      opts["Path"] = "/"
-      opts["SameSite"] = "Lax"
-      @res.set_cookie(key, value.to_s, opts)
-    end
+    def cookie_set(key, value) = cookie_write(key, value, false, false, false, "Lax")
+    def cookie_set_permanent(key, value) = cookie_write(key, value, true, false, false, "Lax")
+    def cookie_set_signed(key, value) = cookie_write(key, value, false, true, false, "Lax")
+    def cookie_set_permanent_signed(key, value) = cookie_write(key, value, true, true, false, "Lax")
 
-    def cookie_set_permanent(key, value)
+    # cookies[...] = { value:, httponly:, same_site: } lowers here directly.
+    def cookie_write(key, value, permanent, signed, httponly, same_site)
+      text = value.to_s
+      text = text + "--" + Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, text) if signed
       opts = Tep.str_hash
       opts["Path"] = "/"
-      opts["SameSite"] = "Lax"
-      opts["Max-Age"] = "630720000"
-      @res.set_cookie(key, value.to_s, opts)
+      opts["SameSite"] = same_site
+      opts["Max-Age"] = "630720000" if permanent
+      opts["HttpOnly"] = "" if httponly
+      @res.set_cookie(key, text, opts)
     end
 
     # value--hmac, verified with the session secret.
@@ -1165,14 +1177,6 @@ module Spinrail
       return nil if cut.nil?
       value = raw[0, cut]
       Tep.timing_safe_eq(raw[cut + 2, raw.length - cut - 2], Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, value)) ? value : nil
-    end
-
-    def cookie_set_signed(key, value)
-      cookie_set(key, value.to_s + "--" + Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, value.to_s))
-    end
-
-    def cookie_set_permanent_signed(key, value)
-      cookie_set_permanent(key, value.to_s + "--" + Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, value.to_s))
     end
 
     def cookie_delete(key)
@@ -1382,6 +1386,7 @@ module Spinrail
     def notice = @controller.flash_get("notice")
     def alert = @controller.flash_get("alert")
     def session_get(key) = @controller.session_get(key)
+    def param(name) = @controller.param(name)
     def form_authenticity_token = @controller.form_authenticity_token
     def request_base_url = @controller.request_base_url
 

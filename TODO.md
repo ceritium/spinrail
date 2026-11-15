@@ -60,7 +60,9 @@ Roughly in priority order within each section.
       column each name stores itself; `prefix:`/`suffix:`.
 - [x] `confirmation` and `acceptance` validations (virtual attributes).
 - [x] `has_secure_password` (PBKDF2 via `Tep::Password`); `authenticate` returns
-      true/false instead of the record.
+      true/false instead of the record. `authenticate_by` on the model and relations.
+- [x] `has_secure_token` (alphanumeric, not base58), `regenerate_<attr>`.
+- [x] Plain classes (no superclass) in app/models.
 
 ## Controllers
 
@@ -71,7 +73,8 @@ Roughly in priority order within each section.
 - [x] Sessions on tep's signed cookie (`SECRET_KEY_BASE`, a dev secret in
       `tmp/local_secret.txt`).
 - [x] `cookies[:x]`, `cookies[:x] = v`, `cookies.delete(:x)`.
-- [x] `cookies.signed` (HMAC with the session secret) / `cookies.permanent`.
+- [x] `cookies.signed` (HMAC with the session secret) / `cookies.permanent`, in
+      either order; `{ value:, httponly:, same_site: }` values.
 - [ ] `cookies.encrypted`.
 - [x] `flash`, `flash.now`, `redirect_to ..., notice:/alert:`, `notice`/`alert` in views.
 - [x] CSRF protection (form param or `X-CSRF-Token`), `skip_forgery_protection`,

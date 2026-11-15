@@ -72,9 +72,22 @@ module Spinrail
         @secure_password = true
         _, kw = Spinrail.call_args(stmt)
         @secure_password_validations = !(kw[:validations] && Spinrail.literal(kw[:validations]) == false)
+      elsif call == :has_secure_token
+        secure_token(stmt)
       else
         @body << stmt.slice.gsub(/^ {#{stmt.location.start_column}}/, "")
       end
+    end
+
+    # has_secure_token [:attr]: a random token set before create (Rails'
+    # default, not on: :initialize), plus regenerate_<attr>.
+    def secure_token(node)
+      args, kw = Spinrail.call_args(node)
+      fail!(node, "unsupported has_secure_token option #{kw.keys.first}") if kw.any?
+      attr = args.empty? ? "token" : Spinrail.literal(args.first).to_s
+      fail!(node, "has_secure_token needs the #{attr} column") unless @table.column(attr)
+      @callbacks[:before_create] << "@#{attr} = SecureRandom.alphanumeric(24) if @#{attr}.to_s.empty?"
+      @body << "def regenerate_#{attr} = update!(#{attr}: SecureRandom.alphanumeric(24))"
     end
 
     # before_save :x, if: :y -> "x if y"
@@ -339,6 +352,31 @@ module Spinrail
       "UPDATE #{@table.name} SET #{sets.join(', ')} WHERE id = ?"
     end
 
+    # authenticate_by(email_address: e, password: p): the record or nil. A
+    # miss still hashes, so its timing doesn't tell which emails exist.
+    def authenticate_by_method
+      return "" unless @secure_password
+      <<~RUBY
+        def authenticate_by(conditions)
+          password = conditions[:password]
+          raise ArgumentError, "authenticate_by needs password:" if password.nil?
+          relation = spawn
+          blank = password.empty?
+          conditions.each do |column, value|
+            next if column == :password
+            blank = true if value.nil? || value.to_s.empty?
+            relation.add_where(column.to_s, Spinrail.sql_text(value), "=")
+          end
+          record = blank ? nil : relation.first
+          if record.nil?
+            Tep::Password.hash(password)
+            return nil
+          end
+          record.authenticate(password) ? record : nil
+        end
+      RUBY
+    end
+
     def delete_sql = "DELETE FROM #{@table.name} WHERE id = ?"
 
     def indent(lines, n) = Array(lines).flat_map { |l| l.split("\n") }.map { |l| l.empty? ? l : (" " * n) + l }.join("\n")
@@ -404,6 +442,11 @@ module Spinrail
         #{indent(write_statement(delete_sql, "Destroy", [], ["db.bind_int(%d, @id)"]), 2)}
         #{indent(run_callbacks(:after_destroy), 2)}
           true
+        end
+
+        def destroy!
+          raise Spinrail::RecordNotDestroyed, "Failed to destroy #{@name} with id=" + @id.to_s unless destroy
+          self
         end
       RUBY
     end
@@ -514,6 +557,7 @@ module Spinrail
           def self.exists? = all.exists?
           def self.delete_all = all.delete_all
           def self.find_by(conditions) = all.where(conditions).first
+          #{@secure_password ? "def self.authenticate_by(conditions) = all.authenticate_by(conditions)" : ""}
           def self.update_all(changes) = all.update_all(changes)
           def self.with_includes(names) = all.with_includes(names)
           def self.with_joins(names) = all.with_joins(names)
@@ -1058,6 +1102,7 @@ module Spinrail
           end
 
           def find_by(conditions) = where(conditions).first
+        #{indent(authenticate_by_method, 2)}
 
           def last
             raise ArgumentError, "last needs an order by column, not SQL" if @raw_order.length > 0

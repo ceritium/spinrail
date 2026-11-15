@@ -136,7 +136,17 @@ module Spinrail
     attr_reader :templates, :action_views
 
     def model_names
-      @model_names ||= Dir[path("app/models/*.rb")].map { |f| Inflector.camelize(File.basename(f, ".rb")) } - ["ApplicationRecord"]
+      @model_names ||= record_files.map { |f| Inflector.camelize(File.basename(f, ".rb")) }
+    end
+
+    # app/models holds records and plain classes (no superclass), as in Rails.
+    def record_files = model_files.reject { |f| plain_model?(f) }
+    def plain_model_files = model_files.select { |f| plain_model?(f) }
+    def model_files = Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }
+
+    def plain_model?(file)
+      klass = Spinrail.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
+      klass && klass.superclass.nil?
     end
 
     def mailer_names = Dir[path("app/mailers/*.rb")].map { |f| Inflector.camelize(File.basename(f, ".rb")) }
@@ -241,8 +251,8 @@ module Spinrail
         translations,
         assets_source,
         application_record,
-        *Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }
-          .map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Model.new(f, schema).to_ruby}" },
+        *record_files.map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Model.new(f, schema).to_ruby}" },
+        *plain_model_files.map { |f| "#{SOURCE_MARK}#{rel(f)}\n" + Lowering.lower(File.read(f), rel(f), Context.new(self, "", view: false)) },
         views,
         mailers_source,
         jobs_source,

@@ -39,6 +39,14 @@ class LoweringTest < CompilerTest
     assert_equal %(flash_now_set("notice", "x")), lower(%(flash.now[:notice] = "x"))
   end
 
+  def test_cookie_options
+    assert_equal %(cookie_set_permanent_signed("t", x)), lower("cookies.signed.permanent[:t] = x")
+    assert_equal %(cookie_write("t", s.token, true, true, true, "Lax")),
+                 lower("cookies.signed.permanent[:t] = { value: s.token, httponly: true, same_site: :lax }")
+    assert_equal %(cookie_write("t", x, false, false, false, "Strict")), lower("cookies[:t] = { value: x, same_site: :strict }")
+    assert_raises(Spinrail::CompileError) { lower("cookies[:t] = { value: x, domain: :all }") }
+  end
+
   def test_controller_declarations_are_dropped
     assert_equal "\n", lower("before_action :x, only: [:show]\n")
   end
