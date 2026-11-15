@@ -56,6 +56,43 @@ module Spinrail
 
     def self.schema
       SCHEMA.each { |sql| Spinrail.db.exec(sql) }
+      Jobs.drop_legacy
+    end
+
+    # The pre-Solid Queue table goes: its still queued and running rows move
+    # to the new queue (one String argument, the default queue, the old
+    # attempts as executions), finished ones go with the table.
+    def self.drop_legacy
+      # PRAGMA table_info works on both: empty when the table is gone.
+      db = Spinrail.prepare("PRAGMA table_info(spinrail_jobs)", false)
+      exists = db.step == 1
+      db.finalize
+      return unless exists
+      db = Spinrail.prepare("SELECT job, arg, attempts, run_at FROM spinrail_jobs WHERE status = 'queued' OR status = 'running' ORDER BY id", false)
+      jobs = [""]
+      jobs.clear
+      args = [""]
+      args.clear
+      attempts = [0]
+      attempts.clear
+      run_at = [0]
+      run_at.clear
+      while db.step == 1
+        jobs << db.col_str(0)
+        args << db.col_str(1)
+        attempts << db.col_int(2)
+        run_at << db.col_int(3)
+      end
+      db.finalize
+      Spinrail.transaction do
+        i = 0
+        while i < jobs.length
+          at = run_at[i] > Time.now.to_i ? Spinrail.format_time(Time.at(run_at[i])) : ""
+          Jobs.insert(jobs[i], Jobs.encode([args[i]]), "default", 0, at, attempts[i], "")
+          i += 1
+        end
+        Spinrail.db.exec("DROP TABLE spinrail_jobs")
+      end
     end
 
     # What SpinrailJobs.retry_wait answers when the job shouldn't be retried
