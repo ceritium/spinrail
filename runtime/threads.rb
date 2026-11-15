@@ -16,7 +16,7 @@ module Spinrail
     Jobs.trap_signals
     id = Jobs.register(count)
     Jobs.prune(id)
-    puts "spinrail: working jobs on " + count.to_s + " threads, queues " + Jobs.queues.join(",") + " (Ctrl+C to stop)"
+    puts "spinrail: working jobs on " + count.to_s + " threads, queues " + Jobs.queues.join(",") + Jobs.host_suffix + " (Ctrl+C to stop)"
     $stdout.flush
     threads = []
     count.times do |i|

@@ -150,6 +150,20 @@ class ProcessesTest < Spinrail::IntegrationTest
       Process.wait(pid) rescue nil
     end
   end
+
+  # The worker's hostname lands in its process row: HOSTNAME if set, else
+  # /proc/sys/kernel/hostname or /etc/hostname (spinel has no Socket).
+  def test_worker_reports_its_hostname
+    get "/models/seed"
+    log = File.join(Dir.tmpdir, "spinrail-hostname-#{Process.pid}.log")
+    pid = worker(log, "HOSTNAME" => "box-a")
+    wait_for(log, "working jobs on * at box-a")
+  ensure
+    if pid
+      Process.kill("KILL", pid) rescue nil
+      Process.wait(pid) rescue nil
+    end
+  end
 end
 
 class QueueCommandsTest < Spinrail::IntegrationTest

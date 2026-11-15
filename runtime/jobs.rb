@@ -469,6 +469,25 @@ module Spinrail
 
     def self.alive_threshold = ENV.fetch("SPINRAIL_JOBS_ALIVE_THRESHOLD", "300").to_i
 
+    # Spinel has no Socket: HOSTNAME if set, else /proc (Linux) or /etc/hostname.
+    def self.hostname
+      name = ENV.fetch("HOSTNAME", "")
+      return name unless name.empty?
+      paths = ["/proc/sys/kernel/hostname", "/etc/hostname"]
+      i = 0
+      while i < paths.length
+        if File.exist?(paths[i])
+          value = File.read(paths[i]).split("\n").first.to_s.strip
+          return value unless value.empty?
+        end
+        i += 1
+      end
+      ""
+    end
+
+    # " at HOSTNAME" for the startup line, empty when we can't tell.
+    def self.host_suffix = hostname.empty? ? "" : " at " + hostname
+
     # TERM or INT: finish the jobs at hand, hand the rest back, and exit.
     STOP = [false]
 
@@ -483,7 +502,7 @@ module Spinrail
                             "VALUES ('Worker', ?, ?, ?, ?, ?, ?)", true)
       db.bind_str(1, "worker-" + SecureRandom.hex(10))
       db.bind_int(2, Process.pid)
-      db.bind_str(3, ENV.fetch("HOSTNAME", ""))
+      db.bind_str(3, Jobs.hostname)
       db.bind_str(4, "{" + Tep::Json.encode_pair_str("queues", Jobs.queues.join(",")) + "," +
                      Tep::Json.encode_pair_int("thread_pool_size", threads) + "}")
       db.bind_str(5, now)
@@ -663,7 +682,7 @@ module Spinrail
       Jobs.trap_signals
       id = Jobs.register(1)
       Jobs.prune(id)
-      puts "spinrail: working jobs on " + Jobs.queues.join(",") + " (Ctrl+C to stop)"
+      puts "spinrail: working jobs on " + Jobs.queues.join(",") + Jobs.host_suffix + " (Ctrl+C to stop)"
       $stdout.flush
       Jobs.work(id, true)
       Jobs.stop(id)
