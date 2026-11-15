@@ -181,10 +181,17 @@ class BuildTest < CompilerTest
     assert_includes build("config/application.rb" => config), %(ENV["TZ"] = "Europe/Madrid")
   end
 
+  def test_friendly_time_zone_names
+    madrid = %(Spinrail.application.configure do\n config.time_zone = "Madrid"\nend\n)
+    assert_includes build("config/application.rb" => madrid), %(ENV["TZ"] = "Europe/Madrid")
+    eastern = %(Spinrail.application.configure do\n config.time_zone = "Eastern Time (US & Canada)"\nend\n)
+    assert_includes build("config/application.rb" => eastern), %(ENV["TZ"] = "America/New_York")
+  end
+
   def test_unknown_time_zone_or_setting
-    zone = %(Spinrail.application.configure do\n config.time_zone = "Madrid"\nend\n)
+    zone = %(Spinrail.application.configure do\n config.time_zone = "Narnia"\nend\n)
     error = assert_raises(Spinrail::CompileError) { build("config/application.rb" => zone) }
-    assert_match(/unknown time zone "Madrid"/, error.message)
+    assert_match(/unknown time zone "Narnia"/, error.message)
     setting = %(Spinrail.application.configure do\n config.cache_store = :memory_store\nend\n)
     error = assert_raises(Spinrail::CompileError) { build("config/application.rb" => setting) }
     assert_match(/config.cache_store is not supported/, error.message)
