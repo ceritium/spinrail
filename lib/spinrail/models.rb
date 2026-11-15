@@ -1272,6 +1272,12 @@ module Spinrail
 
           def find_by(conditions) = where(conditions).first
 
+          def find(id)
+            record = where(id: id.to_s.to_i).first
+            raise Spinrail::RecordNotFound, "Couldn't find #{@name} with 'id'=" + id.to_s unless record
+            record
+          end
+
           def find_by!(conditions)
             record = find_by(conditions)
             raise Spinrail::RecordNotFound, "Couldn't find #{@name}" unless record

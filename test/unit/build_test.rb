@@ -259,6 +259,33 @@ class BuildTest < CompilerTest
     assert_match(/class_methods is not supported/, error.message)
   end
 
+  def test_importmap_and_asset_load_paths
+    dir = minimal_app(
+      "config/importmap.rb" => "pin \"application\"\npin \"@hotwired/stimulus\", to: \"stimulus.min.js\"\npin_all_from \"app/javascript/controllers\", under: \"controllers\"\n",
+      "app/javascript/application.js" => "import \"controllers\"\n",
+      "app/javascript/controllers/index.js" => "",
+      "app/javascript/controllers/hello_controller.js" => "",
+      "vendor/javascript/stimulus.min.js" => "",
+      "app/assets/stylesheets/base.css" => "",
+      "app/assets/images/logo.png" => "\x89PNG\0"
+    )
+    build = Spinrail::Build.new(dir)
+    tags = build.send(:importmap_tags)
+    assert_includes tags, %("@hotwired/stimulus": "/stimulus.min-)
+    assert_includes tags, %("controllers": "/controllers/index-)
+    assert_includes tags, %("controllers/hello_controller": "/controllers/hello_controller-)
+    assert_includes tags, %(<link rel="modulepreload" href="/application-)
+    assert_includes build.send(:assets_source), %(STYLESHEETS = ["base.css"])
+    out = File.join(dir, "tmp/out")
+    build.write(out)
+    assert_path_exists File.join(out, "assets/base.css")
+    assert_path_exists File.join(out, "public/logo.png")
+    refute_path_exists File.join(out, "assets/logo.png")
+    assert_includes File.read(File.join(out, "app.rb")), %(set :public_dir, #{File.join(out, "public").inspect})
+    error = assert_raises(Spinrail::CompileError) { Spinrail::Build.new(minimal_app("config/importmap.rb" => "pin \"missing\"\n")).send(:generate) }
+    assert_match(/no asset for pin missing/, error.message)
+  end
+
   def test_turbo_stream_templates
     files = {
       "config/routes.rb" => %(Spinrail.routes.draw do\n post "/posts", to: "posts#create"\nend\n),

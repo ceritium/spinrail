@@ -254,10 +254,14 @@ module Spinrail
     def write(out_dir)
       FileUtils.rm_rf(out_dir)
       FileUtils.mkdir_p(out_dir)
-      assets = path("app/assets")
-      if Dir.exist?(assets)
-        FileUtils.cp_r(assets, File.join(out_dir, "assets"))
-        asset_digests.each { |name, digested| FileUtils.cp(File.join(assets, name), File.join(out_dir, "assets", digested.delete_prefix("/"))) }
+      @public_dir = File.join(out_dir, "public") if binary_assets.any?
+      FileUtils.cp_r("#{path('public')}/.", @public_dir) if @public_dir && Dir.exist?(path("public"))
+      asset_files.each do |name, file|
+        [name, asset_digests[name].delete_prefix("/")].each do |served|
+          target = binary_assets.include?(name) ? File.join(@public_dir, served) : File.join(out_dir, "assets", served)
+          FileUtils.mkdir_p(File.dirname(target))
+          FileUtils.cp(file, target)
+        end
       end
       out = File.join(out_dir, "app.rb")
       File.write(out, generate)
@@ -312,7 +316,7 @@ module Spinrail
         # connection is idle (OriPekelman/tep#277).
         *(ENV.fetch("SPINRAIL_SERVER", "scheduled") == "prefork" ? [] : ["set :scheduler, :scheduled"]),
         "Tep.session_secret = ENV.fetch(\"SECRET_KEY_BASE\", #{local_secret.inspect})",
-        *(Dir.exist?(path("public")) ? ["set :public_dir, \"public\""] : []),
+        *(public_dir ? ["set :public_dir, #{public_dir.inspect}"] : []),
         *(postgres? ? ['require "tep/pg"'] : []),
         runtime_source,
         translations,
@@ -424,9 +428,31 @@ module Spinrail
 
     # style.css -> /style-<sha256 prefix>.css: a new name whenever the
     # content changes, so browsers can cache assets for good.
+    # As in Propshaft, each app/assets subdirectory is a load path of its own.
+    def asset_roots
+      [path("app/assets"), *Dir[path("app/assets/*/")].sort.map { |d| d.chomp("/") },
+       path("app/javascript"), path("vendor/javascript")]
+    end
+
+    # Logical name => file; the first load path wins.
+    def asset_files
+      @asset_files ||= asset_roots.each_with_index.with_object({}) do |(root, i), files|
+        pattern = i.zero? ? "#{root}/*" : "#{root}/**/*"
+        Dir[pattern].select { |f| File.file?(f) }.sort.each { |file| files[file.delete_prefix("#{root}/")] ||= file }
+      end
+    end
+
+    # tep embeds assets as C strings, which end at the first NUL; these go on disk instead.
+    def binary_assets
+      @binary_assets ||= asset_files.select { |_, file| File.binread(file).include?("\0") }.keys.to_set
+    end
+
+    def public_dir
+      @public_dir || (Dir.exist?(path("public")) ? "public" : nil)
+    end
+
     def asset_digests
-      @asset_digests ||= Dir[path("app/assets/**/*")].select { |f| File.file?(f) }.sort.to_h do |file|
-        name = file.delete_prefix("#{path('app/assets')}/")
+      @asset_digests ||= asset_files.sort.to_h do |name, file|
         ext = File.extname(name)
         [name, "/#{name.delete_suffix(ext)}-#{Digest::SHA256.file(file).hexdigest[0, 12]}#{ext}"]
       end
@@ -435,7 +461,21 @@ module Spinrail
     def assets_source
       entries = asset_digests.map { |k, v| "    #{k.inspect} => #{v.inspect}" }
       entries = ['    "" => ""'] if entries.empty?
-      "module SpinrailAssets\n  DIGESTS = {\n#{entries.join(",\n")}\n  }.freeze\nend\n"
+      stylesheets = asset_files.keys.select { |name| name.end_with?(".css") }.sort
+      "module SpinrailAssets\n  DIGESTS = {\n#{entries.join(",\n")}\n  }.freeze\n" \
+        "  STYLESHEETS = #{(stylesheets.empty? ? [""] : stylesheets).inspect}.freeze\n" \
+        "  IMPORTMAP = #{importmap_tags.inspect}\nend\n"
+    end
+
+    # config/importmap.rb resolved at build time to the importmap script and preload links.
+    def importmap_tags
+      file = path("config/importmap.rb")
+      return "" unless File.exist?(file)
+      pins = Importmap.new(@app, asset_files).load(file)
+      pins.each_key { |name| raise CompileError, "config/importmap.rb: no asset for pin #{name}" unless asset_digests[pins[name]] }
+      imports = pins.to_h { |name, asset| [name, asset_digests[asset]] }
+      script = %(<script type="importmap" data-turbo-track="reload">#{JSON.pretty_generate({ "imports" => imports })}</script>)
+      ([script] + imports.values.uniq.map { |href| %(<link rel="modulepreload" href="#{href}">) }).join("\n")
     end
 
     # config/locales/*.yml flattened to "es.posts.index.title" => "...".

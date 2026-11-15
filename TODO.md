@@ -135,6 +135,12 @@ Roughly in priority order within each section.
 - [x] Asset fingerprinting: app/assets files are also served as name-<digest>.ext,
       which the tag helpers use.
 - [x] Digested assets are served with a year-long, immutable Cache-Control.
+- [x] Propshaft load paths: app/assets, each app/assets/* dir, app/javascript,
+      vendor/javascript; `stylesheet_link_tag :all`.
+- [x] `config/importmap.rb` (`pin`, `pin_all_from`) and `javascript_importmap_tags`,
+      resolved at build time.
+- [x] Binary assets (with NUL bytes, which tep can't embed) are served from
+      tmp/spinrail/public, next to the copied `public/`; the binary needs that dir.
 - [x] `link_to` with a block, `collection_select`, `field_with_errors`,
       `number_to_currency`, `time_ago_in_words`.
 - [x] Helpers returning `.html_safe` are emitted raw (decided at build time).

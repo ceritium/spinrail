@@ -119,6 +119,9 @@ module Spinrail
       elsif @ctx.view? && node.receiver.nil? && %i[stylesheet_link_tag javascript_include_tag image_tag].include?(node.name)
         args, kw = Spinrail.call_args(node)
         @rw.replace(node) { "#{node.name}((#{@rw.slice(args.first)}).to_s, #{html_attrs(kw)})" }
+      elsif @ctx.view? && node.receiver.nil? && node.name == :javascript_importmap_tags
+        args, = Spinrail.call_args(node)
+        @rw.replace(node) { "javascript_importmap_tags(#{args.first ? "(#{@rw.slice(args.first)}).to_s" : '"application"'})" }
       elsif @ctx.view? && node.receiver.nil? && %i[link_to button_to].include?(node.name) && node.block.nil?
         lower_link(node)
       elsif @ctx.action? && node.receiver.nil? && node.name == :params && node.block
@@ -483,12 +486,12 @@ module Spinrail
       end
       scope = kw[:scope] ? Spinrail.literal(kw[:scope]).to_s : model ? model_scope(model) : ""
       @forms << { var: var, scope: scope, model: model }
-      attrs = html_attrs(kw.reject { |k, _| %i[model scope url method local multipart].include?(k) })
       # A file field makes the form multipart, as in Rails.
-      if (kw[:multipart] && Spinrail.literal(kw[:multipart]) == true) || file_field?(node.block)
-        attrs = "#{attrs} + \" enctype=\\\"multipart/form-data\\\"\""
-      end
+      multipart = (kw[:multipart] && Spinrail.literal(kw[:multipart]) == true) || file_field?(node.block)
       @rw.replace(node) do
+        # Sliced here, once the children are lowered.
+        attrs = html_attrs(kw.reject { |k, _| %i[model scope url method local multipart].include?(k) })
+        attrs = "#{attrs} + \" enctype=\\\"multipart/form-data\\\"\"" if multipart
         m = model && @rw.slice(model)
         url = if kw[:url] then @rw.slice(kw[:url])
               elsif parent then nested_model_url(node, model_scope(parent), @rw.slice(parent), scope, m)

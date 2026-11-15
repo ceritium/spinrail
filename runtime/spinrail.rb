@@ -1483,11 +1483,20 @@ module Spinrail
     end
 
     def stylesheet_link_tag(source, attrs)
+      if source == "all"
+        tags = +""
+        SpinrailAssets::STYLESHEETS.each { |name| tags << stylesheet_link_tag(name, attrs) + "\n" unless name.empty? }
+        return tags
+      end
       "<link rel=\"stylesheet\" href=\"" + h(asset_path(source, ".css")) + "\"" + attrs + ">"
     end
 
     def javascript_include_tag(source, attrs)
       "<script src=\"" + h(asset_path(source, ".js")) + "\"" + attrs + "></script>"
+    end
+
+    def javascript_importmap_tags(entry)
+      SpinrailAssets::IMPORTMAP + "\n<script type=\"module\">import \"" + h(entry) + "\"</script>"
     end
 
     def image_tag(source, attrs)

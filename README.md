@@ -21,7 +21,8 @@ app/views/**/*.html.erb      → ApplicationView methods; @ivars become paramete
 config/routes.rb             → tep routes + path helpers
 config/application.rb        → settings read at build time (config.time_zone)
 db/schema.rb                 → CREATE TABLE IF NOT EXISTS at boot
-app/assets/*                 → embedded in the binary
+app/assets/*, app/javascript → embedded in the binary (binary files served from disk)
+config/importmap.rb          → importmap resolved at build time
 ```
 
 Endpoints can also be written Hanami-style, mixed freely with controllers:
@@ -158,7 +159,8 @@ to the server.
 - Database: `db/schema.rb` (new columns are added at boot), or migrations in
   `db/migrate` applied at boot (`spinrail generate migration AddXToPosts x:string`,
   `spinrail db:migrate` also rewrites db/schema.rb); `db/seeds.rb`.
-- Static files in `public/` and assets in `app/assets/`.
+- Static files in `public/`, assets in `app/assets/`, `app/javascript/` and
+  `vendor/javascript/`, and importmaps.
 - Mailers: `app/mailers` with `mail(to:, subject:)`, `.text.erb`/`.html.erb`
   templates, `deliver_now`/`deliver_later`; delivered to the log, or to files
   with `SPINRAIL_MAIL_DELIVERY=file` (request tests read them via `deliveries`), or
