@@ -158,6 +158,23 @@ class BuildTest < CompilerTest
     assert_includes ruby, "def analyses\n    relation = Analysis.where(person_id: @id)"
   end
 
+  def test_app_inflections
+    schema = "Spinrail::Schema.define do\n create_table :api_keys do |t|\n t.string :token\n end\nend\n"
+    ruby = build("config/initializers/inflections.rb" => <<~RUBY,
+      ActiveSupport::Inflector.inflections(:en) do |inflect|
+        inflect.acronym "API"
+        inflect.uncountable "equipment"
+      end
+    RUBY
+                 "db/schema.rb" => schema, "app/models/api_key.rb" => "class APIKey < ApplicationRecord\nend\n")
+    assert_includes ruby, "FROM api_keys"
+    assert_includes ruby, "class APIKey < ApplicationRecord"
+    error = assert_raises(Spinrail::CompileError) do
+      build("config/initializers/inflections.rb" => "raise NameError, 'nope'\n")
+    end
+    assert_match(%r{\Aconfig/initializers/inflections\.rb: nope\z}, error.message)
+  end
+
   def test_time_zone_from_config
     assert_includes build({}), %(ENV["TZ"] = "UTC")
     config = %(Spinrail.application.configure do\n config.time_zone = "Europe/Madrid"\nend\n)

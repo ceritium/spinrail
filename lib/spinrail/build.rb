@@ -255,6 +255,7 @@ module Spinrail
     # threads: work jobs on spinel threads (spinrail jobs -c N).
     def initialize(app_dir, tests: false, script: nil, threads: false)
       @app = File.expand_path(app_dir)
+      Inflector.load_app(@app)
       @partial_locals = {}
       @tests = tests
       @script = script
