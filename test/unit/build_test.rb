@@ -289,6 +289,36 @@ class BuildTest < CompilerTest
     assert_match(%r{missing template app/views/posts/create.turbo_stream.erb}, error.message)
   end
 
+  def test_turbo_broadcasts
+    files = {
+      "config/routes.rb" => %(Spinrail.routes.draw do\n get "/posts/:id", to: "posts#show"\nend\n),
+      "db/schema.rb" => "Spinrail::Schema.define do\n create_table :posts do |t|\n t.string :title\n end\n " \
+                        "create_table :comments do |t|\n t.references :post\n t.string :body\n end\nend\n",
+      "app/models/post.rb" => "class Post < ApplicationRecord\n has_many :comments\nend\n",
+      "app/models/comment.rb" => <<~RUBY,
+        class Comment < ApplicationRecord
+          belongs_to :post
+          def broadcast_create = broadcast_append_to(post, :comments, target: [post, :comments])
+          def broadcast_gone = broadcast_remove_to(post)
+        end
+      RUBY
+      "app/controllers/posts_controller.rb" => "class PostsController < ApplicationController\n def show\n @post = Post.find(params[:id])\n end\nend\n",
+      "app/views/posts/show.html.erb" => "<%= turbo_stream_from @post, :comments %>",
+      "app/views/comments/_comment.html.erb" => "<p><%= comment.body %></p>"
+    }
+    ruby = build(files)
+    assert_includes ruby, %(out << (turbo_stream_from_tag((iv_post).to_stream_name + ":" + "comments")).to_s)
+    assert_includes ruby, 'Spinrail::Cable.broadcast((post).to_stream_name + ":" + "comments", Spinrail::Cable.view.turbo_stream_tag("append", ' \
+                          '(post).dom_id_with("comments"), ApplicationView.new(Spinrail::Cable.view).partial_comments_comment(self)))'
+    assert_includes ruby, %(Spinrail::Cable.broadcast((post).to_stream_name, Spinrail::Cable.view.turbo_stream_tag("remove", self.dom_id, "")))
+    assert_includes ruby, %(def to_stream_name = "posts/" + @id.to_s)
+    assert_includes ruby, %(get "/cable" do\n  Spinrail::Cable.upgrade(req, res))
+
+    files["app/views/posts/show.html.erb"] = "<%= @post.title %>"
+    files["app/models/comment.rb"] = "class Comment < ApplicationRecord\n belongs_to :post\nend\n"
+    refute_includes build(files), %(get "/cable")
+  end
+
   def test_template_reading_an_unassigned_ivar
     error = assert_raises(Spinrail::CompileError) do
       build(
@@ -371,6 +401,10 @@ class BuildTest < CompilerTest
     assert_match(/post.comments inside a loop/, build.warnings.first)
 
     build = Spinrail::Build.new(minimal_app(files.merge("app/views/posts/index.html.erb" => "<% @posts.includes(:comments).each do |post| %><%= post.comments.count %><% end %>")))
+    build.send(:generate)
+    assert_empty build.warnings
+
+    build = Spinrail::Build.new(minimal_app(files.merge("app/views/posts/index.html.erb" => "<% @posts.each do |post| %><% post.comments.create! %><% end %>")))
     build.send(:generate)
     assert_empty build.warnings
   end

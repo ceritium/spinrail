@@ -21,6 +21,7 @@ class String
   def to_json = Tep::Json.quote(self)
   def to_param = self
   def cache_key = self
+  def to_stream_name = self
   # Helpers that end in html_safe are emitted raw; the build decides.
   def html_safe = self
 end
@@ -1392,6 +1393,10 @@ module Spinrail
     def param(name) = @controller.param(name)
     def form_authenticity_token = @controller.form_authenticity_token
     def turbo_stream_tag(action, target, html) = @controller.turbo_stream_tag(action, target, html)
+
+    def turbo_stream_from_tag(name)
+      "<turbo-cable-stream-source channel=\"" + Spinrail::Cable::CHANNEL + "\" signed-stream-name=\"" + h(Spinrail::Cable.signed(name)) + "\"></turbo-cable-stream-source>"
+    end
     def request_base_url = @controller.request_base_url
 
     def form_open(action, method, attrs)
@@ -1568,6 +1573,112 @@ module Spinrail
 
     def pluralize(count, singular)
       count.to_s + " " + (count == 1 ? singular : singular + "s")
+    end
+  end
+end
+
+# Turbo Streams over Action Cable's protocol (actioncable-v1-json), so the
+# turbo-rails client works unchanged. Only Turbo::StreamsChannel: a
+# subscription is authorized by its signed stream name, as in turbo-rails.
+module Spinrail
+  module Cable
+    PROTOCOL = "actioncable-v1-json".freeze
+    CHANNEL = "Turbo::StreamsChannel".freeze
+    PING_TOPIC = "spinrail:cable:ping".freeze
+    PINGER = [false]
+
+    def self.upgrade(req, res)
+      hs = Tep::WebSocket::Handshake.check(req)
+      unless hs.valid
+        res.set_status(400)
+        return ""
+      end
+      driver = Tep::WebSocket::Driver.new(0)
+      driver.set_subprotocol(PROTOCOL) if hs.protocols.include?(PROTOCOL)
+      on_open = Spinrail::CableOpen.new
+      on_open.ws = driver
+      on_message = Spinrail::CableMessage.new
+      on_message.ws = driver
+      driver.set_on_open(on_open)
+      driver.set_on_message(on_message)
+      res.start_websocket(hs.accept_key, driver)
+      ""
+    end
+
+    # The client reconnects after 6 s without a ping.
+    def self.start_pinger
+      return if PINGER[0]
+      PINGER[0] = true
+      Tep::Scheduler.spawn_fiber(Fiber.new { Spinrail::Cable.ping_forever })
+    end
+
+    # Ends on shutdown: a live fiber keeps the worker loop running.
+    def self.ping_forever
+      while Sock.sphttp_shutdown_requested == 0
+        Tep::Scheduler.pause(3)
+        Tep::Broadcast.publish(PING_TOPIC, "{\"type\":\"ping\",\"message\":" + Time.now.to_i.to_s + "}")
+      end
+    end
+
+    def self.signed(name) = name + "--" + Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, "turbo:" + name)
+
+    def self.verified(signed)
+      cut = signed.rindex("--")
+      return "" if cut.nil?
+      name = signed[0, cut]
+      Tep.timing_safe_eq(signed, Cable.signed(name)) ? name : ""
+    end
+
+    # The identifier the client sends: JSON.stringify of its params.
+    def self.identifier(name) = "{\"channel\":\"" + CHANNEL + "\",\"signed_stream_name\":\"" + Cable.signed(name) + "\"}"
+
+    def self.receive(ws, data)
+      command = Tep::Json.get_str(data, "command")
+      identifier = Tep::Json.get_str(data, "identifier")
+      name = Cable.verified(Tep::Json.get_str(identifier, "signed_stream_name"))
+      ok = !name.empty? && Tep::Json.get_str(identifier, "channel") == CHANNEL
+      if command == "subscribe"
+        Tep::Broadcast.subscribe_ws("turbo:" + name, ws.fd) if ok
+        ws.text("{\"identifier\":" + Tep::Json.quote(identifier) + ",\"type\":\"" + (ok ? "confirm" : "reject") + "_subscription\"}")
+      elsif command == "unsubscribe" && ok
+        Cable.unsubscribe(ws.fd, "turbo:" + name)
+      end
+    end
+
+    def self.unsubscribe(fd, topic)
+      subs = Tep::APP.broadcast_subs
+      i = subs.length - 1
+      while i >= 0
+        subs.delete_at(i) if subs[i].fd == fd && subs[i].topic == topic
+        i -= 1
+      end
+    end
+
+    def self.broadcast(name, html)
+      Tep::Broadcast.publish("turbo:" + name, "{\"identifier\":" + Tep::Json.quote(Cable.identifier(name)) + ",\"message\":" + Tep::Json.quote(html) + "}")
+    end
+
+    # Partials rendered outside a request (model broadcasts).
+    def self.view = Spinrail::ViewContext.new
+  end
+
+  class CableOpen < Tep::WebSocket::Handler
+    attr_accessor :ws
+
+    def handle_event(evt)
+      @ws.text("{\"type\":\"welcome\"}")
+      Tep::Broadcast.subscribe_ws(Spinrail::Cable::PING_TOPIC, @ws.fd)
+      Spinrail::Cable.start_pinger
+      0
+    end
+  end
+
+  class CableMessage < Tep::WebSocket::Handler
+    attr_accessor :ws
+
+    def handle_event(evt)
+      Spinrail::Cable.receive(@ws, evt.data)
+      0
     end
   end
 end

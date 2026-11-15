@@ -68,10 +68,11 @@ module Spinrail
     class Context
       attr_reader :dir, :exposures, :assigns, :responses
 
-      def initialize(build, dir, view:, ivars: true, action: nil, controller: false, test: false, job: false, mailer: false, relation: false)
+      def initialize(build, dir, view:, ivars: true, action: nil, controller: false, test: false, job: false, mailer: false, relation: false, model: nil)
         @build = build
         @mailer = mailer
         @relation = relation
+        @model = model
         @job = job
         @controller = controller
         @test = test
@@ -90,6 +91,7 @@ module Spinrail
       def job? = @job
       def mailer? = @mailer
       def relation? = @relation
+      def model_name = @model
       def mailer_names = @build ? @build.mailer_names : []
       def template(key) = @build&.templates&.[](key)
       def assigned = @assigns[@current].to_a
@@ -167,10 +169,10 @@ module Spinrail
       children = record_files.filter_map do |f|
         base = sti_base(f) or next
         raise CompileError, "#{rel(f)}: #{model_name(f)} inherits from #{base}, itself a subclass" if sti_base(record_files.find { |b| model_name(b) == base })
-        Model.new(f, schema, sti_base: base)
+        Model.new(f, schema, sti_base: base, build: self)
       end
       bases = (record_files.reject { |f| sti_base(f) }).map do |f|
-        model = Model.new(f, schema)
+        model = Model.new(f, schema, build: self)
         model.sti_children = children.select { |c| c.sti_base == model.name }
         [f, model]
       end
@@ -308,12 +310,18 @@ module Spinrail
         schema_setup(schema),
         method_override,
         asset_cache_headers,
+        *(cable? ? ["get \"/cable\" do\n  Spinrail::Cable.upgrade(req, res)\nend\n"] : []),
         *routes.routes.map { |r| route_block(r, controllers) },
         not_found_block
       ].join("\n").gsub(/__PARTIAL_LOCALS__(.+?)__/) do
         locals = @partial_locals.fetch(Regexp.last_match(1), [])
         locals.empty? ? "" : "(#{locals.join(', ')})"
       end
+    end
+
+    # Turbo Streams over WebSocket, served at /cable when the app uses them.
+    def cable?
+      Dir[path("app/**/*.{rb,erb}")].any? { |f| File.read(f).match?(/\b(turbo_stream_from|broadcast_\w+_to)\b/) }
     end
 
     # SPINRAIL_DATABASE=postgres (at build time) swaps Tep::SQLite for the

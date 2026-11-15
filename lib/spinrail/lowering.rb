@@ -161,6 +161,12 @@ module Spinrail
         @rw.replace(node) { "#{node.receiver.slice}.new.#{node.name}#{node.arguments ? "(#{@rw.slice(node.arguments)})" : ''}" }
       elsif turbo_stream_call?(node)
         lower_turbo_stream(node)
+      elsif @ctx.view? && node.receiver.nil? && node.name == :turbo_stream_from
+        args, = Spinrail.call_args(node)
+        fail!(node, "turbo_stream_from needs a stream") if args.empty?
+        @rw.replace(node) { "turbo_stream_from_tag(#{stream_name(args)})" }
+      elsif BROADCAST.match?(node.name.to_s)
+        lower_broadcast(node)
       elsif job_call?(node)
         arg = node.arguments&.arguments&.first
         value = arg ? "(#{@rw.slice(arg)}).to_s" : '""'
@@ -253,6 +259,8 @@ module Spinrail
       code
     end
 
+    ASSOCIATION_WRITES = %i[new build create create! delete_all destroy_all].freeze
+
     # posts.each { |post| post.comments } without includes(:comments)
     # queries once per post. A heuristic: the block variable's name gives
     # the model.
@@ -264,6 +272,12 @@ module Spinrail
       return if assocs.empty?
       preloaded = node.receiver.slice
       find = lambda do |n|
+        # A write through the association (post.comments.create!) has nothing to preload.
+        if n.is_a?(Prism::CallNode) && ASSOCIATION_WRITES.include?(n.name) && n.receiver.is_a?(Prism::CallNode) &&
+           local?(n.receiver.receiver, var.name)
+          n.arguments&.compact_child_nodes&.each { |c| find.call(c) }
+          next
+        end
         if n.is_a?(Prism::CallNode) && local?(n.receiver, var.name) && assocs.include?(n.name.to_s) &&
            !preloaded.match?(/\b(includes|preload|eager_load)\b[^.]*\b#{n.name}\b/)
           @ctx.warn("#{where(n)}: #{var.name}.#{n.name} inside a loop queries once per #{var.name}; " \
@@ -940,6 +954,63 @@ module Spinrail
     end
 
     TURBO_ACTIONS = %i[append prepend replace update remove before after].freeze
+    BROADCAST = /\Abroadcast_(#{TURBO_ACTIONS.join('|')})_to\z/
+
+    # [room, :messages] -> "rooms/1:messages", the name views subscribe to.
+    def stream_name(args)
+      args.map do |a|
+        a.is_a?(Prism::SymbolNode) || a.is_a?(Prism::StringNode) ? Spinrail.literal(a).to_s.inspect : "(#{@rw.slice(a)}).to_stream_name"
+      end.join(' + ":" + ')
+    end
+
+    # record.broadcast_append_to(stream, ..., target:, partial:, locals:, html:),
+    # or bare in a model, where the record is self. Defaults as in
+    # turbo-rails: the model's plural as target for append/prepend/before/
+    # after, the record's dom_id otherwise, and its own partial.
+    def lower_broadcast(node)
+      action = node.name.to_s[BROADCAST, 1]
+      args, kw = Spinrail.call_args(node)
+      fail!(node, "#{node.name} needs a stream") if args.empty?
+      unknown = kw.keys - %i[target partial locals html]
+      fail!(node, "#{node.name}: unsupported option #{unknown.first}") if unknown.any?
+      model = node.receiver.nil? ? @ctx.model_name : nil
+      fail!(node, "#{node.name} without a receiver only works in a model") if node.receiver.nil? && model.nil?
+      singular = model && Inflector.underscore(model.split("::").last)
+      plural = model && Inflector.pluralize(singular)
+      @rw.replace(node) do
+        record = node.receiver ? "(#{@rw.slice(node.receiver)})" : "self"
+        target = if (t = kw[:target])
+                   if t.is_a?(Prism::SymbolNode) || t.is_a?(Prism::StringNode) then Spinrail.literal(t).to_s.inspect
+                   elsif t.is_a?(Prism::ArrayNode) && t.elements.size == 2 && t.elements[1].is_a?(Prism::SymbolNode)
+                     "(#{@rw.slice(t.elements[0])}).dom_id_with(#{t.elements[1].unescaped.inspect})"
+                   else "(#{@rw.slice(t)}).dom_id"
+                   end
+                 elsif %w[append prepend before after].include?(action)
+                   fail!(node, "#{node.name} needs target: outside its model") unless plural
+                   plural.inspect
+                 else "#{record}.dom_id"
+                 end
+        html = if action == "remove" then '""'
+               elsif kw[:html] then "(#{@rw.slice(kw[:html])}).to_s"
+               else broadcast_partial(node, kw, record, plural, singular)
+               end
+        "Spinrail::Cable.broadcast(#{stream_name(args)}, Spinrail::Cable.view.turbo_stream_tag(#{action.inspect}, #{target}, #{html}))"
+      end
+    end
+
+    def broadcast_partial(node, kw, record, plural, singular)
+      if kw[:partial]
+        name = Spinrail.literal(kw[:partial]).to_s
+        fail!(node, "partial: takes \"dir/name\"") unless name.include?("/")
+        locals = kw[:locals] ? kw[:locals].elements.to_h { |e| [Spinrail.literal(e.key), @rw.slice(e.value)] } : {}
+      else
+        fail!(node, "#{node.name} needs partial: or html: outside its model") unless plural
+        name = "#{plural}/#{singular}"
+        locals = { singular.to_sym => record }
+      end
+      method, keywords = @ctx.partial_method("#{File.dirname(name)}/_#{File.basename(name)}", locals.keys, where(node))
+      "ApplicationView.new(Spinrail::Cable.view).#{method}(#{locals.map { |k, v| keywords ? "#{k}: #{v}" : v }.join(', ')})"
+    end
 
     # turbo_stream.append("entries", partial: "entries/entry", locals: { entry: @entry })
     # or a string of HTML as the second argument.

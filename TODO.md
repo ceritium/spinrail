@@ -100,6 +100,11 @@ Roughly in priority order within each section.
       `<action>.turbo_stream.erb`), `render turbo_stream:` (one or a list),
       `turbo_stream.append/prepend/replace/update/remove/before/after` with a
       partial or HTML.
+- [x] Live Turbo Streams over ActionCable's protocol (turbo-rails' client):
+      `turbo_stream_from` in views, `broadcast_<action>_to` in models, a
+      `/cable` route when the app uses either. Signed stream names only; no
+      channel classes or per-subscription authorization yet, and no
+      `broadcasts_to` / `_later` variants.
 - [x] File uploads (tep fork): `f.file_field` makes `form_with` multipart,
       `request.files["post[avatar]"]` (`original_filename`, `content_type`,
       `read`, `size`), `fixture_file_upload` in tests. Held in memory; no

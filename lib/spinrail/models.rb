@@ -24,7 +24,8 @@ module Spinrail
 
     attr_reader :name, :file, :sti_base, :sti_children
 
-    def initialize(file, schema, sti_base: nil)
+    def initialize(file, schema, sti_base: nil, build: nil)
+      @build = build
       @file = file
       @sti_base = sti_base
       @sti_children = []
@@ -622,7 +623,7 @@ module Spinrail
     def user_methods
       return "" if @body.empty?
       source = @body.join("\n\n")
-      Lowering.lower(source, @file, Build::Context.new(nil, "", view: false))
+      Lowering.lower(source, @file, Build::Context.new(@build, "", view: false, model: @name))
     end
 
     def model_class
@@ -705,6 +706,7 @@ module Spinrail
 
         #{indent(enum_methods, 2)}
           def to_param = @id.to_s
+          def to_stream_name = #{"#{@table.name}/".inspect} + @id.to_s
           def cache_key = #{"#{@table.name}/".inspect} + @id.to_s#{@table.column("updated_at") ? ' + "-" + @updated_at.strftime("%Y%m%d%H%M%S%6N")' : ''}
           def dom_id = @id > 0 ? #{"#{Inflector.underscore(@name)}_".inspect} + @id.to_s : #{"new_#{Inflector.underscore(@name)}".inspect}
           def dom_id_with(prefix) = @id > 0 ? prefix + #{"_#{Inflector.underscore(@name)}_".inspect} + @id.to_s : prefix + #{"_#{Inflector.underscore(@name)}".inspect}
