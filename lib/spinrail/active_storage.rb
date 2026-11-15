@@ -164,6 +164,7 @@ module Spinrail
 
         def purge_later = purge
         def detach = purge
+        def destroy = purge
       end
     RUBY
 
