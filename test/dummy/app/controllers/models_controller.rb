@@ -183,7 +183,8 @@ class ModelsController < ApplicationController
       FlakyJob.perform_later("flaky")
       FlakyJob.perform_later("unwanted")
     end
-    params[:slow].to_i.times { SlowJob.perform_later("0.5") }
+    seconds = params[:seconds].to_s.empty? ? "0.5" : params[:seconds].to_s
+    params[:slow].to_i.times { SlowJob.perform_later(seconds) }
     render plain: "queued"
   end
 

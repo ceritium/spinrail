@@ -10,17 +10,30 @@ module Spinrail
     slot.nil? ? 0 : slot.to_i
   end
 
+  # Threads take connections 1..count; the main thread keeps 0 to heartbeat.
   def self.work_jobs_threaded(count)
-    (count - 1).times { DBS << Database.new }
-    puts "spinrail: working jobs on " + count.to_s + " threads, queues " + Spinrail::Jobs.queues.join(",") + " (Ctrl+C to stop)"
+    count.times { DBS << Database.new }
+    Jobs.trap_signals
+    id = Jobs.register(count)
+    Jobs.prune(id)
+    puts "spinrail: working jobs on " + count.to_s + " threads, queues " + Jobs.queues.join(",") + " (Ctrl+C to stop)"
     $stdout.flush
     threads = []
     count.times do |i|
-      threads << Thread.new(i) do |slot|
+      threads << Thread.new(i + 1) do |slot|
         Thread.current[:spinrail_db] = slot
-        Spinrail::Jobs.work(0)
+        Jobs.work(id, false)
       end
     end
+    beaten = Spinrail.clock
+    until Jobs::STOP[0]
+      sleep 0.2
+      next if Spinrail.clock - beaten < Jobs.heartbeat_interval
+      Jobs.heartbeat(id)
+      Jobs.prune(id)
+      beaten = Spinrail.clock
+    end
     threads.each(&:join)
+    Jobs.stop(id)
   end
 end

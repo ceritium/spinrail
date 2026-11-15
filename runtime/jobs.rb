@@ -31,7 +31,11 @@ module Spinrail
       "CREATE INDEX IF NOT EXISTS index_spinrail_queue_claimed_on_process ON spinrail_queue_claimed_executions (process_id, job_id)",
       "CREATE TABLE IF NOT EXISTS spinrail_queue_failed_executions (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL, " \
       "error TEXT NOT NULL, created_at TEXT NOT NULL)",
-      "CREATE UNIQUE INDEX IF NOT EXISTS index_spinrail_queue_failed_executions_on_job_id ON spinrail_queue_failed_executions (job_id)"
+      "CREATE UNIQUE INDEX IF NOT EXISTS index_spinrail_queue_failed_executions_on_job_id ON spinrail_queue_failed_executions (job_id)",
+      "CREATE TABLE IF NOT EXISTS spinrail_queue_processes (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, " \
+      "pid INTEGER NOT NULL, hostname TEXT NOT NULL DEFAULT '', metadata TEXT NOT NULL DEFAULT '', " \
+      "last_heartbeat_at TEXT NOT NULL, created_at TEXT NOT NULL)",
+      "CREATE INDEX IF NOT EXISTS index_spinrail_queue_processes_on_last_heartbeat_at ON spinrail_queue_processes (last_heartbeat_at)"
     ].freeze
 
     def self.schema
@@ -318,13 +322,106 @@ module Spinrail
 
     def self.polling_interval = ENV.fetch("SPINRAIL_JOBS_POLLING_INTERVAL", "0.1").to_f
 
+    def self.heartbeat_interval = ENV.fetch("SPINRAIL_JOBS_HEARTBEAT_INTERVAL", "60").to_f
+
+    def self.alive_threshold = ENV.fetch("SPINRAIL_JOBS_ALIVE_THRESHOLD", "300").to_i
+
+    # TERM or INT: finish the jobs at hand, hand the rest back, and exit.
+    STOP = [false]
+
+    def self.trap_signals
+      Signal.trap("TERM") { STOP[0] = true }
+      Signal.trap("INT") { STOP[0] = true }
+    end
+
+    def self.register(threads)
+      now = Jobs.now
+      db = Spinrail.prepare("INSERT INTO spinrail_queue_processes (kind, name, pid, hostname, metadata, last_heartbeat_at, created_at) " \
+                            "VALUES ('Worker', ?, ?, ?, ?, ?, ?)", true)
+      db.bind_str(1, "worker-" + SecureRandom.hex(10))
+      db.bind_int(2, Process.pid)
+      db.bind_str(3, ENV.fetch("HOSTNAME", ""))
+      db.bind_str(4, "{" + Tep::Json.encode_pair_str("queues", Jobs.queues.join(",")) + "," +
+                     Tep::Json.encode_pair_int("thread_pool_size", threads) + "}")
+      db.bind_str(5, now)
+      db.bind_str(6, now)
+      db.step
+      db.finalize
+      db.last_rowid
+    end
+
+    def self.heartbeat(process_id)
+      db = Spinrail.prepare("UPDATE spinrail_queue_processes SET last_heartbeat_at = ? WHERE id = ?", true)
+      db.bind_str(1, Jobs.now)
+      db.bind_int(2, process_id)
+      db.step
+      db.finalize
+    end
+
+    # On a clean exit what the process had claimed goes back to ready.
+    def self.deregister(process_id)
+      Spinrail.transaction do
+        db = Spinrail.prepare("INSERT INTO spinrail_queue_ready_executions (job_id, queue_name, priority, created_at) " \
+                              "SELECT j.id, j.queue_name, j.priority, ? FROM spinrail_queue_jobs j " \
+                              "JOIN spinrail_queue_claimed_executions c ON c.job_id = j.id WHERE c.process_id = ? ON CONFLICT DO NOTHING", true)
+        db.bind_str(1, Jobs.now)
+        db.bind_int(2, process_id)
+        db.step
+        db.finalize
+        Jobs.delete_where("DELETE FROM spinrail_queue_claimed_executions WHERE process_id = ?", process_id)
+        Jobs.delete_where("DELETE FROM spinrail_queue_processes WHERE id = ?", process_id)
+      end
+    end
+
+    # Processes silent past the alive threshold died mid-job: as in Solid
+    # Queue, their claimed jobs fail (they may have run partly) and the
+    # process row goes. So do claims whose process row is already gone.
+    def self.prune(process_id)
+      cutoff = Spinrail.format_time(Time.now - Jobs.alive_threshold)
+      Spinrail.transaction do
+        db = Spinrail.prepare("INSERT INTO spinrail_queue_failed_executions (job_id, error, created_at) " \
+                              "SELECT c.job_id, ?, ? FROM spinrail_queue_claimed_executions c " \
+                              "LEFT JOIN spinrail_queue_processes p ON p.id = c.process_id " \
+                              "WHERE c.process_id != ? AND (p.id IS NULL OR p.last_heartbeat_at < ?) ON CONFLICT DO NOTHING", true)
+        db.bind_str(1, "ProcessPrunedError: the worker stopped sending heartbeats")
+        db.bind_str(2, Jobs.now)
+        db.bind_int(3, process_id)
+        db.bind_str(4, cutoff)
+        db.step
+        db.finalize
+        db = Spinrail.prepare("DELETE FROM spinrail_queue_claimed_executions WHERE job_id IN (SELECT job_id FROM spinrail_queue_failed_executions)", true)
+        db.step
+        db.finalize
+        db = Spinrail.prepare("DELETE FROM spinrail_queue_processes WHERE id != ? AND last_heartbeat_at < ?", true)
+        db.bind_int(1, process_id)
+        db.bind_str(2, cutoff)
+        db.step
+        db.finalize
+      end
+    end
+
+    def self.delete_where(sql, id)
+      db = Spinrail.prepare(sql, true)
+      db.bind_int(1, id)
+      db.step
+      db.finalize
+    end
+
     # One worker's loop: dispatch due scheduled jobs at most once a second,
-    # then perform ready ones, sleeping polling_interval when idle.
-    def self.work(process_id)
+    # then perform ready ones, sleeping polling_interval when idle. With
+    # beat, it also heartbeats and prunes; jobs on threads leave that to the
+    # main thread, which a long job would otherwise hold up.
+    def self.work(process_id, beat)
       queues = Jobs.queues
       interval = Jobs.polling_interval
       dispatched = 0.0
-      loop do
+      beaten = Spinrail.clock
+      until STOP[0]
+        if beat && Spinrail.clock - beaten >= Jobs.heartbeat_interval
+          Jobs.heartbeat(process_id)
+          Jobs.prune(process_id)
+          beaten = Spinrail.clock
+        end
         if Spinrail.clock - dispatched >= 1.0
           Jobs.dispatch_scheduled
           dispatched = Spinrail.clock
@@ -334,9 +431,46 @@ module Spinrail
     end
 
     def self.start
+      Jobs.trap_signals
+      id = Jobs.register(1)
+      Jobs.prune(id)
       puts "spinrail: working jobs on " + Jobs.queues.join(",") + " (Ctrl+C to stop)"
       $stdout.flush
-      Jobs.work(0)
+      Jobs.work(id, true)
+      Jobs.stop(id)
+    end
+
+    def self.count(sql)
+      db = Spinrail.prepare(sql, true)
+      n = db.step == 1 ? db.col_int(0) : 0
+      db.finalize
+      n
+    end
+
+    def self.status
+      [["ready", "spinrail_queue_ready_executions"], ["scheduled", "spinrail_queue_scheduled_executions"],
+       ["claimed", "spinrail_queue_claimed_executions"], ["failed", "spinrail_queue_failed_executions"],
+       ["processes", "spinrail_queue_processes"]].map { |pair| pair[0] + "=" + Jobs.count("SELECT COUNT(*) FROM " + pair[1]).to_s }
+        .join(" ") + " finished=" + Jobs.count("SELECT COUNT(*) FROM spinrail_queue_jobs WHERE finished_at != ''").to_s
+    end
+
+    # SPINRAIL_JOBS: 1 works jobs, status prints the queue's counts.
+    def self.command(name)
+      return if name.empty?
+      if name == "status"
+        puts Jobs.status
+        exit(0)
+      end
+      Jobs.start if name == "1"
+      $stderr.puts "spinrail: unknown jobs command " + name
+      exit(1)
+    end
+
+    def self.stop(process_id)
+      Jobs.deregister(process_id)
+      puts "spinrail: stopped working jobs"
+      $stdout.flush
+      exit(0)
     end
   end
 end

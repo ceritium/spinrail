@@ -1262,7 +1262,7 @@ module Spinrail
           Spinrail.run_sql_file(boot_sql) unless boot_sql.empty?
         #{seeds ? "  if ENV.fetch(\"SPINRAIL_SEED\", \"\") == \"1\"\n    SpinrailSeeds.run\n    puts \"spinrail: seeded\"\n    exit(0)\n  end" : ""}
         #{@tests ? test_runner : ''}
-          #{@threads ? 'Spinrail.work_jobs_threaded(ENV.fetch("SPINRAIL_JOB_THREADS", "2").to_i)' : 'Spinrail::Jobs.start if ENV.fetch("SPINRAIL_JOBS", "") == "1"'}
+          #{@threads ? 'Spinrail.work_jobs_threaded(ENV.fetch("SPINRAIL_JOB_THREADS", "2").to_i)' : 'Spinrail::Jobs.command(ENV.fetch("SPINRAIL_JOBS", ""))'}
         #{@script ? "  SpinrailRunner.run\n    exit(0)" : ''}
           Spinrail::DB.close
         end

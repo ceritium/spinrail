@@ -82,6 +82,70 @@ class QueuesTest < Spinrail::IntegrationTest
   end
 end
 
+class ProcessesTest < Spinrail::IntegrationTest
+  server_env "SPINRAIL_JOBS_INLINE" => "0"
+
+  def worker(log, env = {})
+    Process.spawn({ "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path, "SPINRAIL_JOBS" => "1", "SPINRAIL_ENV" => "test",
+                    "SPINRAIL_JOBS_INLINE" => "0" }.merge(env), ENV.fetch("SPINRAIL_BINARY"), out: log, err: log)
+  end
+
+  def status
+    IO.popen({ "DATABASE_PATH" => database_path, "DATABASE_URL" => database_path, "SPINRAIL_JOBS" => "status", "SPINRAIL_ENV" => "test" },
+             [ENV.fetch("SPINRAIL_BINARY")], &:read).lines.last.strip
+  end
+
+  def wait_for(log, text)
+    50.times do
+      break if File.exist?(log) && File.read(log).include?(text)
+      sleep 0.1
+    end
+    assert_includes File.read(log), text
+  end
+
+  # TERM lets the job at hand finish and hands the queued one back.
+  def test_term_finishes_the_job_at_hand
+    get "/models/seed"
+    get "/models/shout?slow=2"
+    log = File.join(Dir.tmpdir, "spinrail-term-#{Process.pid}.log")
+    pid = worker(log)
+    wait_for(log, "Performed ShoutJob")
+    sleep 0.2
+    Process.kill("TERM", pid)
+    Process.wait(pid)
+    assert_equal 0, $?.exitstatus
+    assert_equal 1, File.read(log).scan("Performed SlowJob").size
+    assert_includes File.read(log), "stopped working jobs"
+    assert_equal "ready=1 scheduled=0 claimed=0 failed=0 processes=0 finished=2", status
+  ensure
+    Process.kill("KILL", pid) rescue nil if pid
+    Process.wait(pid) rescue nil if pid
+  end
+
+  # A worker killed mid-job is pruned once its heartbeat is stale: its job fails.
+  def test_dead_workers_are_pruned
+    get "/models/seed"
+    get "/models/shout?slow=1&seconds=5"
+    log = File.join(Dir.tmpdir, "spinrail-kill-#{Process.pid}.log")
+    pid = worker(log)
+    wait_for(log, "Performed ShoutJob")
+    Process.kill("KILL", pid)
+    Process.wait(pid)
+    assert_equal "ready=0 scheduled=0 claimed=1 failed=0 processes=1 finished=1", status
+    sleep 1.1
+    log = File.join(Dir.tmpdir, "spinrail-prune-#{Process.pid}.log")
+    pid = worker(log, "SPINRAIL_JOBS_ALIVE_THRESHOLD" => "1")
+    wait_for(log, "working jobs")
+    sleep 0.3
+    assert_equal "ready=0 scheduled=0 claimed=0 failed=1 processes=1 finished=1", status
+  ensure
+    if pid
+      Process.kill("KILL", pid) rescue nil
+      Process.wait(pid) rescue nil
+    end
+  end
+end
+
 class ThreadedJobsTest < Spinrail::IntegrationTest
   server_env "SPINRAIL_JOBS_INLINE" => "0"
 

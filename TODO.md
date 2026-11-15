@@ -250,7 +250,13 @@ Roughly in priority order within each section.
       `queue_with_priority`, several arguments (Strings, optional ones too).
 - [x] `retry_on`/`discard_on`, ApplicationJob's too, the last declared first.
 - [ ] `retry_on`/`discard_on` with a block, `jitter:` (ignored), `queue:`/`priority:`, `after_discard`.
-- [ ] Processes with heartbeats; claimed jobs of a dead worker go back to ready.
+- [x] Processes with heartbeats (`SPINRAIL_JOBS_HEARTBEAT_INTERVAL`, 60s),
+      pruned after `SPINRAIL_JOBS_ALIVE_THRESHOLD` (300s) with their claimed
+      jobs failed; TERM/INT stops after the jobs at hand; `spinrail jobs status`.
+- [ ] A single-threaded worker heartbeats between jobs: one running longer
+      than the alive threshold gets it pruned. `-c N` heartbeats from the main
+      thread.
+- [ ] Hostname of a process (spinel has no Socket; `HOSTNAME` if set).
 - [ ] Recurring tasks (`config/recurring.yml`), `limits_concurrency`, queue
       pauses, clearing finished jobs.
 - [ ] Threaded jobs on PostgreSQL (the PG battery's state hasn't been checked
