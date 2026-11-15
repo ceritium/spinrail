@@ -87,6 +87,13 @@ module Spinrail
         @rw.replace(node) { source }
         return
       end
+      # The server runs from the app's root.
+      if node.name == :join && node.receiver&.slice == "Rails.root"
+        args = node.arguments&.arguments || []
+        @rw.replace(node) { "File.join(#{args.map { |a| "(#{@rw.slice(a)}).to_s" }.join(', ')})" }
+        args.each { |a| visit(a) }
+        return
+      end
       check_n_plus_one(node)
       if @ctx.test? && node.receiver.nil? && lower_test_call(node)
         super
@@ -1003,6 +1010,15 @@ module Spinrail
           values = view.exposures.map { |e| @rw.slice(exposures.fetch(e.to_sym)) }
           "render_view(ApplicationView.new(self).#{view.method_name}(#{values.join(', ')}), #{status})"
         end
+      elsif kw[:formats]
+        # render formats: :svg (or render :name, formats: :svg) -> <action>.svg.erb
+        format = Spinrail.literal(kw[:formats]).to_s
+        fail!(node, "unsupported render formats: #{format}") unless format == "svg"
+        name = args.first ? Spinrail.literal(args.first).to_s : @ctx.current_def.to_s
+        template = name.include?("/") ? name : "#{@ctx.dir}/#{name}"
+        t = @ctx.template("#{template}.#{format}") or fail!(node, "missing template app/views/#{template}.#{format}.erb")
+        @ctx.record_response("#{template}.#{format}", where(node))
+        @rw.replace(node) { "#{t.render_method}(#{status})" }
       elsif kw[:turbo_stream]
         @ctx.record_response(nil, where(node))
         streams = kw[:turbo_stream].is_a?(Prism::ArrayNode) ? kw[:turbo_stream].elements : [kw[:turbo_stream]]

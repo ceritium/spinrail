@@ -47,3 +47,19 @@ class ViewsTest < Spinrail::IntegrationTest
     assert_equal "<p>plain</p>\n", response.body
   end
 end
+
+class SvgTest < Spinrail::IntegrationTest
+  def test_an_svg_template
+    get "/badge/A&B"
+    assert_response :success
+    assert_includes response["Content-Type"], "image/svg+xml"
+    assert_equal "max-age=1800, public", response["Cache-Control"]
+    assert_includes response.body, "<text>A&amp;B</text>"
+  end
+
+  def test_send_file_under_rails_root
+    get "/mark"
+    assert_includes response["Content-Type"], "image/svg+xml"
+    assert_equal %(<svg xmlns="http://www.w3.org/2000/svg"><circle r="5"/></svg>\n), response.body
+  end
+end

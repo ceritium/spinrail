@@ -131,6 +131,7 @@ Roughly in priority order within each section.
       `image_tag record.avatar`, direct uploads, S3.
 - [ ] `send_data` with binary data: tep writes inline bodies as C strings,
       so a NUL truncates them (`send_file` is binary-safe).
+- [x] `render formats: :svg` (`<action>.svg.erb`); other formats still to do.
 - [x] Nested params reads: `params[:post][:title]`.
 - [x] JSON request bodies become params (`{"post": {"title": ...}}` -> `post[title]`).
 - [x] PATCH/PUT/DELETE from HTML forms (`_method` override).

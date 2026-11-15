@@ -1328,6 +1328,11 @@ module Spinrail
       render_html(html, status)
     end
 
+    def render_svg(svg, status)
+      @res.headers["Content-Type"] = "image/svg+xml; charset=utf-8"
+      render_html(svg, status)
+    end
+
     def wants_json?
       return Tep.param(@req, "format") == "json" unless Tep.param(@req, "format").empty?
       accept = @req.req_headers["accept"]

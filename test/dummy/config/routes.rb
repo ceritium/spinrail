@@ -16,6 +16,8 @@ Spinrail.routes.draw do
     resources :posts, only: [:index]
   end
   get "/home", to: "pages#home"
+  get "/badge/:label", to: "pages#badge"
+  get "/mark", to: "pages#mark"
   get "/files/*path", to: "pages#file", as: :files
   get "/numbers/:n", to: "pages#number", constraints: { n: /\d+/ }
   get "/numbers/:word", to: "pages#word"

@@ -16,6 +16,7 @@ module Spinrail
       def partial? = name.start_with?("_")
       def text? = name.end_with?(".text")
       def turbo_stream? = name.end_with?(".turbo_stream")
+      def svg? = name.end_with?(".svg")
 
       # Rails 7.1 strict locals: <%# locals: (entry:, compact: false) %>
       def strict_locals = @strict_locals ||= [File.read(path)[/\A<%#\s*locals:\s*\((.*?)\)\s*-?%>/m, 1]]
@@ -306,7 +307,7 @@ module Spinrail
 
     def generate
       schema = migrations.any? ? Schema.from_migrations(migrations) : Schema.new(path("db/schema.rb"))
-      @templates = Dir[path("app/views/**/*.{html,text,turbo_stream}.erb")].to_h do |file|
+      @templates = Dir[path("app/views/**/*.{html,text,turbo_stream,svg}.erb")].to_h do |file|
         key = rel(file).delete_prefix("app/views/").delete_suffix(".erb").delete_suffix(".html")
         [key, Template.new(file, File.dirname(key), File.basename(key), [])]
       end
@@ -952,7 +953,10 @@ module Spinrail
         t = @templates[key]
         args = t.exposures.map { |n| "@#{n}" }.join(", ")
         html = "ApplicationView.new(self).#{t.method_name}#{args.empty? ? '' : "(#{args})"}"
-        body = t.turbo_stream? ? "render_turbo_stream(#{html}, status)" : "render_with_layout(#{html}, status, layout)"
+        body = if t.turbo_stream? then "render_turbo_stream(#{html}, status)"
+               elsif t.svg? then "render_svg(#{html}, status)"
+               else "render_with_layout(#{html}, status, layout)"
+               end
         "  def #{t.render_method}(status, layout = \"\")\n    #{body}\n  end"
       end
       "class #{name}\n#{[*defs, override].compact.join("\n\n")}\nend\n"

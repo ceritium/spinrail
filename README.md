@@ -148,7 +148,7 @@ to the server.
 - Controllers: `params[:x]`, `params[:post][:title]`, `params.fetch(:ids, [])`
   for repeated `ids[]`, strong params, `request.raw_post`,
   `request.files["post[avatar]"]` for uploads, `render :action, status:`,
-  `render plain:` (with `content_type:`), `render json:`, `send_file`, `send_data` (text only), `head`, `expires_in`, `render view: Views::Stats::Show,
+  `render plain:` (with `content_type:`), `render formats: :svg` (`<action>.svg.erb` as `image/svg+xml`), `render json:`, `send_file`, `send_data` (text only), `head`, `expires_in`, `render view: Views::Stats::Show,
   exposure: value`, `redirect_to path, status:, notice:`, implicit render;
   `before_action`/`after_action`/`skip_*`, `rescue_from`, `session`, `flash`,
   CSRF protection, `_method` override.
