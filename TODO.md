@@ -262,8 +262,10 @@ Roughly in priority order within each section.
       ones (by hand, and after `SPINRAIL_JOBS_CLEAR_FINISHED_AFTER`, a day).
 - [x] Recurring tasks (`config/recurring.yml`): cron and Fugit's common
       phrasings, `class:`/`args:` or `command:`, once per slot across workers.
-- [ ] Fugit's other phrasings (`every 2 days`, `every weekday`), cron with
-      seconds, hash arguments, ERB in recurring.yml.
+- [x] Fugit's other phrasings (`every 2 days`, `every 2 weeks`,
+      `every weekday`, `every weekend`), cron with seconds (a sixth field
+      first, as Fugit reads it), ERB in recurring.yml. A hash argument
+      still isn't one (perform takes positional Strings).
 - [x] `limits_concurrency` (semaphores and blocked executions; `on_conflict:
       :discard`); semaphores expire after `duration:` (3 minutes).
 - [x] Retried jobs take a semaphore slot again; pruned workers' jobs give

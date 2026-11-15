@@ -1,23 +1,28 @@
+require "erb"
+require "yaml"
+
 module Spinrail
   # config/recurring.yml, as Solid Queue reads it: tasks under an
   # environment's key (or at the top, for every environment), each with
-  # class: (and args:) or command:, schedule:, and queue:/priority:.
-  # Schedules are five-field cron or a few of Fugit's phrasings; both turn
-  # into Ruby that answers which run a time falls in.
+  # class: (and args:) or command:, schedule:, and queue:/priority:. The
+  # file goes through ERB first, as Solid Queue's config does. Schedules
+  # are cron (5 fields, 6 with seconds first) or several of Fugit's
+  # phrasings; both turn into Ruby that answers which run a time falls in.
   class Recurring
     Task = Struct.new(:key, :env, :job, :args, :command, :queue, :priority, :slot)
 
     TASK_KEYS = %w[class args command schedule queue priority description].freeze
-    UNITS = { "second" => 1, "minute" => 60, "hour" => 3600 }.freeze
+    UNITS = { "second" => 1, "minute" => 60, "hour" => 3600, "day" => 86_400, "week" => 604_800 }.freeze
     DAYS = %w[sun mon tue wed thu fri sat].freeze
     MONTHS = %w[jan feb mar apr may jun jul aug sep oct nov dec].freeze
-    FIELDS = [["min", 0, 59], ["hour", 0, 23], ["day", 1, 31], ["month", 1, 12], ["wday", 0, 6]].freeze
+    FIELDS = { "sec" => [0, 59], "min" => [0, 59], "hour" => [0, 23], "day" => [1, 31],
+               "month" => [1, 12], "wday" => [0, 6] }.freeze
 
     attr_reader :tasks
 
     def initialize(file)
       @file = File.basename(File.dirname(file)) + "/" + File.basename(file)
-      config = File.exist?(file) ? YAML.safe_load_file(file, aliases: true) || {} : {}
+      config = File.exist?(file) ? YAML.safe_load(ERB.new(File.read(file)).result, aliases: true) || {} : {}
       raise CompileError, "#{@file}: expected a mapping" unless config.is_a?(Hash)
       @tasks = config.flat_map do |key, value|
         raise CompileError, "#{@file}: #{key} isn't a task or an environment" unless value.is_a?(Hash)
@@ -47,15 +52,23 @@ module Spinrail
                slot(h["schedule"].to_s, where))
     end
 
-    # The Ruby for "the run t falls in": a minute for cron, an interval's
-    # start for every N seconds.
+    # The Ruby for "the run t falls in": a minute for five-field cron, a
+    # second for cron with seconds, an interval's start for every N seconds
+    # and for every N days/weeks (48h cadence, not month-of-day steps).
     def slot(schedule, where)
       text = schedule.strip.downcase.squeeze(" ")
-      if (m = text.match(/\Aevery (\d+ )?(second|minute|hour)s?\z/))
+      if (m = text.match(/\Aevery (weekday|weekend)(?: at (.+))?\z/))
+        h, min = m[2] ? clock(m[2], where) : [0, 0]
+        return cron("#{min} #{h} * * #{m[1] == 'weekday' ? 'mon-fri' : 'sat,sun'}", where)
+      end
+      if (m = text.match(/\Aevery (\d+ )?(second|minute|hour|day|week)s?\z/))
         n = (m[1] || 1).to_i
-        raise CompileError, "#{where}: every 0 #{m[2]}s" if n.zero?
-        return "Spinrail::Jobs.interval_slot(t, #{n * UNITS[m[2]]})" if m[2] == "second" || 86_400 % (n * UNITS[m[2]]) != 0
-        return cron(m[2] == "minute" ? "*/#{n} * * * *" : "0 */#{n} * * *", where)
+        unit = m[2]
+        raise CompileError, "#{where}: every 0 #{unit}s" if n.zero?
+        return cron("0 0 * * *", where) if unit == "day" && n == 1
+        return cron("0 0 * * 0", where) if unit == "week" && n == 1
+        return "Spinrail::Jobs.interval_slot(t, #{n * UNITS[unit]})" if unit == "second" || 86_400 % (n * UNITS[unit]) != 0
+        return cron(unit == "minute" ? "*/#{n} * * * *" : "0 */#{n} * * *", where)
       end
       if (m = text.match(/\A(?:every day at (.+)|at (.+) every day|every day)\z/))
         h, min = m[1] || m[2] ? clock(m[1] || m[2], where) : [0, 0]
@@ -79,38 +92,50 @@ module Spinrail
       [h, m[2].to_i]
     end
 
+    # Five fields, or six with the seconds first (Fugit's own order).
     def cron(text, where)
       parts = text.split
-      raise CompileError, "#{where}: schedule #{text.inspect} is neither cron (5 fields) nor every N minutes/hours, every day at 5am" unless parts.size == 5
-      sets = parts.each_with_index.map { |part, i| field(part, *FIELDS[i][1..], i, where) }
-      checks = [0, 1, 3].filter_map { |i| "#{sets[i].inspect}.include?(t.#{FIELDS[i][0]})" if sets[i] }
-      day, wday = sets[2], sets[4]
+      unless [5, 6].include?(parts.size)
+        raise CompileError,
+              "#{where}: schedule #{text.inspect} is neither cron (5 fields, 6 with seconds first) nor " \
+              "every N seconds/minutes/hours/days/weeks, every weekday, every day at 5am"
+      end
+      names = parts.size == 6 ? %w[sec min hour day month wday] : %w[min hour day month wday]
+      sets = parts.each_with_index.map { |part, i| field(part, names[i], where) }
+      # day of month and day of week go at the end: with both restricted, either matches.
+      checks = sets.each_with_index.filter_map do |set, i|
+        next if names[i] == "day" || names[i] == "wday"
+        "#{set.inspect}.include?(t.#{names[i]})" if set
+      end
+      day, wday = sets[names.index("day")], sets[names.index("wday")]
       # Cron: with both day of month and day of week restricted, either matches.
       if day && wday
         checks << "(#{day.inspect}.include?(t.day) || #{wday.inspect}.include?(t.wday))"
       elsif day || wday
         checks << (day ? "#{day.inspect}.include?(t.day)" : "#{wday.inspect}.include?(t.wday)")
       end
-      checks.empty? ? "Spinrail::Jobs.minute_slot(t)" : "(#{checks.join(' && ')} ? Spinrail::Jobs.minute_slot(t) : \"\")"
+      slot = parts.size == 6 ? "Spinrail::Jobs.second_slot(t)" : "Spinrail::Jobs.minute_slot(t)"
+      checks.empty? ? slot : "(#{checks.join(' && ')} ? #{slot} : \"\")"
     end
 
     # nil for *; otherwise the values allowed.
-    def field(part, low, high, index, where)
+    def field(part, name, where)
+      low, high = FIELDS.fetch(name)
       return nil if part == "*"
-      names = index == 4 ? DAYS : (index == 3 ? MONTHS : [])
+      names = name == "wday" ? DAYS : (name == "month" ? MONTHS : [])
       values = part.split(",").flat_map do |item|
         range, step = item.split("/", 2)
         first, last = if range == "*" then [low, high]
                       elsif range.include?("-") then range.split("-", 2).map { |v| number(v, names, low, where) }
                       else
                         v = number(range, names, low, where)
-                        [v, step ? (index == 4 ? 6 : high) : v]
+                        [v, step ? (name == "wday" ? 6 : high) : v]
                       end
-        top = index == 4 ? 7 : high # 7 is Sunday too
+        top = name == "wday" ? 7 : high # 7 is Sunday too
         raise CompileError, "#{where}: #{part.inspect} is out of #{low}-#{high}" unless first.between?(low, top) && last.between?(low, top) && first <= last
         (first..last).step(step ? step.to_i : 1).to_a
       end
-      values = values.map { |v| index == 4 ? v % 7 : v }.uniq.sort
+      values = values.map { |v| name == "wday" ? v % 7 : v }.uniq.sort
       values == (low..high).to_a ? nil : values
     end
 
