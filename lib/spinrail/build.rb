@@ -1,5 +1,7 @@
 require "set"
 require "securerandom"
+require "active_support"
+require "active_support/values/time_zone"
 
 module Spinrail
   # Reads an app laid out like a Rails app and writes one tep source file
@@ -538,9 +540,11 @@ module Spinrail
       end
     end
 
-    # An IANA name, checked against the build machine's zoneinfo when it has one.
+    # config.time_zone takes an IANA name or Rails' friendly one ("Madrid",
+    # "Eastern Time (US & Canada)"), mapped through ActiveSupport's table.
     def time_zone
       zone = settings.fetch("time_zone", "UTC").to_s
+      zone = ActiveSupport::TimeZone::MAPPING.fetch(zone, zone) unless zone == "UTC"
       zoneinfo = "/usr/share/zoneinfo"
       if zone != "UTC" && File.directory?(zoneinfo) && !File.file?(File.join(zoneinfo, zone))
         raise CompileError, "config/application.rb: unknown time zone #{zone.inspect}; use an IANA name such as \"Europe/Madrid\""

@@ -45,7 +45,7 @@ Roughly in priority order within each section.
 - [x] `config.time_zone` in `config/application.rb` (an IANA name, UTC by
       default): the process runs in it, so `Time.now` and `Time.current` agree
       (Rails keeps `Time.now` in the system zone); the database keeps UTC.
-- [ ] Rails' friendly zone names (`"Madrid"`, `"Eastern Time (US & Canada)"`).
+- [x] Rails' friendly zone names (`"Madrid"`, `"Eastern Time (US & Canada)"`).
 - [x] `if:`/`unless:`/`on:` on validations and callbacks.
 - [x] Halting before_* callbacks with `throw :abort`.
 - [x] Nullable columns, the default as in Rails (nil in Ruby, `where(x: nil)` is
