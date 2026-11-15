@@ -178,7 +178,10 @@ to the server.
   moves due scheduled jobs to ready, claims them by queue order (`-q
   "real_time,background*"`, `*` by default) then priority (lower first), and
   leaves failures as failed executions. `queue_as` and `queue_with_priority`
-  set a job's defaults. Arguments arrive as Strings. Inline in tests.
+  set a job's defaults; `retry_on` (`wait:` seconds, `:polynomially_longer` or
+  a lambda; `attempts:`) enqueues a new job with one more execution, and
+  `discard_on` drops it. Arguments arrive as Strings. Inline in tests, where
+  retries don't wait.
   `spinrail jobs -c N` works N at once on spinel threads, each with its own
   connection.
 - Gems: the default group of the app's Gemfile is compiled into the binary, as

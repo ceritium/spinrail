@@ -12,7 +12,7 @@ module Spinrail
     SCHEMA = [
       "CREATE TABLE IF NOT EXISTS spinrail_queue_jobs (id INTEGER PRIMARY KEY, queue_name TEXT NOT NULL, " \
       "class_name TEXT NOT NULL, arguments TEXT NOT NULL, priority INTEGER NOT NULL DEFAULT 0, " \
-      "scheduled_at TEXT NOT NULL DEFAULT '', finished_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, " \
+      "executions INTEGER NOT NULL DEFAULT 0, scheduled_at TEXT NOT NULL DEFAULT '', finished_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, " \
       "updated_at TEXT NOT NULL)",
       "CREATE INDEX IF NOT EXISTS index_spinrail_queue_jobs_on_class_name ON spinrail_queue_jobs (class_name)",
       "CREATE INDEX IF NOT EXISTS index_spinrail_queue_jobs_on_finished_at ON spinrail_queue_jobs (finished_at)",
@@ -38,6 +38,11 @@ module Spinrail
       SCHEMA.each { |sql| Spinrail.db.exec(sql) }
     end
 
+    # What SpinrailJobs.retry_wait answers when the job shouldn't be retried
+    # (otherwise the seconds to wait).
+    FAIL = -1
+    DISCARD = -2
+
     def self.inline? = ENV.fetch("SPINRAIL_JOBS_INLINE", Spinrail.env == "test" ? "1" : "0") == "1"
 
     def self.now = Spinrail.format_time(Spinrail.now)
@@ -48,35 +53,55 @@ module Spinrail
     # unless SPINRAIL_JOBS_INLINE=0.
     def self.enqueue(name, args, queue, priority, at)
       if Jobs.inline?
-        SpinrailJobs.dispatch(name, args)
+        Jobs.perform_inline(name, args)
         return 0
       end
       queue_name = queue.empty? ? SpinrailJobs.queue_for(name) : queue
       prio = priority < 0 ? SpinrailJobs.priority_for(name) : priority
+      Spinrail.transaction { Jobs.insert(name, Jobs.encode(args), queue_name, prio, at, 0) }
+    end
+
+    # retry_on retries right away and discard_on swallows, as a worker would
+    # but without waiting.
+    def self.perform_inline(name, args)
+      executions = 1
+      loop do
+        begin
+          SpinrailJobs.dispatch(name, args)
+          return
+        rescue StandardError => e
+          wait = SpinrailJobs.retry_wait(name, e, executions)
+          return if wait == DISCARD
+          raise e if wait == FAIL
+          executions += 1
+        end
+      end
+    end
+
+    def self.insert(name, arguments, queue_name, prio, at, executions)
       now = Jobs.now
       scheduled = at.empty? ? now : at
-      Spinrail.transaction do
-        db = Spinrail.prepare("INSERT INTO spinrail_queue_jobs (queue_name, class_name, arguments, priority, scheduled_at, created_at, updated_at) " \
-                              "VALUES (?, ?, ?, ?, ?, ?, ?)", true)
-        db.bind_str(1, queue_name)
-        db.bind_str(2, name)
-        db.bind_str(3, Jobs.encode(args))
-        db.bind_int(4, prio)
-        db.bind_str(5, scheduled)
-        db.bind_str(6, now)
-        db.bind_str(7, now)
-        db.step
-        db.finalize
-        id = db.last_rowid
-        if scheduled > now
-          Jobs.insert_execution("INSERT INTO spinrail_queue_scheduled_executions (job_id, queue_name, priority, scheduled_at, created_at) " \
-                                "VALUES (?, ?, ?, ?, ?)", id, queue_name, prio, scheduled)
-        else
-          Jobs.insert_execution("INSERT INTO spinrail_queue_ready_executions (job_id, queue_name, priority, created_at) VALUES (?, ?, ?, ?)",
-                                id, queue_name, prio, "")
-        end
-        id
+      db = Spinrail.prepare("INSERT INTO spinrail_queue_jobs (queue_name, class_name, arguments, priority, executions, scheduled_at, created_at, updated_at) " \
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", true)
+      db.bind_str(1, queue_name)
+      db.bind_str(2, name)
+      db.bind_str(3, arguments)
+      db.bind_int(4, prio)
+      db.bind_int(5, executions)
+      db.bind_str(6, scheduled)
+      db.bind_str(7, now)
+      db.bind_str(8, now)
+      db.step
+      db.finalize
+      id = db.last_rowid
+      if scheduled > now
+        Jobs.insert_execution("INSERT INTO spinrail_queue_scheduled_executions (job_id, queue_name, priority, scheduled_at, created_at) " \
+                              "VALUES (?, ?, ?, ?, ?)", id, queue_name, prio, scheduled)
+      else
+        Jobs.insert_execution("INSERT INTO spinrail_queue_ready_executions (job_id, queue_name, priority, created_at) VALUES (?, ?, ?, ?)",
+                              id, queue_name, prio, "")
       end
+      id
     end
 
     def self.insert_execution(sql, id, queue_name, prio, scheduled)
@@ -211,17 +236,25 @@ module Spinrail
       0
     end
 
-    # Claims and performs one job; false when none was ready.
+    # Claims and performs one job; false when none was ready. As in Active
+    # Job, a retry is a new job with one more execution, and the failed one
+    # is finished.
     def self.work_one(queues, process_id)
       id = Jobs.claim(queues, process_id)
       return false if id == 0
-      db = Spinrail.prepare("SELECT class_name, arguments FROM spinrail_queue_jobs WHERE id = ?", true)
+      db = Spinrail.prepare("SELECT class_name, arguments, queue_name, priority, executions FROM spinrail_queue_jobs WHERE id = ?", true)
       db.bind_int(1, id)
       name = ""
       arguments = "[]"
+      queue_name = ""
+      prio = 0
+      executions = 1
       if db.step == 1
         name = db.col_str(0)
         arguments = db.col_str(1)
+        queue_name = db.col_str(2)
+        prio = db.col_int(3)
+        executions = db.col_int(4) + 1
       end
       db.finalize
       t0 = Spinrail.clock
@@ -230,8 +263,21 @@ module Spinrail
         Jobs.finish(id)
         Spinrail.say("Performed " + name + " #" + id.to_s + " in " + format("%.1f", (Spinrail.clock - t0) * 1000.0) + "ms")
       rescue StandardError => e
-        Jobs.fail(id, e.class.name + ": " + e.message)
-        Spinrail.say("Failed " + name + " #" + id.to_s + ": " + e.message)
+        wait = SpinrailJobs.retry_wait(name, e, executions)
+        if wait == DISCARD
+          Jobs.finish(id)
+          Spinrail.say("Discarded " + name + " #" + id.to_s + ": " + e.message)
+        elsif wait == FAIL
+          Jobs.fail(id, e.class.name + ": " + e.message)
+          Spinrail.say("Failed " + name + " #" + id.to_s + ": " + e.message)
+        else
+          at = Spinrail.format_time(Time.now + wait)
+          Spinrail.transaction do
+            Jobs.finish(id)
+            Jobs.insert(name, arguments, queue_name, prio, wait > 0 ? at : "", executions)
+          end
+          Spinrail.say("Failed " + name + " #" + id.to_s + ": " + e.message + " (retrying in " + wait.to_s + "s)")
+        end
       end
       true
     end

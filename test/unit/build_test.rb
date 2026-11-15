@@ -524,4 +524,25 @@ class BuildTest < CompilerTest
     assert_includes ruby, %((posts_path + Spinrail.query_string(["q", "page"], [(param("q")).to_s, (2).to_s])))
     assert_includes ruby, "UPDATE posts SET updated_at = ? WHERE id = ?"
   end
+
+  def test_job_options
+    ruby = build(
+      "app/jobs/application_job.rb" => "class ApplicationJob < ActiveJob::Base\n  queue_as :background\n  retry_on Net::Timeout\nend\n",
+      "app/jobs/sync_job.rb" => "class SyncError < StandardError; end\n\nclass SyncJob < ApplicationJob\n  queue_with_priority 7\n" \
+                                "  retry_on SyncError, IOError, wait: :polynomially_longer, attempts: 10\n  discard_on ArgumentError\n\n" \
+                                "  def perform(id, mode = \"full\")\n  end\nend\n"
+    )
+    refute_includes ruby, "retry_on SyncError"
+    assert_includes ruby, %{return (args.length > 1 ? SyncJob.new.perform(Spinrail::Jobs.arg(args, 0), Spinrail::Jobs.arg(args, 1)) : SyncJob.new.perform(Spinrail::Jobs.arg(args, 0))) if name == "SyncJob"}
+    assert_includes ruby, %(      return Spinrail::Jobs::DISCARD if error.is_a?(ArgumentError)\n) +
+                          %(      return executions < 10 ? executions * executions * executions * executions + 2 : Spinrail::Jobs::FAIL if error.is_a?(SyncError) || error.is_a?(IOError)\n) +
+                          %(      return executions < 5 ? 3 : Spinrail::Jobs::FAIL if error.is_a?(Net::Timeout)\n)
+    assert_includes ruby, %(return 7 if name == "SyncJob")
+    assert_includes ruby, %(return "background" if name == "SyncJob")
+  end
+
+  def test_job_handlers_with_a_block
+    error = assert_raises(Spinrail::CompileError) { build("app/jobs/a_job.rb" => "class AJob < ApplicationJob\n  discard_on(IOError) { }\nend\n") }
+    assert_includes error.message, "discard_on with a block isn't supported"
+  end
 end

@@ -6,6 +6,13 @@ class InlineJobsTest < Spinrail::IntegrationTest
     assert_equal "Ana!,Bea", response.body
   end
 
+  def test_retries_and_discards_inline
+    get "/models/seed"
+    get "/models/shout?flaky=1"
+    get "/models/authors"
+    assert_equal "Ana!,Bea,flaky,flaky,flaky", response.body
+  end
+
   def test_scheduled_jobs_run_right_away_in_tests
     get "/models/seed"
     get "/models/enqueue"
@@ -19,7 +26,7 @@ class QueuedJobsTest < Spinrail::IntegrationTest
 
   def test_a_worker_drains_the_queue
     get "/models/seed"
-    get "/models/shout?broken=1"
+    get "/models/shout?broken=1&flaky=1"
     get "/models/authors"
     assert_equal "Ana,Bea", response.body
 
@@ -28,13 +35,16 @@ class QueuedJobsTest < Spinrail::IntegrationTest
                              "SPINRAIL_JOBS_INLINE" => "0" }, ENV.fetch("SPINRAIL_BINARY"), out: log, err: log)
     50.times do
       get "/models/authors"
-      break if response.body == "Ana!,Bea"
+      break if response.body.end_with?("flaky,flaky,flaky")
       sleep 0.1
     end
-    assert_equal "Ana!,Bea", response.body
+    assert_equal "Ana!,Bea,flaky,flaky,flaky", response.body
     sleep 0.3
     assert_includes File.read(log), "Performed ShoutJob"
     assert_includes File.read(log), "Failed BrokenJob"
+    assert_equal 2, File.read(log).scan(/Failed FlakyJob #\d+: try \d \(retrying in 0s\)/).size, File.read(log)
+    assert_includes File.read(log), "Discarded FlakyJob"
+    assert_equal 1, File.read(log).scan("Performed FlakyJob").size
   ensure
     Process.kill("KILL", worker) if worker
     Process.wait(worker) if worker

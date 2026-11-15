@@ -248,7 +248,8 @@ Roughly in priority order within each section.
       and failed executions), named queues polled in order with prefixes,
       priorities, `set(wait:, wait_until:, queue:, priority:)`, `queue_as`,
       `queue_with_priority`, several arguments (Strings, optional ones too).
-- [ ] `retry_on`/`discard_on` (dropped at build time; a failure is final).
+- [x] `retry_on`/`discard_on`, ApplicationJob's too, the last declared first.
+- [ ] `retry_on`/`discard_on` with a block, `jitter:` (ignored), `queue:`/`priority:`, `after_discard`.
 - [ ] Processes with heartbeats; claimed jobs of a dead worker go back to ready.
 - [ ] Recurring tasks (`config/recurring.yml`), `limits_concurrency`, queue
       pauses, clearing finished jobs.

@@ -1063,11 +1063,14 @@ module Spinrail
       files = Dir[path("app/jobs/*.rb")].sort
       base = files.find { |f| f.end_with?("/application_job.rb") }
       jobs = files - [base]
-      parts = [base ? File.read(base).sub(/<\s*(ActiveJob::Base|Spinrail::Job)/, "< Spinrail::Job") : "class ApplicationJob < Spinrail::Job\nend\n"]
+      parts = [base ? lower_job(File.read(base).sub(/<\s*(ActiveJob::Base|Spinrail::Job)/, "< Spinrail::Job"), base) : "class ApplicationJob < Spinrail::Job\nend\n"]
       defaults = base ? job_options(base).slice(:queue, :priority) : {}
+      inherited = base ? job_options(base).fetch(:handlers, []) : []
       specs = jobs.map do |file|
-        parts << "#{SOURCE_MARK}#{rel(file)}\n" + Lowering.lower(File.read(file), rel(file), Context.new(self, "", view: false, job: true))
-        defaults.merge(job_options(file))
+        parts << lower_job(File.read(file), file)
+        spec = defaults.merge(job_options(file))
+        # Like rescue_from, the last declared wins; the job's own before ApplicationJob's.
+        spec.merge(handlers: spec.fetch(:handlers, []).reverse + inherited.reverse)
       end
       dispatch = specs.map { |j| "    return #{perform_call(j)} if name == #{j[:name].inspect}" }
       queues = specs.filter_map { |j| "    return #{j[:queue].inspect} if name == #{j[:name].inspect}" if j[:queue] }
@@ -1079,6 +1082,12 @@ module Spinrail
         #{dispatch.join("\n")}
             return Spinrail::Mail.from_json(Spinrail::Jobs.arg(args, 0)).deliver_now.to if name == "Spinrail::Mail"
             raise ArgumentError, "unknown job " + name
+          end
+
+          # Seconds to wait before retrying, or Spinrail::Jobs::FAIL / DISCARD.
+          def self.retry_wait(name, error, executions)
+        #{specs.select { |j| j[:handlers].any? }.map { |j| retry_branch(j) }.join("\n")}
+            Spinrail::Jobs::FAIL
           end
 
           def self.queue_for(name)
@@ -1095,14 +1104,19 @@ module Spinrail
       parts.join("\n")
     end
 
+    def lower_job(source, file) = "#{SOURCE_MARK}#{rel(file)}\n" + Lowering.lower(source, rel(file), Context.new(self, "", view: false, job: true))
+
     # queue_as, queue_with_priority and perform's arity, read at build time
     # since spinel can't dispatch on a class looked up by name.
     def job_options(file)
-      klass = Spinrail.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) } or
+      classes = Spinrail.parse(File.read(file), rel(file)).statements.body.grep(Prism::ClassNode)
+      klass = classes.find { |c| c.constant_path.slice.end_with?("Job") } or
         raise CompileError, "#{rel(file)}: expected a job class"
       spec = { name: klass.constant_path.slice }
       (klass.body&.body || []).each do |stmt|
-        if stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && %i[queue_as queue_with_priority].include?(stmt.name)
+        if stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && %i[retry_on discard_on].include?(stmt.name)
+          (spec[:handlers] ||= []) << job_handler(stmt, file)
+        elsif stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && %i[queue_as queue_with_priority].include?(stmt.name)
           value = stmt.arguments&.arguments&.first
           literal = value && Spinrail.literal(value)
           raise CompileError, "#{rel(file)}: #{stmt.name} takes a literal" if literal.nil?
@@ -1117,6 +1131,39 @@ module Spinrail
         end
       end
       spec
+    end
+
+    # retry_on Errors, wait: 3, attempts: 5 (Active Job's defaults);
+    # wait: :polynomially_longer or a lambda of executions. jitter: is ignored.
+    def job_handler(stmt, file)
+      args, kw = Spinrail.call_args(stmt)
+      raise CompileError, "#{rel(file)}: #{stmt.name} with a block isn't supported" if stmt.block
+      raise CompileError, "#{rel(file)}: #{stmt.name} needs an error class" if args.empty?
+      unknown = kw.keys - (stmt.name == :retry_on ? %i[wait attempts jitter] : [])
+      raise CompileError, "#{rel(file)}: #{stmt.name} doesn't take #{unknown.join(', ')}" if unknown.any?
+      errors = args.map(&:slice)
+      return { errors:, wait: "Spinrail::Jobs::DISCARD", attempts: nil } if stmt.name == :discard_on
+      wait = kw[:wait]
+      wait = if wait.nil? then "3"
+             elsif wait.is_a?(Prism::SymbolNode) && %i[polynomially_longer exponentially_longer].include?(wait.unescaped.to_sym)
+               "executions * executions * executions * executions + 2"
+             elsif wait.is_a?(Prism::LambdaNode) then "(#{wait.slice}).call(executions).to_i"
+             else "(#{wait.slice}).to_i"
+             end
+      attempts = kw[:attempts]
+      attempts = if attempts.nil? then "5"
+                 elsif attempts.is_a?(Prism::SymbolNode) && attempts.unescaped == "unlimited" then nil
+                 else attempts.slice
+                 end
+      { errors:, wait:, attempts: }
+    end
+
+    def retry_branch(job)
+      checks = job[:handlers].map do |h|
+        wait = h[:attempts] ? "executions < #{h[:attempts]} ? #{h[:wait]} : Spinrail::Jobs::FAIL" : h[:wait]
+        "      return #{wait} if #{h[:errors].map { |e| "error.is_a?(#{e})" }.join(' || ')}"
+      end
+      "    if name == #{job[:name].inspect}\n#{checks.join("\n")}\n    end"
     end
 
     # perform(a, b = "x"): args[1] only when the job was enqueued with it.
