@@ -22,6 +22,8 @@ class String
   def to_param = self
   def cache_key = self
   def to_stream_name = self
+  # What a view prints for it: rich text renders sanitized, strings escape.
+  def to_html = Tep.h(self)
   # Helpers that end in html_safe are emitted raw; the build decides.
   def html_safe = self
 end
@@ -1418,6 +1420,12 @@ module Spinrail
 
     def form_file(scope, attribute, attrs)
       "<input type=\"file\" name=\"" + field_name(scope, attribute) + "\" id=\"" + field_id(scope, attribute) + "\"" + attrs + ">"
+    end
+
+    # Lexxy's editor, a form-associated element: it submits its own value.
+    def form_rich_textarea(scope, attribute, value, attrs)
+      "<lexxy-editor name=\"" + field_name(scope, attribute) + "\" id=\"" + field_id(scope, attribute) + "\" value=\"" + h(value) + "\"" +
+        (attrs.include?(" class=") ? "" : " class=\"lexxy-content\"") + attrs + "></lexxy-editor>"
     end
 
     def form_textarea(scope, attribute, value, attrs)

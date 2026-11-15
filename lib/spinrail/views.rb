@@ -8,17 +8,18 @@ module Spinrail
     module_function
 
     # Helpers that return markup; their output isn't escaped again.
-    HTML_HELPERS = /\A(turbo_frame_tag|turbo_stream_from|turbo_stream\.\w+|paginate|csrf_meta_tags|content_for|simple_format|stylesheet_link_tag|javascript_include_tag|image_tag|link_to|button_to|\w+\.(label|\w+_field|text_?area|check_?box|select|collection_select|submit))\b/
+    HTML_HELPERS = /\A(turbo_frame_tag|turbo_stream_from|turbo_stream\.\w+|paginate|csrf_meta_tags|content_for|simple_format|stylesheet_link_tag|javascript_include_tag|image_tag|link_to|button_to|\w+\.(label|\w+_field|text_?area|rich_text_?area|check_?box|select|collection_select|submit))\b/
     BLOCK = /\bdo\s*(\|[^|]*\|)?\z/
 
     # log_as: template name for the request log; partials pass nil.
     # raw: helper names whose output is html_safe.
     # escape: false for .text.erb templates.
-    def compile(source, signature, layout: false, log_as: nil, raw: [], escape: true)
+    def compile(source, signature, layout: false, log_as: nil, raw: [], escape: true, rich: [])
       tokens = tokenize(source)
       trim_code_lines(tokens)
       raw_call = raw.empty? ? nil : /\A(#{raw.map { |r| Regexp.escape(r) }.join('|')})\b/
-      body = tokens.map { |kind, text, line| tag_line(emit(kind, text, layout, raw_call), kind, line) }.join
+      rich_call = rich.empty? ? nil : /\.(#{rich.map { |r| Regexp.escape(r) }.join('|')})\z/
+      body = tokens.map { |kind, text, line| tag_line(emit(kind, text, layout, raw_call, rich_call), kind, line) }.join
       body = body.gsub(/^  out << h\(\((.*)\)\.to_s\)( # L\d+)?$/) { "  out << (#{$1}).to_s#{$2}" } unless escape
       return "def #{signature}\n  out = +\"\"\n#{body}  out\nend\n" unless log_as
       "def #{signature}\n  spinrail_t0 = Spinrail.log.render_start\n  out = +\"\"\n#{body}" \
@@ -66,7 +67,7 @@ module Spinrail
       ruby.sub(/\n\z/, " # L#{line}\n")
     end
 
-    def emit(kind, text, layout, raw_call = nil)
+    def emit(kind, text, layout, raw_call = nil, rich_call = nil)
       code = text.strip
       case kind
       when :text then text.empty? ? "" : "  out << #{text.inspect}\n"
@@ -80,6 +81,7 @@ module Spinrail
         elsif code.match?(HTML_HELPERS) || (raw_call && code.match?(raw_call)) then "  out << (#{code}).to_s\n"
         elsif code.match?(/\Araw\b/) then "  out << (#{code.sub(/\Araw\s*/, '')}).to_s\n"
         elsif code.match?(/\Arender\b/) then "  out << (#{code})\n"
+        elsif rich_call && code.match?(rich_call) then "  out << (#{code}).to_html\n"
         else "  out << h((#{code}).to_s)\n"
         end
       end

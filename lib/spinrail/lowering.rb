@@ -73,7 +73,7 @@ module Spinrail
       hidden_field: "hidden", date_field: "date", url_field: "url", search_field: "search",
       telephone_field: "tel", color_field: "color"
     }.freeze
-    BUILDER = (FIELDS.keys + %i[label text_area textarea check_box checkbox select collection_select file_field submit]).freeze
+    BUILDER = (FIELDS.keys + %i[label text_area textarea rich_text_area rich_textarea check_box checkbox select collection_select file_field submit]).freeze
 
     def visit_call_node(node)
       if %i[becomes becomes!].include?(node.name) && node.receiver && node.arguments&.arguments&.size == 1 &&
@@ -567,6 +567,7 @@ module Spinrail
         text = args[1] ? @rw.slice(args[1]) : Inflector.humanize(attr.to_s).inspect
         "form_label(#{scope}, #{attr.inspect}, #{text}, #{attrs})"
       when :text_area, :textarea then "form_textarea(#{scope}, #{attr.inspect}, #{value.(".to_s")}, #{attrs})"
+      when :rich_text_area, :rich_textarea then "form_rich_textarea(#{scope}, #{attr.inspect}, #{value.(".to_s")}, #{attrs})"
       when :file_field then "form_file(#{scope}, #{attr.inspect}, #{attrs})"
       when :check_box, :checkbox then "form_check_box(#{scope}, #{attr.inspect}, #{value.("")}, #{attrs})"
       when :select

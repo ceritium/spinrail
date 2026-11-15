@@ -22,20 +22,20 @@ module Spinrail
 
     Association = Struct.new(:kind, :name, :class_name, :foreign_key, :dependent, :optional)
 
-    attr_reader :name, :file, :sti_base, :sti_children
+    attr_reader :name, :file, :sti_base, :sti_children, :rich_texts
 
-    def initialize(file, schema, sti_base: nil, build: nil)
+    def initialize(file, schema, sti_base: nil, build: nil, source: nil, table: nil)
       @build = build
       @file = file
       @sti_base = sti_base
       @sti_children = []
       @schema = schema
-      source = File.read(file)
+      source ||= File.read(file)
       klass = Spinrail.parse(source, file).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
       raise CompileError, "#{file}: expected a class" unless klass
       @name = klass.constant_path.slice
       @parent = klass.superclass&.slice || "ApplicationRecord"
-      table_name = Inflector.tableize(sti_base || @name)
+      table_name = table || Inflector.tableize(sti_base || @name)
       @table = schema.table(table_name) or
         raise CompileError, "#{file}: no `create_table :#{table_name}` in db/schema.rb"
       if sti_base && !@table.column("type")
@@ -52,6 +52,7 @@ module Spinrail
       @body = []
       @relation_methods = []
       @constants = []
+      @rich_texts = []
       (klass.body&.body || []).each { |stmt| collect(stmt) }
     end
 
@@ -122,7 +123,7 @@ module Spinrail
 
     private
 
-    STI_UNSUPPORTED = %i[has_many has_one belongs_to scope enum has_secure_password has_secure_token].freeze
+    STI_UNSUPPORTED = %i[has_many has_one belongs_to scope enum has_secure_password has_secure_token has_rich_text].freeze
 
     def collect(stmt)
       call = stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? ? stmt.name : nil
@@ -148,6 +149,8 @@ module Spinrail
         @secure_password_validations = !(kw[:validations] && Spinrail.literal(kw[:validations]) == false)
       elsif call == :has_secure_token
         secure_token(stmt)
+      elsif call == :has_rich_text
+        rich_text(stmt)
       elsif stmt.is_a?(Prism::SingletonClassNode)
         singleton_class_body(stmt)
       else
@@ -185,6 +188,45 @@ module Spinrail
       fail!(node, "has_secure_token needs the #{attr} column") unless @table.column(attr)
       @callbacks[:before_create] << "@#{attr} = SecureRandom.alphanumeric(24) if @#{attr}.to_s.empty?"
       @body << "def regenerate_#{attr} = update!(#{attr}: SecureRandom.alphanumeric(24))"
+    end
+
+    # has_rich_text :body: an ActionText::RichText row per record, loaded
+    # on first read and saved after the record.
+    def rich_text(node)
+      args, kw = Spinrail.call_args(node)
+      fail!(node, "unsupported has_rich_text option #{kw.keys.first}") if kw.any?
+      attr = Spinrail.literal(args.first).to_s
+      fail!(node, "has_rich_text :#{attr} clashes with the #{attr} column") if @table.column(attr)
+      unless @schema.table("action_text_rich_texts")
+        fail!(node, "has_rich_text needs the action_text_rich_texts table (bin/rails action_text:install's migration)")
+      end
+      @rich_texts << attr
+      @callbacks[:after_save] << "save_rich_text_#{attr}"
+      @callbacks[:after_destroy] << "ActionText::RichText.where(record_type: #{@name.inspect}, record_id: @id).delete_all" if @rich_texts.size == 1
+      @body << <<~RUBY.chomp
+        def #{attr}
+          unless @rich_#{attr}_loaded
+            @rich_#{attr} = ActionText::RichText.find_for(#{@name.inspect}, @id, #{attr.inspect})
+            @rich_#{attr}_loaded = true
+          end
+          @rich_#{attr}
+        end
+
+        def #{attr}=(html)
+          #{attr}.body = html.to_s
+          @rich_#{attr}_changed = true
+        end
+
+        def save_rich_text_#{attr}
+          return unless @rich_#{attr}_changed
+          rich = #{attr}
+          rich.record_id = @id
+          rich.save!
+          @rich_#{attr}_changed = false
+        end
+      RUBY
+      @body << "def self.with_rich_text_#{attr} = all"
+      @relation_methods << "def with_rich_text_#{attr} = self"
     end
 
     # before_save :x, if: :y -> "x if y"
@@ -437,11 +479,14 @@ module Spinrail
                 else read
                 end
         "@#{c.name} = #{value} if params.has?(#{c.name.inspect})"
-      end + virtual.map { |v| "self.#{v} = params.get(#{v.inspect}) if params.has?(#{v.inspect})" }
+      end + (virtual + @rich_texts).map { |v| "self.#{v} = params.get(#{v.inspect}) if params.has?(#{v.inspect})" }
     end
 
     # has_secure_password: password and password_confirmation aren't columns.
     def virtual = (@secure_password ? %w[password password_confirmation] : []) + @extra_virtual
+
+    def rich_kwargs = @rich_texts.map { |r| "#{r}: nil" }
+    def rich_assign = @rich_texts.map { |r| "self.#{r} = #{r} unless #{r}.nil?" }
 
     def inspect_fields
       columns.map do |c|
@@ -627,9 +672,9 @@ module Spinrail
     end
 
     def model_class
-      kwargs = (columns.map { |c| "#{c.name}: #{c.default_literal}" } + virtual.map { |v| "#{v}: \"\"" }).join(", ")
-      update_kwargs = (assignable.map { |c| "#{c.name}: @#{c.name}" } + virtual.map { |v| "#{v}: \"\"" }).join(", ")
-      assign = assignable.map { |c| "@#{c.name} = #{c.name}" } + secure_assign
+      kwargs = (columns.map { |c| "#{c.name}: #{c.default_literal}" } + virtual.map { |v| "#{v}: \"\"" } + rich_kwargs).join(", ")
+      update_kwargs = (assignable.map { |c| "#{c.name}: @#{c.name}" } + virtual.map { |v| "#{v}: \"\"" } + rich_kwargs).join(", ")
+      assign = assignable.map { |c| "@#{c.name} = #{c.name}" } + secure_assign + rich_assign
       from_row = columns.each_with_index.map { |c, i| "#{c.name}: #{c.read(i)}" }
       checks = (@validations + required_associations + secure_validations).map do |attr, cond, (key, text, count)|
         message = key ? "Spinrail.message(#{key.inspect}, #{text.inspect}, #{count.inspect})" : text.inspect
@@ -647,6 +692,7 @@ module Spinrail
         #{indent(columns.map { |c| "@#{c.name} = #{c.name}" }, 4)}
         #{indent((@secure_password ? ["@password = \"\"", *secure_assign] : []) + @extra_virtual.map { |v| "@#{v} = #{v}" }, 4)}
             @errors = Spinrail::Errors.new(#{Inflector.underscore(@name).inspect})
+        #{indent(@rich_texts.flat_map { |r| ["@rich_#{r} = ActionText::RichText.new", "@rich_#{r}_loaded = false", "@rich_#{r}_changed = false"] } + rich_assign, 4)}
         #{@sti_children.empty? ? '' : "    @type = sti_name\n"}        #{indent(@associations.map { |a| "@preloaded_#{a.name} = false" }, 4)}
           end
 
@@ -786,7 +832,7 @@ module Spinrail
 
           def reload
             fresh = #{@name}.find(@id)
-        #{indent(assignable.map { |c| "@#{c.name} = fresh.#{c.name}" }, 4)}
+        #{indent(assignable.map { |c| "@#{c.name} = fresh.#{c.name}" } + @rich_texts.map { |r| "@rich_#{r}_loaded = false" }, 4)}
             self
           end
 
@@ -815,8 +861,8 @@ module Spinrail
       [Lowering.lower(@relation_methods.join("\n\n"), @file, Build::Context.new(nil, "", view: false, relation: true))]
     end
 
-    def create_kwargs = (assignable.map { |c| "#{c.name}: #{c.default_literal}" } + virtual.map { |v| "#{v}: \"\"" }).join(", ")
-    def new_args = (assignable.map(&:name) + virtual).map { |n| "#{n}: #{n}" }.join(", ")
+    def create_kwargs = (assignable.map { |c| "#{c.name}: #{c.default_literal}" } + virtual.map { |v| "#{v}: \"\"" } + rich_kwargs).join(", ")
+    def new_args = (assignable.map(&:name) + virtual + @rich_texts).map { |n| "#{n}: #{n}" }.join(", ")
 
     def secure_assign
       extra = @extra_virtual.map { |v| "@#{v} = #{v}" }

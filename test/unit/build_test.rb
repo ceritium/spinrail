@@ -360,6 +360,32 @@ class BuildTest < CompilerTest
     assert_includes ruby, %(get "/up" do\n  "<!DOCTYPE html><html><body style=\\"background-color: green\\"></body></html>"\nend)
   end
 
+  def test_rich_text
+    schema = "Spinrail::Schema.define do\n create_table :posts do |t|\n t.string :title\n end\n " \
+             "create_table :action_text_rich_texts do |t|\n t.string :name\n t.text :body\n t.string :record_type\n " \
+             "t.integer :record_id\n t.timestamps\n end\nend\n"
+    files = {
+      "config/routes.rb" => %(Spinrail.routes.draw do\n get "/posts/:id", to: "posts#show"\nend\n),
+      "db/schema.rb" => schema,
+      "app/models/post.rb" => "class Post < ApplicationRecord\n has_rich_text :content\nend\n",
+      "app/controllers/posts_controller.rb" => "class PostsController < ApplicationController\n def show\n @post = Post.find(params[:id])\n end\nend\n",
+      "app/views/posts/show.html.erb" => "<%= @post.content %><%= @post.title %>" \
+                                         "<%= form_with model: @post, url: \"/posts\" do |f| %><%= f.rich_text_area :content %><% end %>"
+    }
+    ruby = build(files)
+    assert_includes ruby, "class ActionText::RichText < ApplicationRecord"
+    assert_includes ruby, %(@rich_content = ActionText::RichText.find_for("Post", @id, "content"))
+    assert_match(/def initialize\(id: 0, title: nil, content: nil\)/, ruby)
+    assert_includes ruby, %(self.content = params.get("content") if params.has?("content"))
+    assert_includes ruby, "out << (iv_post.content).to_html"
+    assert_includes ruby, "out << h((iv_post.title).to_s)"
+    assert_includes ruby, %(form_rich_textarea("post", "content", (iv_post.content).to_s, ""))
+
+    files["app/models/post.rb"] = "class Post < ApplicationRecord\n has_rich_text :title\nend\n"
+    error = assert_raises(Spinrail::CompileError) { build(files) }
+    assert_match(/has_rich_text :title clashes with the title column/, error.message)
+  end
+
   def test_template_reading_an_unassigned_ivar
     error = assert_raises(Spinrail::CompileError) do
       build(

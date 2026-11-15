@@ -110,6 +110,10 @@ Roughly in priority order within each section.
       `stream_from`, `reject`, `verified_stream_name_from_params`, picked by
       `turbo_stream_from ..., channel:`. No `perform`/`transmit` or
       client-sent actions yet.
+- [x] Action Text: `has_rich_text` over `action_text_rich_texts`, rendered
+      through a safe-list sanitizer (`<%= post.content %>`), `to_plain_text`,
+      `form.rich_text_area` as Lexxy's `<lexxy-editor>`. No attachments,
+      embeds or eager loading (`with_rich_text_*` loads one row per record).
 - [x] File uploads (tep fork): `f.file_field` makes `form_with` multipart,
       `request.files["post[avatar]"]` (`original_filename`, `content_type`,
       `read`, `size`), `fixture_file_upload` in tests. Held in memory; no

@@ -176,8 +176,34 @@ module Spinrail
         model.sti_children = children.select { |c| c.sti_base == model.name }
         [f, model]
       end
-      bases.map { |f, m| "#{SOURCE_MARK}generated #{rel(f)}\n#{m.to_ruby}" } +
+      rich = bases.any? { |_, m| m.rich_texts.any? } ? [rich_text_model(schema)] : []
+      rich + bases.map { |f, m| "#{SOURCE_MARK}generated #{rel(f)}\n#{m.to_ruby}" } +
         children.map { |c| "#{SOURCE_MARK}generated #{rel(c.file)}\n#{c.to_ruby}" }
+    end
+
+    RICH_TEXT = <<~'RUBY'
+      class ActionText::RichText < ApplicationRecord
+        def self.find_for(record_type, record_id, name)
+          found = record_id > 0 ? where(record_type: record_type, record_id: record_id, name: name).first : nil
+          found.nil? ? new(name: name, record_type: record_type, record_id: record_id, body: "") : found
+        end
+
+        def to_s = body.to_s
+        def to_html = "<div class=\"lexxy-content\">" + Spinrail::Html.sanitize(body.to_s) + "</div>"
+        def to_plain_text = Spinrail::Html.to_plain_text(body.to_s)
+        def blank? = to_plain_text.empty? && !body.to_s.include?("<action-text-attachment")
+        def present? = !blank?
+      end
+    RUBY
+
+    def rich_text_model(schema)
+      model = Model.new("action_text/rich_text.rb", schema, build: self, source: RICH_TEXT, table: "action_text_rich_texts")
+      "#{SOURCE_MARK}generated ActionText::RichText\nmodule ActionText\nend\n\n#{model.to_ruby}"
+    end
+
+    # has_rich_text names: a view printing `x.<name>` renders it sanitized.
+    def rich_text_names
+      @rich_text_names ||= model_files.flat_map { |f| File.read(f).scan(/^\s*has_rich_text\s+:(\w+)/).flatten }.uniq
     end
 
     def model_kind(file)
@@ -380,7 +406,7 @@ module Spinrail
     def postgres? = ENV.fetch("SPINRAIL_DATABASE", "sqlite") == "postgres"
 
     def runtime_source
-      source = File.read(RUNTIME)
+      source = File.read(RUNTIME) + "\n" + File.read(File.join(File.dirname(RUNTIME), "html.rb"))
       source = threaded(source) if @threads
       return source unless postgres?
       source.sub("@conn = Tep::SQLite.new", "@conn = Spinrail::PgConnection.new")
@@ -508,7 +534,7 @@ module Spinrail
         signature = t.layout? ? "#{t.method_name}(content)" : "#{t.method_name}__SIGNATURE__"
         # A partial's trailing newline would double up inside loops.
         source = t.partial? ? File.read(t.path).chomp : File.read(t.path)
-        ruby = Erb.compile(source, signature, layout: t.layout?, raw: raw, escape: !t.text?,
+        ruby = Erb.compile(source, signature, layout: t.layout?, raw: raw, escape: !t.text?, rich: rich_text_names,
                                               log_as: t.partial? ? nil : rel(t.path).delete_prefix("app/views/"))
         ctx = Context.new(self, t.dir, view: true, ivars: t.page?)
         ctx.i18n_scope = "#{t.dir.tr('/', '.')}.#{t.name.delete_prefix('_').delete_suffix('.text')}"
@@ -527,7 +553,7 @@ module Spinrail
       end
       defs += @action_views.values.map do |v|
         signature = "#{v.method_name}(#{v.exposures.join(', ')})"
-        ruby = Erb.compile(File.read(v.template_path), signature, raw: raw, log_as: rel(v.template_path).delete_prefix("app/"))
+        ruby = Erb.compile(File.read(v.template_path), signature, raw: raw, rich: rich_text_names, log_as: rel(v.template_path).delete_prefix("app/"))
         derived = v.computed.map { |n, body| "  #{n} = begin\n#{body.gsub(/^\s*/, '    ')}\n  end\n" }.join
         ruby = ruby.sub(/\A(def [^\n]*\n)/) { "#{$1}#{derived}" }
         ctx = Context.new(self, File.dirname(v.key.tr('.', '/')), view: true, ivars: false)
