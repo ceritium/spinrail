@@ -187,6 +187,12 @@ to the server.
   `spinrail jobs status|failed` inspect the queue; `pause QUEUE`/`resume QUEUE`,
   `retry ID|all` and `discard ID|all` (failed jobs) and `clear` (finished ones)
   act on it. Workers delete finished jobs after a day.
+- Recurring jobs: `config/recurring.yml` as Solid Queue reads it (tasks under
+  an environment, or at the top for all), each with `class:` and `args:` or a
+  `command:` of app code, and `schedule:` as cron or `every 5 minutes`,
+  `every day at 5am`, `every monday at 9am`. Every worker schedules them; a
+  unique run per task and time keeps them from running twice.
+  `SPINRAIL_JOBS_SKIP_RECURRING=1` leaves a worker out.
   `spinrail jobs -c N` works N at once on spinel threads, each with its own
   connection.
 - Gems: the default group of the app's Gemfile is compiled into the binary, as

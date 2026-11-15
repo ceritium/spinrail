@@ -259,7 +259,11 @@ Roughly in priority order within each section.
 - [ ] Hostname of a process (spinel has no Socket; `HOSTNAME` if set).
 - [x] Queue pauses, retrying and discarding failed jobs, clearing finished
       ones (by hand, and after `SPINRAIL_JOBS_CLEAR_FINISHED_AFTER`, a day).
-- [ ] Recurring tasks (`config/recurring.yml`), `limits_concurrency`.
+- [x] Recurring tasks (`config/recurring.yml`): cron and Fugit's common
+      phrasings, `class:`/`args:` or `command:`, once per slot across workers.
+- [ ] Fugit's other phrasings (`every 2 days`, `every weekday`), cron with
+      seconds, hash arguments, ERB in recurring.yml.
+- [ ] `limits_concurrency`.
 - [ ] A dashboard (Mission Control).
 - [ ] Threaded jobs on PostgreSQL (the PG battery's state hasn't been checked
       for threads).

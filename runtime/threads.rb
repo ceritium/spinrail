@@ -26,8 +26,10 @@ module Spinrail
       end
     end
     beaten = Spinrail.clock
+    last = Jobs.recurring_slots
     until Jobs::STOP[0]
       sleep 0.2
+      Jobs.schedule(last) if Jobs.recurring?
       next if Spinrail.clock - beaten < Jobs.heartbeat_interval
       Jobs.maintain(id)
       beaten = Spinrail.clock

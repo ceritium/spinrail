@@ -1,0 +1,11 @@
+# Only for the recurring jobs test, which runs workers in this environment.
+recurring:
+  tick:
+    class: NoteJob
+    args: tick
+    queue: default
+    schedule: every second
+  sweep:
+    command: |
+      Author.create!(name: "swept", email: "swept" + Time.now.to_i.to_s + "@example.com")
+    schedule: every 2 seconds

@@ -4,6 +4,6 @@ class NoteJob < ApplicationJob
   queue_with_priority 3
 
   def perform(name, suffix = "")
-    Author.create!(name: name + suffix, email: name + suffix + "@example.com")
+    Author.create!(name: name + suffix, email: name + suffix + Author.count.to_s + "@example.com")
   end
 end

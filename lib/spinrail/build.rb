@@ -1072,7 +1072,13 @@ module Spinrail
         # Like rescue_from, the last declared wins; the job's own before ApplicationJob's.
         spec.merge(handlers: spec.fetch(:handlers, []).reverse + inherited.reverse)
       end
-      dispatch = specs.map { |j| "    return #{perform_call(j)} if name == #{j[:name].inspect}" }
+      recurring = Recurring.new(path("config/recurring.yml"))
+      recurring.tasks.each do |t|
+        next unless t.job && specs.none? { |j| j[:name] == t.job }
+        raise CompileError, "config/recurring.yml: #{t.key}: no app/jobs class #{t.job}"
+      end
+      parts << lower_job(recurring.to_ruby, path("config/recurring.yml"))
+      dispatch = specs.map { |j| "    return #{perform_call(j)} if name == #{j[:name].inspect}" } + recurring.dispatch
       queues = specs.filter_map { |j| "    return #{j[:queue].inspect} if name == #{j[:name].inspect}" if j[:queue] }
       priorities = specs.filter_map { |j| "    return #{j[:priority]} if name == #{j[:name].inspect}" if j[:priority] }
       parts << <<~RUBY

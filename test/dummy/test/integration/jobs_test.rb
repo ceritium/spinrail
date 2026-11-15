@@ -187,6 +187,36 @@ class QueueCommandsTest < Spinrail::IntegrationTest
   end
 end
 
+class RecurringJobsTest < Spinrail::IntegrationTest
+  include WorkerHelpers
+  server_env "SPINRAIL_JOBS_INLINE" => "0"
+
+  # Two workers schedule the same tasks; each run is enqueued once.
+  def test_recurring_tasks_run_once_per_slot
+    get "/models/seed"
+    logs = [1, 2].map { |n| File.join(Dir.tmpdir, "spinrail-recurring-#{n}-#{Process.pid}.log") }
+    pids = logs.map { |log| worker(log, "SPINRAIL_ENV" => "recurring") }
+    logs.each { |log| wait_for(log, "working jobs") }
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    sleep 4.5
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+    get "/models/authors"
+    names = response.body.split(",")
+    ticks = names.count("tick")
+    assert_operator ticks, :>=, 3, logs.map { |l| File.read(l) }.join
+    assert_operator ticks, :<=, elapsed.ceil + 1
+    assert_operator names.count("swept"), :>=, 1
+    assert_operator names.count("swept"), :<=, 3
+    enqueued = logs.sum { |l| File.read(l).scan("Enqueued recurring task tick").size }
+    assert_operator enqueued - ticks, :<=, 2
+  ensure
+    (pids || []).each do |pid|
+      Process.kill("KILL", pid) rescue nil
+      Process.wait(pid) rescue nil
+    end
+  end
+end
+
 class ThreadedJobsTest < Spinrail::IntegrationTest
   server_env "SPINRAIL_JOBS_INLINE" => "0"
 

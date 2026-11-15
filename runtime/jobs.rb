@@ -37,7 +37,11 @@ module Spinrail
       "last_heartbeat_at TEXT NOT NULL, created_at TEXT NOT NULL)",
       "CREATE INDEX IF NOT EXISTS index_spinrail_queue_processes_on_last_heartbeat_at ON spinrail_queue_processes (last_heartbeat_at)",
       "CREATE TABLE IF NOT EXISTS spinrail_queue_pauses (id INTEGER PRIMARY KEY, queue_name TEXT NOT NULL, created_at TEXT NOT NULL)",
-      "CREATE UNIQUE INDEX IF NOT EXISTS index_spinrail_queue_pauses_on_queue_name ON spinrail_queue_pauses (queue_name)"
+      "CREATE UNIQUE INDEX IF NOT EXISTS index_spinrail_queue_pauses_on_queue_name ON spinrail_queue_pauses (queue_name)",
+      "CREATE TABLE IF NOT EXISTS spinrail_queue_recurring_executions (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL, " \
+      "task_key TEXT NOT NULL, run_at TEXT NOT NULL, created_at TEXT NOT NULL)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS index_spinrail_queue_recurring_executions_on_task_key_and_run_at " \
+      "ON spinrail_queue_recurring_executions (task_key, run_at)"
     ].freeze
 
     def self.schema
@@ -375,6 +379,56 @@ module Spinrail
       end
     end
 
+    # Recurring tasks (config/recurring.yml, generated into SpinrailRecurring).
+    # Every worker schedules them; the unique (task_key, run_at) index lets
+    # one enqueue each run. A task first runs at its next slot after start.
+    def self.recurring? = ENV.fetch("SPINRAIL_JOBS_SKIP_RECURRING", "") != "1"
+
+    def self.recurring_slots
+      t = Time.now
+      SpinrailRecurring.keys.each_index.map { |i| SpinrailRecurring.slot(i, t) }
+    end
+
+    def self.schedule(last)
+      t = Time.now
+      SpinrailRecurring.keys.each_index do |i|
+        env = SpinrailRecurring.envs[i]
+        next unless env.empty? || env == Spinrail.env
+        at = SpinrailRecurring.slot(i, t)
+        next if at.empty? || at == last[i]
+        last[i] = at
+        SpinrailRecurring.fire(i, at)
+      end
+    end
+
+    def self.minute_slot(t) = Spinrail.format_time(Time.at(t.to_i - t.sec))
+
+    def self.interval_slot(t, seconds) = Spinrail.format_time(Time.at(t.to_i - t.to_i % seconds))
+
+    def self.recur(key, at, name, args, queue, priority)
+      return unless Spinrail.db.exec("BEGIN IMMEDIATE")
+      db = Spinrail.prepare("INSERT INTO spinrail_queue_recurring_executions (job_id, task_key, run_at, created_at) VALUES (0, ?, ?, ?)", true)
+      db.bind_str(1, key)
+      db.bind_str(2, at)
+      db.bind_str(3, Jobs.now)
+      rc = db.step
+      db.finalize
+      if rc < 0
+        Spinrail.db.exec("ROLLBACK")
+        return
+      end
+      queue_name = queue.empty? ? SpinrailJobs.queue_for(name) : queue
+      id = Jobs.insert(name, Jobs.encode(args), queue_name, priority < 0 ? SpinrailJobs.priority_for(name) : priority, "", 0)
+      db = Spinrail.prepare("UPDATE spinrail_queue_recurring_executions SET job_id = ? WHERE task_key = ? AND run_at = ?", true)
+      db.bind_int(1, id)
+      db.bind_str(2, key)
+      db.bind_str(3, at)
+      db.step
+      db.finalize
+      Spinrail.db.exec("COMMIT")
+      Spinrail.say("Enqueued recurring task " + key + " as " + name + " #" + id.to_s)
+    end
+
     def self.clear_finished_after = ENV.fetch("SPINRAIL_JOBS_CLEAR_FINISHED_AFTER", "86400").to_i
 
     # Finished jobs are kept a day (SPINRAIL_JOBS_CLEAR_FINISHED_AFTER), then
@@ -437,12 +491,14 @@ module Spinrail
       interval = Jobs.polling_interval
       dispatched = 0.0
       beaten = Spinrail.clock
+      last = Jobs.recurring_slots
       until STOP[0]
         if beat && Spinrail.clock - beaten >= Jobs.heartbeat_interval
           Jobs.maintain(process_id)
           beaten = Spinrail.clock
         end
         if Spinrail.clock - dispatched >= 1.0
+          Jobs.schedule(last) if beat && Jobs.recurring?
           Jobs.dispatch_scheduled
           dispatched = Spinrail.clock
         end
