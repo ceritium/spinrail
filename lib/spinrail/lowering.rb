@@ -106,7 +106,7 @@ module Spinrail
         lower_content_for(node)
       elsif @forms.any? && local?(node.receiver, @forms.last[:var]) && BUILDER.include?(node.name)
         lower_field(node)
-      elsif @ctx.view? && node.receiver.nil? && node.name == :link_to && node.block
+      elsif @ctx.view? && node.receiver.nil? && %i[link_to button_to].include?(node.name) && node.block
         lower_link_block(node)
       elsif @ctx.view? && node.receiver.nil? && node.name == :turbo_frame_tag
         lower_turbo_frame(node)
@@ -130,6 +130,14 @@ module Spinrail
         @rw.replace(node) { node.name == :valid? ? "params_valid?" : "params_errors" }
       elsif node.name == :params && (local?(node.receiver, :request) || bare?(node.receiver, :request)) && node.arguments.nil?
         @rw.replace(node) { "params" }
+      elsif node.receiver.nil? && node.arguments&.arguments&.last.is_a?(Prism::KeywordHashNode) &&
+            @ctx.path_helper?(node.name.to_s.sub(/_url\z/, "_path"))
+        lower_path_with_query(node)
+      elsif %i[sanitize_sql sanitize_sql_array].include?(node.name) && raw_sql_array(node)
+        sql, *values = raw_sql_array(node).elements
+        @rw.replace(node) { "Spinrail.sanitize_sql(#{sql.unescaped.inspect}, #{sql_binds(values)})" }
+      elsif node.name == :execute && node.receiver.is_a?(Prism::CallNode) && node.receiver.name == :connection && node.arguments&.arguments&.size == 1
+        @rw.replace(node) { "Spinrail.execute(#{@rw.slice(node.arguments.arguments.first)})" }
       elsif params_call?(node)
         lower_params(node)
       elsif mass_assignment?(node)
@@ -242,8 +250,11 @@ module Spinrail
       when :exists? then args.size == 1
       when :last then args.size == 1 && @ctx.relation?
       when :includes, :preload, :eager_load then !node.receiver.nil? || @ctx.relation?
-      when :joins, :left_joins, :left_outer_joins then args.any? && args.all? { |a| a.is_a?(Prism::SymbolNode) }
-      when :where then args.size == 1 && args.first.is_a?(Prism::KeywordHashNode) && args.first.elements.any? { |e| e.value.is_a?(Prism::HashNode) }
+      when :joins then (args.size == 1 && args.first.is_a?(Prism::StringNode)) || (args.any? && args.all? { |a| a.is_a?(Prism::SymbolNode) })
+      when :left_joins, :left_outer_joins then args.any? && args.all? { |a| a.is_a?(Prism::SymbolNode) }
+      when :where
+        (args.any? && args.first.is_a?(Prism::StringNode)) ||
+          (args.size == 1 && args.first.is_a?(Prism::KeywordHashNode) && args.first.elements.any? { |e| e.value.is_a?(Prism::HashNode) })
       when :count then node.receiver.is_a?(Prism::CallNode) && node.receiver.name == :group && args.empty?
       else false
       end
@@ -689,11 +700,17 @@ module Spinrail
     # <%= link_to path, class: "x" do %>...<% end %>, inlined like form_with.
     def lower_link_block(node)
       args, kw = Spinrail.call_args(node)
-      fail!(node, "link_to with a block takes the url") unless args.size == 1
+      fail!(node, "#{node.name} with a block takes the url") unless args.size == 1
+      method = kw[:method] ? Spinrail.literal(kw[:method]).to_s : "post"
       @rw.replace(node) do
-        open = "\"<a href=\\\"\" + h((#{@rw.slice(args[0])}).to_s) + \"\\\"\" + #{html_attrs(kw)} + \">\""
+        url = "(#{@rw.slice(args[0])}).to_s"
         body = node.block.body ? @rw.slice(node.block.body) : ""
-        "out << #{open}\n#{body}\nout << \"</a>\""
+        if node.name == :button_to
+          attrs = html_attrs(kw.reject { |k, _| k == :method })
+          "out << form_open(#{url}, #{method.inspect}, \" class=\\\"button_to\\\"\") + \"<button type=\\\"submit\\\"\" + #{attrs} + \">\"\n#{body}\nout << \"</button></form>\""
+        else
+          "out << \"<a href=\\\"\" + h(#{url}) + \"\\\"\" + #{html_attrs(kw)} + \">\"\n#{body}\nout << \"</a>\""
+        end
       end
     end
 
@@ -809,6 +826,31 @@ module Spinrail
       "cookie_write(#{key}, #{@rw.slice(opts[:value])}, #{op.to_s.include?('permanent')}, #{op.to_s.include?('signed')}, #{httponly}, #{same_site.inspect})"
     end
 
+    # room_path(room, q: x): extra keywords become the query string, as in Rails.
+    def lower_path_with_query(node)
+      *args, hash = node.arguments.arguments
+      pairs = hash.elements
+      fail!(node, "#{node.name}: query keywords must be plain key: value pairs") unless pairs.all? { |e| e.is_a?(Prism::AssocNode) && e.key.is_a?(Prism::SymbolNode) }
+      @rw.replace(node) do
+        call = args.empty? ? node.name.to_s : "#{node.name}(#{args.map { |a| @rw.slice(a) }.join(', ')})"
+        keys = pairs.map { |e| e.key.unescaped }
+        values = pairs.map { |e| "(#{@rw.slice(e.value)}).to_s" }
+        "(#{call} + Spinrail.query_string(#{keys.inspect}, [#{values.join(', ')}]))"
+      end
+    end
+
+    # sanitize_sql(["sql ?", value]) with a literal statement.
+    def raw_sql_array(node)
+      args = node.arguments&.arguments || []
+      array = args.first
+      array if args.size == 1 && array.is_a?(Prism::ArrayNode) && array.elements.first.is_a?(Prism::StringNode)
+    end
+
+    # Bind values travel as text, as the other where binds do.
+    def sql_binds(values)
+      values.empty? ? "Spinrail.no_binds" : "[#{values.map { |v| "Spinrail.sql_text(#{@rw.slice(v)})" }.join(', ')}]"
+    end
+
     # order("sql") as is; order(:a, :b) as order(a: :asc, b: :asc).
     def order_call(prefix, args)
       return "#{prefix}order_sql(#{@rw.slice(args.first)})" if args.first.is_a?(Prism::StringNode)
@@ -830,10 +872,15 @@ module Spinrail
           names = node.arguments.arguments.map { |a| Spinrail.literal(a).to_s }
           "#{prefix.call}with_includes(#{names.inspect})"
         when :joins
-          "#{prefix.call}with_joins(#{node.arguments.arguments.map { |a| a.unescaped }.inspect})"
+          "#{prefix.call}with_joins(#{node.arguments.arguments.map { |a| a.is_a?(Prism::StringNode) ? "sql:#{a.unescaped}" : a.unescaped }.inspect})"
         when :left_joins, :left_outer_joins
           "#{prefix.call}with_joins(#{node.arguments.arguments.map { |a| "left:#{a.unescaped}" }.inspect})"
-        when :where then lower_nested_where(prefix.call, arg)
+        when :where
+          if arg.is_a?(Prism::StringNode)
+            "#{prefix.call}where_sql(#{arg.unescaped.inspect}, #{sql_binds(node.arguments.arguments.drop(1))})"
+          else
+            lower_nested_where(prefix.call, arg)
+          end
         when :count
           group = node.receiver
           column = Spinrail.literal(group.arguments.arguments.first).to_s

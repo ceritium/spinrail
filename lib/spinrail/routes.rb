@@ -99,6 +99,14 @@ module Spinrail
 
     def verb(node)
       args, kw = Spinrail.call_args(node)
+      # delete :clear, on: :collection is a one-route collection block.
+      if (on = kw.delete(:on))
+        kind = Spinrail.literal(on)
+        fail!(node, "on: takes :member or :collection, inside resources") unless @resource && %i[member collection].include?(kind)
+        kind_scope = scope.dup
+        kind_scope.kind = kind
+        return within(kind_scope) { member_route(node, args, kw) }
+      end
       if scope.kind
         return member_route(node, args, kw)
       end
@@ -124,6 +132,8 @@ module Spinrail
       params = full.scan(/[:*](\w+)/).flatten
       helper("#{scope.helper}#{name}", params, path_expr(full))
     end
+
+    def on_option?(node) = Spinrail.call_args(node)[1].key?(:on)
 
     # Inside member/collection: `post :publish` -> posts#publish.
     def member_route(node, args, kw)
@@ -174,7 +184,7 @@ module Spinrail
         block.body&.body || []
       end
       ((node.block&.body&.body || []) + concern_nodes).each do |stmt|
-        if stmt.is_a?(Prism::CallNode) && %i[member collection].include?(stmt.name)
+        if stmt.is_a?(Prism::CallNode) && (%i[member collection].include?(stmt.name) || on_option?(stmt))
           statement(stmt)
         else
           deferred << stmt

@@ -48,4 +48,10 @@ class SchemaTest < CompilerTest
     dir = app("db/schema.rb" => "Spinrail::Schema.define do\n create_table :x do |t|\n t.json :y\n end\nend\n")
     assert_raises(Spinrail::CompileError) { Spinrail::Schema.new(File.join(dir, "db/schema.rb")) }
   end
+
+  def test_virtual_tables
+    dir = app("db/schema.rb" => %(Spinrail::Schema.define do\n create_virtual_table "idx", "fts5", ["body", "tokenize=porter"]\nend\n))
+    schema = Spinrail::Schema.new(File.join(dir, "db/schema.rb"))
+    assert_equal ["CREATE VIRTUAL TABLE IF NOT EXISTS idx USING fts5(body, tokenize=porter)"], schema.virtual_tables
+  end
 end

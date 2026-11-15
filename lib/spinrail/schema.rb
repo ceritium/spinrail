@@ -113,12 +113,13 @@ module Spinrail
       boolean: :boolean, float: :float, decimal: :float
     }.freeze
 
-    attr_reader :tables, :indexes
+    attr_reader :tables, :indexes, :virtual_tables
 
     def initialize(file, tables: nil, indexes: [])
       @file = file
       @tables = tables || {}
       @indexes = indexes
+      @virtual_tables = []
       walk(Spinrail.parse(File.read(file), file)) unless tables
     end
 
@@ -165,6 +166,11 @@ module Spinrail
       if node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == :create_table
         table = Schema.table_from(node, @file)
         @tables[table.name] = table
+      elsif node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == :create_virtual_table
+        args, = Spinrail.call_args(node)
+        name, mod, options = args.map { |a| Spinrail.literal(a) }
+        fail!(node, "create_virtual_table name, module, [args]") unless name && mod && options.is_a?(Array)
+        @virtual_tables << "CREATE VIRTUAL TABLE IF NOT EXISTS #{name} USING #{mod}(#{options.join(', ')})"
       elsif node.is_a?(Prism::CallNode) && node.receiver.nil? && node.name == :add_index
         args, kw = Spinrail.call_args(node)
         @indexes << { table: Spinrail.literal(args[0]).to_s, columns: Array(Spinrail.literal(args[1])).map(&:to_s),

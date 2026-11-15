@@ -567,6 +567,59 @@ module Spinrail
   end
 
   # A where value as the column stores it.
+  # application/x-www-form-urlencoded, as Rails' to_query writes it.
+  def self.url_encode(text)
+    out = +""
+    text.bytes.each do |b|
+      if (b >= 48 && b <= 57) || (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || b == 45 || b == 46 || b == 95 || b == 126
+        out << b.chr
+      elsif b == 32
+        out << "+"
+      else
+        hex = b.to_s(16).upcase
+        out << "%" + (hex.length == 1 ? "0" + hex : hex)
+      end
+    end
+    out
+  end
+
+  # x_path(..., q: "a b") -> "?q=a+b"; empty values stay, as in Rails.
+  def self.query_string(keys, values)
+    pairs = +""
+    keys.each_with_index do |key, i|
+      pairs << (i == 0 ? "?" : "&") + url_encode(key) + "=" + url_encode(values[i])
+    end
+    pairs
+  end
+
+  def self.no_binds
+    binds = [""]
+    binds.delete_at(0)
+    binds
+  end
+
+  # sanitize_sql([sql, *values]): each ? becomes a quoted literal.
+  def self.sanitize_sql(sql, values)
+    out = +""
+    i = 0
+    sql.each_char do |c|
+      if c == "?" && i < values.length
+        out << "'" + values[i].gsub("'", "''") + "'"
+        i += 1
+      else
+        out << c
+      end
+    end
+    out
+  end
+
+  # connection.execute(sql) for statements that return nothing.
+  def self.execute(sql)
+    t0 = Spinrail.clock
+    raise StatementInvalid, sql unless db.exec(sql)
+    Spinrail.log.sql("SQL", sql, t0)
+  end
+
   def self.sql_text(value) = value.is_a?(Time) ? Spinrail.format_time(value) : value.to_s
 
   def self.to_time(value) = value.is_a?(Time) ? value : Spinrail.parse_local(value.to_s)

@@ -502,4 +502,15 @@ class BuildTest < CompilerTest
     build.send(:generate)
     assert_empty build.warnings
   end
+
+  def test_path_helpers_take_query_keywords_and_records_touch
+    ruby = build(
+      "config/routes.rb" => "Spinrail.routes.draw do\n resources :posts, only: [:index]\nend\n",
+      "db/schema.rb" => "Spinrail::Schema.define do\n create_table :posts do |t|\n t.string :title\n t.timestamps\n end\nend\n",
+      "app/models/post.rb" => "class Post < ApplicationRecord\nend\n",
+      "app/controllers/posts_controller.rb" => "class PostsController < ApplicationController\n def index\n redirect_to posts_path(q: params[:q], page: 2)\n end\nend\n"
+    )
+    assert_includes ruby, %((posts_path + Spinrail.query_string(["q", "page"], [(param("q")).to_s, (2).to_s])))
+    assert_includes ruby, "UPDATE posts SET updated_at = ? WHERE id = ?"
+  end
 end

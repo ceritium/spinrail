@@ -579,6 +579,20 @@ module Spinrail
       RUBY
     end
 
+    # Writes updated_at alone, without validations or callbacks, as Rails does.
+    def touch_method
+      return "" unless @table.column("updated_at")
+      sql = "UPDATE #{@table.name} SET updated_at = ? WHERE id = ?"
+      <<~RUBY
+        def touch
+          now = Spinrail.now
+        #{indent(write_statement(sql, "Update", [], ["db.bind_str(%d, Spinrail.format_time(now))", "db.bind_int(%d, @id)"]), 2)}
+          @updated_at = now
+          true
+        end
+      RUBY
+    end
+
     def destroy_method
       dependents = @associations.filter_map do |a|
         next unless a.dependent
@@ -706,6 +720,7 @@ module Spinrail
           def self.where_not(conditions) = all.where_not(conditions)
           def self.order(ordering) = all.order(ordering)
           def self.order_sql(clause) = all.order_sql(clause)
+          def self.where_sql(fragment, values) = all.where_sql(fragment, values)
           def self.limit(n) = all.limit(n)
           def self.offset(n) = all.offset(n)
           def self.first = all.first
@@ -837,6 +852,7 @@ module Spinrail
           end
 
         #{indent(destroy_method, 2)}
+        #{indent(touch_method, 2)}
 
         #{indent(association_methods.join("\n\n"), 2)}
 
@@ -1021,6 +1037,18 @@ module Spinrail
             relation
           end
 
+          # where("sql ?", value): the fragment is a literal in the source.
+          def where_sql(fragment, values)
+            relation = spawn
+            relation.add_where_sql(fragment, values)
+            relation
+          end
+
+          def add_where_sql(fragment, values)
+            @wheres << "(" + fragment + ")"
+            values.each { |v| @binds << v }
+          end
+
           def add_where_in(name, values)
             @wheres << "#{@table.name}." + name + " IN (" + values.map { |_| "?" }.join(", ") + ")"
             values.each { |v| @binds << v }
@@ -1165,8 +1193,9 @@ module Spinrail
             @ordering.join(", ")
           end
 
+          # joins("sql") arrives as "sql:" + the literal.
           def joins_clause
-            @join_names.map { |name| " " + #{@name}.join_sql(name) }.join
+            @join_names.map { |name| " " + (name.start_with?("sql:") ? name[4, name.length - 4] : #{@name}.join_sql(name)) }.join
           end
 
           def with_joins(names)

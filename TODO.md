@@ -24,6 +24,11 @@ Roughly in priority order within each section.
 - [x] Pagination: `page(n).per(k)`, `current_page`, `total_pages`, `<%= paginate @posts %>`.
 - [x] Eager loading: `includes`/`preload` run one query per association.
 - [x] `joins(:assoc)` with `where(table: { column: value })`, `group(:col).count`.
+- [x] SQL fragments: `where("sql ?", values)`, `joins("sql")` (literal strings),
+      `connection.execute(sanitize_sql([sql, *values]))`; `create_virtual_table` in
+      db/schema.rb (SQLite FTS5); `find(id)` and `touch` on records and relations.
+- [ ] `find_or_create_by`; `last(n)` in `def self.x` (scope bodies only for now);
+      named binds (`where("x = :y", y:)`).
 - [ ] `left_joins`, `distinct`, `having`, nested includes (`includes(comments: :author)`).
 - [x] `has_many :users, through: :memberships` (one hop, as a subquery; no
       `includes`/`joins` of it yet); `find_by` on relations; `order(:col)`.
@@ -129,7 +134,8 @@ Roughly in priority order within each section.
 
 ## Views
 
-- [x] Helpers: `link_to`, `button_to`, `form_with` and field helpers.
+- [x] Helpers: `link_to`, `button_to` (both with a block too), `form_with` and field helpers.
+- [x] Path helpers take extra keywords as the query string: `searches_path(q: x)`.
 - [x] `truncate`, `simple_format`, `number_with_delimiter`, `dom_id` (with a prefix).
 - [x] `stylesheet_link_tag`, `javascript_include_tag`, `image_tag`.
 - [x] Asset fingerprinting: app/assets files are also served as name-<digest>.ext,
@@ -163,7 +169,7 @@ Roughly in priority order within each section.
 
 ## Routing
 
-- [x] Nested resources, `member`/`collection`, `namespace` (controllers in
+- [x] Nested resources, `member`/`collection` (also `on:`), `namespace` (controllers in
       `app/controllers/admin/`), singular `resource`.
 - [x] `shallow`, `scope` (path, `module:`, `as:`), `concern`/`concerns:`,
       `form_with model: [@post, @comment]`.
@@ -183,7 +189,8 @@ Roughly in priority order within each section.
 - [ ] Line mapping for generated model code (today it names the model file).
 - [x] Unit tests for the compiler (`rake unit`; `rake` also runs both apps).
 - [x] Framework request tests in `test/dummy` (`bin/spinrail test` there).
-- [x] Tests: fixtures, `assert_select`, cookies/session across requests.
+- [x] Tests: fixtures, `assert_select` (with a count, range or false as in Rails),
+      cookies/session across requests.
 - [x] Model tests (`test/models`): compiled into a test build of the binary, one
       rolled-back transaction per test, Minitest assertions lowered at build time.
 - [x] CI (self-hosted runner).

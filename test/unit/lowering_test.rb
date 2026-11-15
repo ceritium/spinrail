@@ -68,4 +68,18 @@ class LoweringTest < CompilerTest
   def test_views_cannot_assign_ivars
     assert_raises(Spinrail::CompileError) { lower("@x = 1", view: true, controller: false) }
   end
+
+  def test_raw_sql
+    assert_equal %(Post.where_sql("created_at < ?", [Spinrail.sql_text(t)])), lower(%(Post.where("created_at < ?", t)))
+    assert_equal %(Post.where_sql("draft", Spinrail.no_binds)), lower(%(Post.where("draft")))
+    assert_equal %(Post.with_joins(["sql:join x on x.id = posts.id"])), lower(%(Post.joins("join x on x.id = posts.id")))
+    assert_equal %(Spinrail.execute(Spinrail.sanitize_sql("delete from x where id = ?", [Spinrail.sql_text(id)]))),
+                 lower(%(self.class.connection.execute self.class.sanitize_sql(["delete from x where id = ?", id])))
+  end
+
+  def test_button_to_with_a_block
+    out = lower(%(button_to path, method: :delete, class: "b" do\n  out << "x"\nend), view: true, controller: false)
+    assert_includes out, %(out << form_open((path).to_s, "delete", " class=\\"button_to\\"") + "<button type=\\"submit\\"" + " class=\\"b\\"" + ">")
+    assert_includes out, %(out << "</button></form>")
+  end
 end

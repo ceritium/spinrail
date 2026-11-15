@@ -130,7 +130,7 @@ module Spinrail
       def partial_method(key, locals, where) = @build.use_partial(key, locals, where)
       attr_accessor :i18n_scope
 
-      def path_helper?(name) = @build.routes.helpers.key?(name)
+      def path_helper?(name) = !@build.nil? && @build.routes.helpers.key?(name)
       def associations_of(model) = @build ? @build.associations.fetch(model, []) : []
       def warn(message) = @build&.warnings&.push(message)
       def current_def = @current
@@ -1122,7 +1122,8 @@ module Spinrail
                        cols = t.columns.reject { |c| c.name == "id" }
                        ["  db.exec(#{t.create_sql.inspect})",
                         "  Spinrail.add_missing_columns(#{t.name.inspect}, #{cols.map(&:name).inspect}, #{cols.map { |c| t.add_column_sql(c) }.inspect})"]
-                     end + schema.indexes.map { |i| "  db.exec(#{Schema.index_sql(i).inspect})" }
+                     end + schema.indexes.map { |i| "  db.exec(#{Schema.index_sql(i).inspect})" } +
+                       schema.virtual_tables.map { |sql| "  db.exec(#{sql.inspect})" }
                    end
       seeds = File.exist?(path("db/seeds.rb"))
       <<~RUBY

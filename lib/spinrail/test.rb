@@ -126,9 +126,19 @@ module Spinrail
 
     # assert_select "ul li.item", "First", count: 2 (text is a String or Regexp)
     def assert_select(selector, text = nil, count: nil, minimum: nil)
+      range = nil
+      # As in Rails, an Integer, Range or boolean in place of the text is the count.
+      case text
+      when Integer then count, text = text, nil
+      when Range then range, text = text, nil
+      when false then count, text = 0, nil
+      when true then text = nil
+      end
       nodes = TestHTML.select(TestHTML.parse(response.body), selector)
       nodes = nodes.select { |n| text.is_a?(Regexp) ? n.text.match?(text) : n.text.strip == text.to_s } if text
-      if count
+      if range
+        assert_includes range, nodes.size, "Expected #{range} matches for #{selector.inspect}"
+      elsif count
         assert_equal count, nodes.size, "Expected #{count} matches for #{selector.inspect}#{text ? " with #{text.inspect}" : ''}"
       elsif minimum
         assert_operator nodes.size, :>=, minimum, "Expected at least #{minimum} matches for #{selector.inspect}"

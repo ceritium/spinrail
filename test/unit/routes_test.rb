@@ -67,4 +67,11 @@ class RoutesExtrasTest < CompilerTest
     assert r.helpers.key?("api_posts_path")
     assert r.helpers.key?("api_post_comments_path")
   end
+
+  def test_on_collection_and_member
+    r = routes("resources :searches, only: [:index] do\n delete :clear, on: :collection\n post :pin, on: :member\nend")
+    assert_includes table(r), "DELETE /searches/clear searches#clear"
+    assert_includes table(r), "POST /searches/:id/pin searches#pin"
+    assert r.helpers.key?("clear_searches_path")
+  end
 end
