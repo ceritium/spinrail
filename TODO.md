@@ -125,8 +125,12 @@ Roughly in priority order within each section.
       embeds or eager loading (`with_rich_text_*` loads one row per record).
 - [x] File uploads (tep fork): `f.file_field` makes `form_with` multipart,
       `request.files["post[avatar]"]` (`original_filename`, `content_type`,
-      `read`, `size`), `fixture_file_upload` in tests. Held in memory; no
-      Active Storage.
+      `read`, `size`), `fixture_file_upload` in tests. Held in memory.
+- [x] Active Storage: `has_one_attached`, disk service, signed proxy route.
+- [ ] Active Storage: `has_many_attached`, variants (image processing),
+      `image_tag record.avatar`, direct uploads, S3.
+- [ ] `send_data` with binary data: tep writes inline bodies as C strings,
+      so a NUL truncates them (`send_file` is binary-safe).
 - [x] Nested params reads: `params[:post][:title]`.
 - [x] JSON request bodies become params (`{"post": {"title": ...}}` -> `post[title]`).
 - [x] PATCH/PUT/DELETE from HTML forms (`_method` override).

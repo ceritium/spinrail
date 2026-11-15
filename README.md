@@ -140,7 +140,7 @@ to the server.
   `length`, `numericality`, `format`, `inclusion`, `exclusion`, `uniqueness`,
   `validate :method`); callbacks; `belongs_to`, `has_many`, `has_one`;
   `has_secure_password` with `authenticate_by`, `has_secure_token`,
-  `generates_token_for` with `find_by_token_for`. Plain classes
+  `generates_token_for` with `find_by_token_for`, `signed_id`/`find_signed`. Plain classes
   (no superclass) in app/models compile as written. `Current <
   ActiveSupport::CurrentAttributes` keeps one instance per fiber, reset for each
   request, with `Current.set { }` and reset callbacks; `belongs_to` takes
@@ -148,13 +148,17 @@ to the server.
 - Controllers: `params[:x]`, `params[:post][:title]`, `params.fetch(:ids, [])`
   for repeated `ids[]`, strong params, `request.raw_post`,
   `request.files["post[avatar]"]` for uploads, `render :action, status:`,
-  `render plain:` (with `content_type:`), `render json:`, `head`, `expires_in`, `render view: Views::Stats::Show,
+  `render plain:` (with `content_type:`), `render json:`, `send_file`, `send_data` (text only), `head`, `expires_in`, `render view: Views::Stats::Show,
   exposure: value`, `redirect_to path, status:, notice:`, implicit render;
   `before_action`/`after_action`/`skip_*`, `rescue_from`, `session`, `flash`,
   CSRF protection, `_method` override.
 - Views: layout with `yield`, partials (`render "entry", entry: entry`),
   `<%= %>` escapes, `<%== %>` and `raw` don't, `form_with` and field
   helpers (`file_field` makes the form multipart), `link_to`, `button_to` (`params:` as hidden fields), `csrf_meta_tags`, `pluralize`.
+- Active Storage: `has_one_attached` over Rails' tables, files on the local
+  disk (`storage/`, Rails' key layout), `attach`, `attached?`, `purge`,
+  `download`, `rails_blob_path` (served by a signed proxy route, scriptable types
+  as downloads). Variants are accepted and ignored.
 - Request log: Rails-style by default (filtered params, SQL, rendered
   templates, timings); one line per request with `SPINRAIL_LOG_FORMAT=logfmt`
   or `json`. Each response carries `X-Request-Id`.

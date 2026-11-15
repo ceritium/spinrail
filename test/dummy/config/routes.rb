@@ -24,6 +24,10 @@ Spinrail.routes.draw do
   post "/signups", to: Actions::Signups::Create
   get "/bare", to: "bare#show"
   get "/plain", to: "plain#show"
+  resources :documents, only: %i[create show update destroy] do
+    get :download, on: :member
+    get :signed, on: :member
+  end
   get "/plain/ids", to: "plain#ids"
   post "/plain/ids", to: "plain#ids"
   get "/uploads/new", to: "uploads#new"

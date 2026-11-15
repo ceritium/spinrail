@@ -200,6 +200,7 @@ module Spinrail
         when :render then lower_render(node)
         when :redirect_to then lower_redirect(node)
         when :head then lower_head(node)
+        when :send_file, :send_data then lower_send(node) if @ctx.controller?
         end
       end
       super
@@ -1118,6 +1119,26 @@ module Spinrail
                else "(#{@rw.slice(content)}).to_s"
                end
         "turbo_stream_tag(#{node.name.to_s.inspect}, (#{@rw.slice(args.first)}).to_s, #{html})"
+      end
+    end
+
+    # send_file path, type:/content_type:, disposition:, filename:, with Rails' defaults.
+    def lower_send(node)
+      args, kw = Spinrail.call_args(node)
+      fail!(node, "#{node.name} takes the #{node.name == :send_file ? 'path' : 'data'}") unless args.size == 1
+      unknown = kw.keys - %i[type content_type disposition filename]
+      fail!(node, "unsupported #{node.name} option #{unknown.first}") if unknown.any?
+      @ctx.record_response(nil, where(node))
+      value = ->(key) { kw[key] && "(#{@rw.slice(kw[key])}).to_s" }
+      @rw.replace(node) do
+        subject = "(#{@rw.slice(args.first)}).to_s"
+        if node.name == :send_file
+          type = value.(:type) || value.(:content_type) || "Tep::App.guess_mime(#{subject})"
+          "send_file(#{subject}, #{type}, #{value.(:disposition) || '"attachment"'}, #{value.(:filename) || "File.basename(#{subject})"})"
+        else
+          type = value.(:type) || value.(:content_type) || '"application/octet-stream"'
+          "send_data(#{subject}, #{type}, #{value.(:disposition) || '"attachment"'}, #{value.(:filename) || '""'})"
+        end
       end
     end
 

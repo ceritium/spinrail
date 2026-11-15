@@ -135,7 +135,7 @@ module Spinrail
       def warn(message) = @build&.warnings&.push(message)
       def current_def = @current
       def layout?(name) = @build.templates.key?("layouts/#{name}")
-      def model?(name) = @build.model_names.include?(name)
+      def model?(name) = !@build.nil? && @build.model_names.include?(name)
     end
 
     attr_reader :templates, :action_views
@@ -177,7 +177,8 @@ module Spinrail
         [f, model]
       end
       rich = bases.any? { |_, m| m.rich_texts.any? } ? [rich_text_model(schema)] : []
-      rich + bases.map { |f, m| "#{SOURCE_MARK}generated #{rel(f)}\n#{m.to_ruby}" } +
+      storage = bases.any? { |_, m| m.attachments.any? } ? [active_storage_models(schema)] : []
+      rich + storage + bases.map { |f, m| "#{SOURCE_MARK}generated #{rel(f)}\n#{m.to_ruby}" } +
         children.map { |c| "#{SOURCE_MARK}generated #{rel(c.file)}\n#{c.to_ruby}" }
     end
 
@@ -199,6 +200,16 @@ module Spinrail
     def rich_text_model(schema)
       model = Model.new("action_text/rich_text.rb", schema, build: self, source: RICH_TEXT, table: "action_text_rich_texts")
       "#{SOURCE_MARK}generated ActionText::RichText\nmodule ActionText\nend\n\n#{model.to_ruby}"
+    end
+
+    def active_storage_models(schema)
+      ActiveStorage.source(schema) do |source, table, file|
+        "#{SOURCE_MARK}generated #{file}\n" + Model.new(file, schema, build: self, source: source, table: table).to_ruby
+      end
+    end
+
+    def attachments?
+      @attachments ||= model_files.any? { |f| File.read(f).match?(/^\s*has_(one|many)_attached\b/) }
     end
 
     # has_rich_text names: a view printing `x.<name>` renders it sanitized.
@@ -311,6 +322,7 @@ module Spinrail
         # Rails apps get SecureRandom and Base64 without asking (Active Support loads them).
         'require "securerandom"',
         'require "base64"',
+        *(attachments? ? ['require "digest"', 'require "fileutils"'] : []),
         # Time.now and Time.current in config.time_zone; the database keeps UTC.
         "ENV[\"TZ\"] = #{time_zone.inspect}",
         # The default prefork server ignores SIGINT while a keep-alive
@@ -343,6 +355,7 @@ module Spinrail
         schema_setup(schema),
         method_override,
         asset_cache_headers,
+        *(attachments? ? [ActiveStorage::ROUTE] : []),
         *(cable? ? ["get \"/cable\" do\n  Spinrail::Cable.upgrade(req, res, #{connection_class}.new(req))\nend\n"] : []),
         *routes.routes.map { |r| route_block(r, controllers) },
         not_found_block
@@ -548,7 +561,7 @@ module Spinrail
     end
 
     def path_helpers
-      routes.helpers.flat_map do |name, (params, expr, defaults)|
+      (attachments? ? ActiveStorage::HELPERS.gsub(/^(?=.)/, "  ") + "\n" : "") + routes.helpers.flat_map do |name, (params, expr, defaults)|
         defaults ||= {}
         sig = params.empty? ? "" : "(#{params.map { |p| defaults.key?(p) ? "#{p} = #{defaults[p].inspect}" : p }.join(', ')})"
         call = params.empty? ? "" : "(#{params.join(', ')})"

@@ -22,7 +22,7 @@ module Spinrail
 
     Association = Struct.new(:kind, :name, :class_name, :foreign_key, :dependent, :optional)
 
-    attr_reader :name, :file, :sti_base, :sti_children, :rich_texts
+    attr_reader :name, :file, :sti_base, :sti_children, :rich_texts, :attachments
 
     def initialize(file, schema, sti_base: nil, build: nil, source: nil, table: nil)
       @build = build
@@ -53,6 +53,7 @@ module Spinrail
       @relation_methods = []
       @constants = []
       @rich_texts = []
+      @attachments = []
       @token_purposes = []
       (klass.body&.body || []).each { |stmt| collect(stmt) }
       if @token_methods
@@ -129,7 +130,7 @@ module Spinrail
 
     private
 
-    STI_UNSUPPORTED = %i[has_many has_one belongs_to scope enum has_secure_password has_secure_token has_rich_text generates_token_for].freeze
+    STI_UNSUPPORTED = %i[has_many has_one belongs_to scope enum has_secure_password has_secure_token has_rich_text has_one_attached has_many_attached generates_token_for].freeze
 
     def collect(stmt)
       call = stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? ? stmt.name : nil
@@ -159,6 +160,10 @@ module Spinrail
         token_for(stmt)
       elsif call == :has_rich_text
         rich_text(stmt)
+      elsif call == :has_one_attached
+        one_attached(stmt)
+      elsif call == :has_many_attached
+        fail!(stmt, "has_many_attached isn't supported yet; use has_one_attached")
       elsif stmt.is_a?(Prism::SingletonClassNode)
         singleton_class_body(stmt)
       else
@@ -264,6 +269,30 @@ module Spinrail
       RUBY
       @body << "def self.with_rich_text_#{attr} = all"
       @relation_methods << "def with_rich_text_#{attr} = self"
+    end
+
+    # has_one_attached :avatar: record.avatar is an ActiveStorage::Attached::One.
+    # A block declaring variants is accepted and ignored: nothing processes images.
+    def one_attached(node)
+      args, kw = Spinrail.call_args(node)
+      fail!(node, "unsupported has_one_attached option #{kw.keys.first}") if kw.any?
+      attr = Spinrail.literal(args.first).to_s
+      fail!(node, "has_one_attached :#{attr} clashes with the #{attr} column") if @table.column(attr)
+      @attachments << attr
+      @callbacks[:after_save] << "@attached_#{attr}.save_pending(@id)"
+      @callbacks[:after_destroy] << "#{attr}.purge"
+      @body << <<~RUBY.chomp
+        def #{attr}
+          @attached_#{attr}.record_id = @id
+          @attached_#{attr}
+        end
+
+        def #{attr}=(file)
+          #{attr}.assign(file)
+        end
+      RUBY
+      @body << "def self.with_attached_#{attr} = all"
+      @relation_methods << "def with_attached_#{attr} = self"
     end
 
     # before_save :x, if: :y -> "x if y"
@@ -516,7 +545,8 @@ module Spinrail
                 else read
                 end
         "@#{c.name} = #{value} if params.has?(#{c.name.inspect})"
-      end + (virtual + @rich_texts).map { |v| "self.#{v} = params.get(#{v.inspect}) if params.has?(#{v.inspect})" }
+      end + (virtual + @rich_texts).map { |v| "self.#{v} = params.get(#{v.inspect}) if params.has?(#{v.inspect})" } +
+        @attachments.map { |a| "#{a}.assign(params.file(#{a.inspect})) if params.file?(#{a.inspect})" }
     end
 
     # has_secure_password: password and password_confirmation aren't columns.
@@ -744,6 +774,7 @@ module Spinrail
         #{indent((@secure_password ? ["@password = \"\"", *secure_assign] : []) + @extra_virtual.map { |v| "@#{v} = #{v}" }, 4)}
             @errors = Spinrail::Errors.new(#{Inflector.underscore(@name).inspect})
         #{indent(@rich_texts.flat_map { |r| ["@rich_#{r} = ActionText::RichText.new", "@rich_#{r}_loaded = false", "@rich_#{r}_changed = false"] } + rich_assign, 4)}
+        #{indent(@attachments.map { |a| "@attached_#{a} = ActiveStorage::Attached::One.new(#{a.inspect}, #{@name.inspect}, 0)" }, 4)}
         #{@sti_children.empty? ? '' : "    @type = sti_name\n"}        #{indent(@associations.map { |a| "@preloaded_#{a.name} = false" }, 4)}
           end
 
@@ -767,6 +798,17 @@ module Spinrail
           def self.delete_all = all.delete_all
           def self.find_by(conditions) = all.where(conditions).first
           def self.find_by!(conditions) = all.find_by!(conditions)
+
+          def self.find_signed(signed_id, purpose: nil)
+            id = Spinrail.verified(signed_id.to_s, #{(@name + ":").inspect} + purpose.to_s)
+            id.empty? ? nil : find_by(id: id.to_i)
+          end
+
+          def self.find_signed!(signed_id, purpose: nil)
+            found = find_signed(signed_id, purpose: purpose)
+            raise Spinrail::RecordNotFound, "Couldn't find #{@name} with that signed id" if found.nil?
+            found
+          end
           #{@secure_password ? "def self.authenticate_by(conditions) = all.authenticate_by(conditions)" : ""}
           def self.update_all(changes) = all.update_all(changes)
           def self.with_includes(names) = all.with_includes(names)
@@ -874,6 +916,8 @@ module Spinrail
             save!
           end
 
+          def signed_id(purpose: nil) = Spinrail.signed(@id.to_s, #{(@name + ":").inspect} + purpose.to_s)
+
           def to_json
             "{" + #{json_fields} + "}"
           end
@@ -884,7 +928,7 @@ module Spinrail
 
           def reload
             fresh = #{@name}.find(@id)
-        #{indent(assignable.map { |c| "@#{c.name} = fresh.#{c.name}" } + @rich_texts.map { |r| "@rich_#{r}_loaded = false" }, 4)}
+        #{indent(assignable.map { |c| "@#{c.name} = #{reload_value(c)}" } + @rich_texts.map { |r| "@rich_#{r}_loaded = false" }, 4)}
             self
           end
 
@@ -928,6 +972,22 @@ module Spinrail
       [["password", "@password_digest.to_s.empty?", ["blank", "can't be blank", ""]],
        ["password_confirmation", "!@password_confirmation.empty? && @password_confirmation != @password",
         ["confirmation", "doesn't match Password", ""]]]
+    end
+
+    # fresh is untyped (find can return nil), so assigning its readers widens
+    # the ivars; coercing keeps NOT NULL columns typed. A widened column made
+    # spinel read update's ivar defaults from the wrong receiver.
+    def reload_value(c)
+      read = "fresh.#{c.name}"
+      return read if c.null
+
+      case c.type
+      when :integer then "#{read}.to_i"
+      when :float then "#{read}.to_f"
+      when :boolean then "#{read} == true"
+      when :string, :text then "#{read}.to_s"
+      else read
+      end
     end
 
     def scope_assignments

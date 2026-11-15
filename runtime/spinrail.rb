@@ -372,6 +372,24 @@ module Spinrail
     end
   end
 
+  # value + "--" + an HMAC bound to the purpose; "" when it doesn't verify.
+  def self.signed(value, purpose)
+    value + "--" + Crypto.sp_crypto_hmac_sha256_hex(Tep.session_secret, purpose + ":" + value)
+  end
+
+  def self.verified(signed, purpose)
+    cut = signed.rindex("--")
+    return "" if cut.nil?
+    value = signed[0, cut]
+    Tep.timing_safe_eq(signed, Spinrail.signed(value, purpose)) ? value : ""
+  end
+
+  def self.storage_root
+    ENV.fetch("ACTIVE_STORAGE_ROOT", Spinrail.env == "test" ? "tmp/storage" : "storage")
+  end
+
+  def self.escape_path(text) = SpinelKit::Url.escape(text)
+
   class RecordInvalid < StandardError; end
   class RecordNotDestroyed < StandardError; end
   class ParameterMissing < StandardError; end
@@ -484,21 +502,22 @@ module Spinrail
   class Parameters
     attr_reader :source, :prefix, :permitted, :filtered
 
-    def initialize(source, prefix)
+    def initialize(source, prefix, files = Tep::Multipart.parse_files("", ""))
       @source = source
+      @files = files
       @prefix = prefix
       @permitted = []
       @filtered = false
     end
 
     def require_key(key)
-      nested = Parameters.new(@source, full(key))
+      nested = Parameters.new(@source, full(key), @files)
       raise ParameterMissing, "param is missing or the value is empty: " + key unless nested.any?
       nested
     end
 
     def permit_keys(keys)
-      copy = Parameters.new(@source, @prefix)
+      copy = Parameters.new(@source, @prefix, @files)
       copy.restrict(keys)
       copy
     end
@@ -511,6 +530,7 @@ module Spinrail
     def any?
       start = @prefix + "["
       @source.each { |k, _| return true if k.start_with?(start) }
+      @files.each { |k, _| return true if k.start_with?(start) }
       false
     end
 
@@ -526,6 +546,14 @@ module Spinrail
 
     # user_params[:name]: "" when absent or not permitted.
     def [](key) = get(key.to_s)
+
+    # An uploaded file under a permitted key; a file input left empty sends no name.
+    def file?(key)
+      return false if @filtered && !@permitted.include?(key)
+      @files.key?(full(key)) && !@files[full(key)].filename.empty?
+    end
+
+    def file(key) = @files[full(key)]
 
     # params.fetch(:ids, []): "ids[0]", "ids[1]"... in order.
     def array(key)
@@ -1340,7 +1368,7 @@ module Spinrail
       @performed
     end
 
-    def params = Parameters.new(@req.params, "")
+    def params = Parameters.new(@req.params, "", @req.files)
 
     def request_base_url
       host = @req.req_headers["host"]
@@ -1385,6 +1413,23 @@ module Spinrail
     def render_plain(text, status, content_type = "text/plain")
       @res.headers["Content-Type"] = content_type + "; charset=utf-8"
       render_html(text, status)
+    end
+
+    # send_file path, type: the server streams it with sendfile(2).
+    def send_file(path, content_type, disposition, filename)
+      return head(404) unless File.exist?(path)
+      @res.headers["Content-Type"] = content_type
+      @res.headers["Content-Disposition"] = disposition + (filename.empty? ? "" : "; filename=\"" + filename.gsub("\"", "%22") + "\"")
+      @res.set_status(200)
+      @res.send_file(path)
+      @response_body = ""
+      @performed = true
+    end
+
+    def send_data(data, content_type, disposition, filename)
+      @res.headers["Content-Disposition"] = disposition + (filename.empty? ? "" : "; filename=\"" + filename.gsub("\"", "%22") + "\"")
+      @res.headers["Content-Type"] = content_type
+      render_html(data, 200)
     end
 
     def expires_in(seconds, public: false)

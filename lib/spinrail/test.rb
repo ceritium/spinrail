@@ -50,6 +50,7 @@ module Spinrail
         system("createdb", @pg_database, exception: true)
         env["DATABASE_URL"] = "postgres:///#{@pg_database}"
       end
+      env["ACTIVE_STORAGE_ROOT"] = storage_root
       env.merge!(self.class.server_env)
       fixtures_sql = Fixtures.load(ENV.fetch("SPINRAIL_APP"), self.class.fixture_tables)
       unless fixtures_sql.empty?
@@ -67,6 +68,7 @@ module Spinrail
     def cookies = @cookies
     def database_path = @pg_database ? "postgres:///#{@pg_database}" : File.join(@db_dir, "test.sqlite3")
     def mail_dir = File.join(@db_dir, "mails")
+    def storage_root = File.join(@db_dir, "storage")
 
     Delivery = Struct.new(:to, :from, :subject, :body, :html)
 
