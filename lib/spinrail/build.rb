@@ -139,14 +139,44 @@ module Spinrail
     attr_reader :templates, :action_views
 
     def model_names
-      @model_names ||= record_files.map { |f| Inflector.camelize(File.basename(f, ".rb")) }
+      @model_names ||= record_files.map { |f| model_name(f) }
     end
 
     # app/models holds records and plain classes (no superclass), as in Rails.
-    def record_files = model_files.select { |f| model_kind(f) == :record }
+    def record_files = @record_files ||= model_files.select { |f| model_kind(f) == :record }
     def plain_model_files = model_files.select { |f| model_kind(f) == :plain }
     def current_files = model_files.select { |f| model_kind(f) == :current }
-    def model_files = Dir[path("app/models/*.rb")].sort.reject { |f| f.end_with?("/application_record.rb") }
+    def model_files
+      Dir[path("app/models/**/*.rb")].sort.reject do |f|
+        f.end_with?("/application_record.rb") || rel(f).start_with?("app/models/concerns/")
+      end
+    end
+
+    # app/models/rooms/open.rb holds Rooms::Open.
+    def model_name(file) = Inflector.camelize(rel(file).delete_prefix("app/models/").delete_suffix(".rb"))
+
+    # The record model a subclass inherits from (single-table inheritance), or nil.
+    def sti_base(file)
+      klass = Spinrail.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
+      parent = klass&.superclass&.slice
+      parent if parent && record_files.any? { |f| model_name(f) == parent }
+    end
+
+    # Bases first: a subclass needs its parent defined.
+    def models_source(schema)
+      children = record_files.filter_map do |f|
+        base = sti_base(f) or next
+        raise CompileError, "#{rel(f)}: #{model_name(f)} inherits from #{base}, itself a subclass" if sti_base(record_files.find { |b| model_name(b) == base })
+        Model.new(f, schema, sti_base: base)
+      end
+      bases = (record_files.reject { |f| sti_base(f) }).map do |f|
+        model = Model.new(f, schema)
+        model.sti_children = children.select { |c| c.sti_base == model.name }
+        [f, model]
+      end
+      bases.map { |f, m| "#{SOURCE_MARK}generated #{rel(f)}\n#{m.to_ruby}" } +
+        children.map { |c| "#{SOURCE_MARK}generated #{rel(c.file)}\n#{c.to_ruby}" }
+    end
 
     def model_kind(file)
       klass = Spinrail.parse(File.read(file), rel(file)).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
@@ -163,7 +193,7 @@ module Spinrail
 
     # Model name => association names, read from the class bodies.
     def associations
-      @associations ||= Dir[path("app/models/*.rb")].to_h do |file|
+      @associations ||= model_files.to_h do |file|
         names = []
         visit = lambda do |node|
           if node.is_a?(Prism::CallNode) && node.receiver.nil? && %i[has_many has_one belongs_to].include?(node.name)
@@ -173,8 +203,11 @@ module Spinrail
           node.compact_child_nodes.each { |c| visit.call(c) }
         end
         visit.call(Spinrail.parse(File.read(file), rel(file)))
-        [Inflector.camelize(File.basename(file, ".rb")), names]
+        [model_name(file), names]
       end
+      # A subclass has its base's associations too.
+      record_files.each { |f| (base = sti_base(f)) && @associations[model_name(f)].concat(@associations.fetch(base, [])) }
+      @associations
     end
 
     # tests: compile test/models/*_test.rb in (the test binary).
@@ -257,7 +290,7 @@ module Spinrail
         translations,
         assets_source,
         application_record,
-        *record_files.map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Model.new(f, schema).to_ruby}" },
+        *models_source(schema),
         *current_files.map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Current.new(f, rel(f), self).to_ruby}" },
         *(current_files.empty? ? ["module Spinrail\n  def self.reset_current = nil\nend\n"] : []),
         *plain_model_files.map { |f| "#{SOURCE_MARK}#{rel(f)}\n" + Lowering.lower(File.read(f), rel(f), Context.new(self, "", view: false)) },

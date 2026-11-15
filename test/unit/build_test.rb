@@ -188,6 +188,30 @@ class BuildTest < CompilerTest
     assert_includes ruby, "def self.find_by!(conditions) = all.find_by!(conditions)"
   end
 
+  def test_single_table_inheritance
+    schema = "Spinrail::Schema.define do\n create_table :rooms do |t|\n t.string :name\n t.string :type, null: false\n end\nend\n"
+    files = {
+      "db/schema.rb" => schema,
+      "app/models/room.rb" => "class Room < ApplicationRecord\n def involvement = \"mentions\"\nend\n",
+      "app/models/rooms/open.rb" => "class Rooms::Open < Room\n after_create :grant\n validates :name, presence: true\n\n private\n\n def grant = nil\nend\n",
+      "app/models/rooms/direct.rb" => "class Rooms::Direct < Room\n def involvement = \"everything\"\nend\n",
+      "app/models/first_run.rb" => "class FirstRun\n def self.go(room) = room.becomes!(Rooms::Direct)\nend\n"
+    }
+    ruby = build(files)
+    assert_operator ruby.index("class Room < ApplicationRecord"), :<, ruby.index("module Rooms\nend\nclass Rooms::Direct < Room")
+    assert_includes ruby, %(return Rooms::Open.new(id: db.col_int(0), name: (db.col_null?(1) ? nil : db.col_str(1)), type: db.col_str(2)) if sti_type == "Rooms::Open")
+    assert_includes ruby, %(def self.all = RoomRelation.new.where(type: "Rooms::Open"))
+    assert_includes ruby, "def sti_after_create\n    grant\n  end"
+    assert_match(/def sti_validate\n\s*@errors.add\(:name/, ruby)
+    assert_includes ruby, "def sti_after_create = nil"
+    assert_includes ruby, %(def becomes_rooms_direct = Rooms::Direct.new(id: @id, name: @name, type: "Rooms::Direct"))
+    assert_includes ruby, "room.becomes_rooms_direct"
+    error = assert_raises(Spinrail::CompileError) do
+      build(files.merge("app/models/rooms/open.rb" => "class Rooms::Open < Room\n has_many :things\nend\n"))
+    end
+    assert_match(/has_many in a subclass is not supported yet; declare it on Room/, error.message)
+  end
+
   def test_controller_concerns_are_pasted_where_included
     ruby = build(
       "config/routes.rb" => %(Spinrail.routes.draw do\n get "/", to: "posts#index"\n get "/x", to: "posts#visit"\nend\n),

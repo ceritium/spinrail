@@ -76,6 +76,12 @@ module Spinrail
     BUILDER = (FIELDS.keys + %i[label text_area textarea check_box checkbox select collection_select file_field submit]).freeze
 
     def visit_call_node(node)
+      if %i[becomes becomes!].include?(node.name) && node.receiver && node.arguments&.arguments&.size == 1 &&
+         [Prism::ConstantReadNode, Prism::ConstantPathNode].include?(node.arguments.arguments.first.class)
+        @rw.replace(node) { "#{@rw.slice(node.receiver)}.#{Model.becomes_method(node.arguments.arguments.first.slice)}" }
+        visit(node.receiver)
+        return
+      end
       if !@ctx.view? && Delegation.delegate?(node)
         _, source = Delegation.expand(node, @file)
         @rw.replace(node) { source }

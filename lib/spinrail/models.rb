@@ -22,19 +22,24 @@ module Spinrail
 
     Association = Struct.new(:kind, :name, :class_name, :foreign_key, :dependent, :optional)
 
-    attr_reader :name
+    attr_reader :name, :file, :sti_base, :sti_children
 
-    def initialize(file, schema)
+    def initialize(file, schema, sti_base: nil)
       @file = file
+      @sti_base = sti_base
+      @sti_children = []
       @schema = schema
       source = File.read(file)
       klass = Spinrail.parse(source, file).statements.body.find { |n| n.is_a?(Prism::ClassNode) }
       raise CompileError, "#{file}: expected a class" unless klass
       @name = klass.constant_path.slice
       @parent = klass.superclass&.slice || "ApplicationRecord"
-      table_name = Inflector.tableize(@name)
+      table_name = Inflector.tableize(sti_base || @name)
       @table = schema.table(table_name) or
         raise CompileError, "#{file}: no `create_table :#{table_name}` in db/schema.rb"
+      if sti_base && !@table.column("type")
+        raise CompileError, "#{file}: #{@name} < #{sti_base} needs a `type` column on #{table_name}"
+      end
       @validations = []
       @custom_validations = []
       @callbacks = Hash.new { |h, k| h[k] = [] }
@@ -50,13 +55,79 @@ module Spinrail
     end
 
     def to_ruby
+      return sti_child_class if @sti_base
       [model_class, relation_class].join("\n")
+    end
+
+    # Subclass callbacks and validations run through hooks the base calls
+    # and the subclass overrides.
+    def sti_children=(children)
+      @sti_children = children
+      return if children.empty?
+      raise CompileError, "#{@file}: #{@name} has subclasses but no `type` column" unless @table.column("type")
+      @sti_hooks = children.flat_map { |c| c.sti_hook_kinds }.uniq
+      @sti_hooks.each do |kind|
+        kind == :validate ? @custom_validations << "sti_validate" : @callbacks[kind] << "sti_#{kind}"
+      end
+    end
+
+    # A row whose type names a subclass becomes an instance of it.
+    def sti_from_row(args)
+      return [] if @sti_children.empty?
+      i = columns.index { |c| c.name == "type" }
+      ["sti_type = #{columns[i].read(i)}"] +
+        @sti_children.map { |c| "return #{c.name}.new(#{args.join(', ')}) if sti_type == #{c.name.inspect}" }
+    end
+
+    # sti_name is what new records store in type; becomes_x (from
+    # becomes/becomes!) copies the record into another class of the hierarchy.
+    def sti_base_methods
+      return [] if @sti_children.empty?
+      becomes = ([@name] + @sti_children.map(&:name)).map do |klass|
+        args = columns.map { |c| "#{c.name}: #{c.name == 'type' ? klass.inspect : "@#{c.name}"}" }.join(", ")
+        "def #{Model.becomes_method(klass)} = #{klass}.new(#{args})"
+      end
+      ["def sti_name = @type", *@sti_hooks.map { |k| "def sti_#{k} = nil" }, *becomes]
+    end
+
+    def self.becomes_method(klass) = "becomes_#{Inflector.underscore(klass).tr('/', '_')}"
+
+    def sti_child_class
+      namespaces = @name.split("::")[0..-2]
+      modules = namespaces.each_index.map { |i| "module #{namespaces[0..i].join('::')}\nend\n" }
+      hooks = @callbacks.reject { |_, calls| calls.empty? }.map { |kind, _| "def sti_#{kind}\n#{indent(run_callbacks(kind), 2)}\nend" }
+      hooks << "def sti_validate\n#{indent(sti_checks, 2)}\nend" unless sti_checks.empty?
+      <<~RUBY
+        #{modules.join}class #{@name} < #{@sti_base}
+          def self.all = #{@sti_base}Relation.new.where(type: #{@name.inspect})
+          def sti_name = #{@name.inspect}
+
+        #{indent(hooks, 2)}
+
+        #{indent(user_methods, 2)}
+        end
+      RUBY
+    end
+
+    def sti_hook_kinds = @callbacks.reject { |_, calls| calls.empty? }.keys + (sti_checks.empty? ? [] : [:validate])
+
+    def sti_checks
+      checks = @validations.map do |attr, cond, (key, text, count)|
+        message = key ? "Spinrail.message(#{key.inspect}, #{text.inspect}, #{count.inspect})" : text.inspect
+        "@errors.add(:#{attr}, #{message}) if #{cond}"
+      end
+      checks + @custom_validations
     end
 
     private
 
+    STI_UNSUPPORTED = %i[has_many has_one belongs_to scope enum has_secure_password has_secure_token].freeze
+
     def collect(stmt)
       call = stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? ? stmt.name : nil
+      if @sti_base && STI_UNSUPPORTED.include?(call)
+        fail!(stmt, "#{call} in a subclass is not supported yet; declare it on #{@sti_base}")
+      end
       if call == :validates
         validates(stmt)
       elsif call == :validate
@@ -81,7 +152,7 @@ module Spinrail
         @body << source
         # Class methods also run on a relation, scoped to it, as in Rails.
         @constants << stmt.name.to_s if stmt.is_a?(Prism::ConstantWriteNode)
-        @relation_methods << source.sub(/\Adef self\./, "def ") if stmt.is_a?(Prism::DefNode) && stmt.receiver.is_a?(Prism::SelfNode)
+        @relation_methods << source.sub(/\Adef self\./, "def ") if !@sti_base && stmt.is_a?(Prism::DefNode) && stmt.receiver.is_a?(Prism::SelfNode)
       end
     end
 
@@ -556,10 +627,11 @@ module Spinrail
         #{indent(columns.map { |c| "@#{c.name} = #{c.name}" }, 4)}
         #{indent((@secure_password ? ["@password = \"\"", *secure_assign] : []) + @extra_virtual.map { |v| "@#{v} = #{v}" }, 4)}
             @errors = Spinrail::Errors.new(#{Inflector.underscore(@name).inspect})
-        #{indent(@associations.map { |a| "@preloaded_#{a.name} = false" }, 4)}
+        #{@sti_children.empty? ? '' : "    @type = sti_name\n"}        #{indent(@associations.map { |a| "@preloaded_#{a.name} = false" }, 4)}
           end
 
           def self.from_row(db)
+        #{indent(sti_from_row(from_row), 4)}
             #{@name}.new(#{from_row.join(', ')})
           end
 
@@ -591,19 +663,19 @@ module Spinrail
         #{indent(plucks, 2)}
 
           def self.find(id)
-            record = #{@name}.where(id: id.to_s.to_i).first
+            record = where(id: id.to_s.to_i).first
             raise Spinrail::RecordNotFound, "Couldn't find #{@name} with 'id'=" + id.to_s unless record
             record
           end
 
           def self.create(#{create_kwargs})
-            record = #{@name}.new(#{new_args})
+            record = new(#{new_args})
             record.save
             record
           end
 
           def self.create!(#{create_kwargs})
-            record = #{@name}.new(#{new_args})
+            record = new(#{new_args})
             record.save!
             record
           end
@@ -619,6 +691,7 @@ module Spinrail
           def dom_id_with(prefix) = @id > 0 ? prefix + #{"_#{Inflector.underscore(@name)}_".inspect} + @id.to_s : prefix + #{"_#{Inflector.underscore(@name)}".inspect}
           def persisted? = @id > 0
           def new_record? = @id == 0
+        #{indent(sti_base_methods, 2)}
         #{indent(predicates, 2)}
 
           def valid?
@@ -650,19 +723,19 @@ module Spinrail
           end
 
           def self.from_params(params)
-            record = #{@name}.new
+            record = new
             record.assign_params(params)
             record
           end
 
           def self.create_from(params)
-            record = #{@name}.from_params(params)
+            record = from_params(params)
             record.save
             record
           end
 
           def self.create_from!(params)
-            record = #{@name}.from_params(params)
+            record = from_params(params)
             record.save!
             record
           end

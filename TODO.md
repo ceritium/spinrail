@@ -27,8 +27,11 @@ Roughly in priority order within each section.
 - [ ] `left_joins`, `distinct`, `having`, nested includes (`includes(comments: :author)`).
 - [x] `has_many :users, through: :memberships` (one hop, as a subquery; no
       `includes`/`joins` of it yet); `find_by` on relations; `order(:col)`.
-- [ ] Single-table inheritance: Campfire's `Rooms::Open < Room` is a `type`
-      column with predicates for now.
+- [x] Single-table inheritance: `class Rooms::Open < Room` in
+      app/models/rooms/open.rb; rows load as their `type`'s class, subclasses
+      scope their queries, add methods, callbacks and validations, and
+      `becomes`/`becomes!` switch class. Associations, scopes and enums go on
+      the base for now.
 - [x] `datetime` columns read and take `Time` (TEXT in SQLite, local time to the
       microsecond); `where`, params, `to_json`, `l` and `cache_key` follow.
 - [ ] `date` and `time` columns as `Date` and a time of day; they are Strings.
