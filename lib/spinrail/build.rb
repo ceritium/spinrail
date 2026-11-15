@@ -1081,6 +1081,8 @@ module Spinrail
       dispatch = specs.map { |j| "    return #{perform_call(j)} if name == #{j[:name].inspect}" } + recurring.dispatch
       queues = specs.filter_map { |j| "    return #{j[:queue].inspect} if name == #{j[:name].inspect}" if j[:queue] }
       priorities = specs.filter_map { |j| "    return #{j[:priority]} if name == #{j[:name].inspect}" if j[:priority] }
+      limited = specs.select { |j| j[:concurrency] }
+      by_job = ->(field) { limited.map { |j| "    return #{j[:concurrency][field]} if name == #{j[:name].inspect}" }.join("\n") }
       parts << <<~RUBY
         module SpinrailJobs
           def self.dispatch(name, args)
@@ -1094,6 +1096,28 @@ module Spinrail
           def self.retry_wait(name, error, executions)
         #{specs.select { |j| j[:handlers].any? }.map { |j| retry_branch(j) }.join("\n")}
             Spinrail::Jobs::FAIL
+          end
+
+          # limits_concurrency: the key ("" for none), slots, seconds a
+          # semaphore lasts, and whether a job over the limit is dropped.
+          def self.concurrency_key(name, args)
+        #{by_job.(:key)}
+            ""
+          end
+
+          def self.concurrency_limit(name)
+        #{by_job.(:to)}
+            1
+          end
+
+          def self.concurrency_duration(name)
+        #{by_job.(:duration)}
+            180
+          end
+
+          def self.concurrency_discard(name)
+        #{by_job.(:discard)}
+            false
           end
 
           def self.queue_for(name)
@@ -1120,7 +1144,9 @@ module Spinrail
         raise CompileError, "#{rel(file)}: expected a job class"
       spec = { name: klass.constant_path.slice }
       (klass.body&.body || []).each do |stmt|
-        if stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && %i[retry_on discard_on].include?(stmt.name)
+        if stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && stmt.name == :limits_concurrency
+          spec[:concurrency] = concurrency(stmt, spec[:name], file)
+        elsif stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && %i[retry_on discard_on].include?(stmt.name)
           (spec[:handlers] ||= []) << job_handler(stmt, file)
         elsif stmt.is_a?(Prism::CallNode) && stmt.receiver.nil? && %i[queue_as queue_with_priority].include?(stmt.name)
           value = stmt.arguments&.arguments&.first
@@ -1137,6 +1163,28 @@ module Spinrail
         end
       end
       spec
+    end
+
+    # limits_concurrency to: 1, key: ->(account_id) { ... }, duration: 3.minutes,
+    # group: "name", on_conflict: :block | :discard. The key lambda gets the
+    # job's arguments (Strings) and is lowered like app code.
+    def concurrency(stmt, job, file)
+      _, kw = Spinrail.call_args(stmt)
+      unknown = kw.keys - %i[to key duration group on_conflict]
+      raise CompileError, "#{rel(file)}: limits_concurrency doesn't take #{unknown.join(', ')}" if unknown.any?
+      key = kw[:key] or raise CompileError, "#{rel(file)}: limits_concurrency needs key:"
+      group = kw[:group] ? "(#{kw[:group].slice}).to_s" : job.inspect
+      value = if key.is_a?(Prism::LambdaNode)
+                n = key.parameters&.parameters&.requireds&.size || 0
+                lambda = Lowering.lower(key.slice, rel(file), Context.new(self, "", view: false, job: true))
+                "(#{lambda}).call(#{(0...n).map { |i| "Spinrail::Jobs.arg(args, #{i})" }.join(', ')}).to_s"
+              else
+                "(#{key.slice}).to_s"
+              end
+      on_conflict = kw[:on_conflict] && Spinrail.literal(kw[:on_conflict])
+      raise CompileError, "#{rel(file)}: on_conflict is :block or :discard" unless [nil, :block, :discard].include?(on_conflict)
+      { key: "#{group} + \"/\" + #{value}", to: kw[:to] ? "(#{kw[:to].slice}).to_i" : "1",
+        duration: kw[:duration] ? "(#{kw[:duration].slice}).to_i" : "180", discard: (on_conflict == :discard).to_s }
     end
 
     # retry_on Errors, wait: 3, attempts: 5 (Active Job's defaults);

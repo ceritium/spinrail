@@ -263,7 +263,10 @@ Roughly in priority order within each section.
       phrasings, `class:`/`args:` or `command:`, once per slot across workers.
 - [ ] Fugit's other phrasings (`every 2 days`, `every weekday`), cron with
       seconds, hash arguments, ERB in recurring.yml.
-- [ ] `limits_concurrency`.
+- [x] `limits_concurrency` (semaphores and blocked executions; `on_conflict:
+      :discard`); semaphores expire after `duration:` (3 minutes).
+- [ ] Retrying a failed job or handing back a stopped worker's jobs skips the
+      concurrency limit, as their semaphore slot may still be held.
 - [ ] A dashboard (Mission Control).
 - [ ] Threaded jobs on PostgreSQL (the PG battery's state hasn't been checked
       for threads).

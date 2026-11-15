@@ -186,7 +186,10 @@ to the server.
   back, and a worker silent for 5 minutes is pruned, its claimed jobs failed.
   `spinrail jobs status|failed` inspect the queue; `pause QUEUE`/`resume QUEUE`,
   `retry ID|all` and `discard ID|all` (failed jobs) and `clear` (finished ones)
-  act on it. Workers delete finished jobs after a day.
+  act on it. Workers delete finished jobs after a day. `limits_concurrency to:,
+  key: ->(arg) { ... }, duration:, group:, on_conflict: :block|:discard` keeps
+  jobs with the same key from running at once, through semaphores; the rest
+  wait as blocked executions.
 - Recurring jobs: `config/recurring.yml` as Solid Queue reads it (tasks under
   an environment, or at the top for all), each with `class:` and `args:` or a
   `command:` of app code, and `schedule:` as cron or `every 5 minutes`,

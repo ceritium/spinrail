@@ -12,7 +12,7 @@ module Spinrail
     SCHEMA = [
       "CREATE TABLE IF NOT EXISTS spinrail_queue_jobs (id INTEGER PRIMARY KEY, queue_name TEXT NOT NULL, " \
       "class_name TEXT NOT NULL, arguments TEXT NOT NULL, priority INTEGER NOT NULL DEFAULT 0, " \
-      "executions INTEGER NOT NULL DEFAULT 0, scheduled_at TEXT NOT NULL DEFAULT '', finished_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, " \
+      "executions INTEGER NOT NULL DEFAULT 0, concurrency_key TEXT NOT NULL DEFAULT '', scheduled_at TEXT NOT NULL DEFAULT '', finished_at TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, " \
       "updated_at TEXT NOT NULL)",
       "CREATE INDEX IF NOT EXISTS index_spinrail_queue_jobs_on_class_name ON spinrail_queue_jobs (class_name)",
       "CREATE INDEX IF NOT EXISTS index_spinrail_queue_jobs_on_finished_at ON spinrail_queue_jobs (finished_at)",
@@ -38,6 +38,15 @@ module Spinrail
       "CREATE INDEX IF NOT EXISTS index_spinrail_queue_processes_on_last_heartbeat_at ON spinrail_queue_processes (last_heartbeat_at)",
       "CREATE TABLE IF NOT EXISTS spinrail_queue_pauses (id INTEGER PRIMARY KEY, queue_name TEXT NOT NULL, created_at TEXT NOT NULL)",
       "CREATE UNIQUE INDEX IF NOT EXISTS index_spinrail_queue_pauses_on_queue_name ON spinrail_queue_pauses (queue_name)",
+      "CREATE TABLE IF NOT EXISTS spinrail_queue_semaphores (id INTEGER PRIMARY KEY, key TEXT NOT NULL, value INTEGER NOT NULL DEFAULT 1, " \
+      "expires_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS index_spinrail_queue_semaphores_on_key ON spinrail_queue_semaphores (key)",
+      "CREATE INDEX IF NOT EXISTS index_spinrail_queue_semaphores_on_expires_at ON spinrail_queue_semaphores (expires_at)",
+      "CREATE TABLE IF NOT EXISTS spinrail_queue_blocked_executions (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL, " \
+      "queue_name TEXT NOT NULL, priority INTEGER NOT NULL DEFAULT 0, concurrency_key TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL)",
+      "CREATE UNIQUE INDEX IF NOT EXISTS index_spinrail_queue_blocked_executions_on_job_id ON spinrail_queue_blocked_executions (job_id)",
+      "CREATE INDEX IF NOT EXISTS index_spinrail_queue_blocked_for_release ON spinrail_queue_blocked_executions (concurrency_key, priority, job_id)",
+      "CREATE INDEX IF NOT EXISTS index_spinrail_queue_blocked_for_maintenance ON spinrail_queue_blocked_executions (expires_at, concurrency_key)",
       "CREATE TABLE IF NOT EXISTS spinrail_queue_recurring_executions (id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL, " \
       "task_key TEXT NOT NULL, run_at TEXT NOT NULL, created_at TEXT NOT NULL)",
       "CREATE UNIQUE INDEX IF NOT EXISTS index_spinrail_queue_recurring_executions_on_task_key_and_run_at " \
@@ -68,7 +77,8 @@ module Spinrail
       end
       queue_name = queue.empty? ? SpinrailJobs.queue_for(name) : queue
       prio = priority < 0 ? SpinrailJobs.priority_for(name) : priority
-      Spinrail.transaction { Jobs.insert(name, Jobs.encode(args), queue_name, prio, at, 0) }
+      key = SpinrailJobs.concurrency_key(name, args)
+      Spinrail.transaction { Jobs.insert(name, Jobs.encode(args), queue_name, prio, at, 0, key) }
     end
 
     # retry_on retries right away and discard_on swallows, as a worker would
@@ -88,11 +98,11 @@ module Spinrail
       end
     end
 
-    def self.insert(name, arguments, queue_name, prio, at, executions)
+    def self.insert(name, arguments, queue_name, prio, at, executions, key)
       now = Jobs.now
       scheduled = at.empty? ? now : at
-      db = Spinrail.prepare("INSERT INTO spinrail_queue_jobs (queue_name, class_name, arguments, priority, executions, scheduled_at, created_at, updated_at) " \
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", true)
+      db = Spinrail.prepare("INSERT INTO spinrail_queue_jobs (queue_name, class_name, arguments, priority, executions, scheduled_at, created_at, " \
+                            "updated_at, concurrency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", true)
       db.bind_str(1, queue_name)
       db.bind_str(2, name)
       db.bind_str(3, arguments)
@@ -101,6 +111,7 @@ module Spinrail
       db.bind_str(6, scheduled)
       db.bind_str(7, now)
       db.bind_str(8, now)
+      db.bind_str(9, key)
       db.step
       db.finalize
       id = db.last_rowid
@@ -108,10 +119,101 @@ module Spinrail
         Jobs.insert_execution("INSERT INTO spinrail_queue_scheduled_executions (job_id, queue_name, priority, scheduled_at, created_at) " \
                               "VALUES (?, ?, ?, ?, ?)", id, queue_name, prio, scheduled)
       else
-        Jobs.insert_execution("INSERT INTO spinrail_queue_ready_executions (job_id, queue_name, priority, created_at) VALUES (?, ?, ?, ?)",
-                              id, queue_name, prio, "")
+        Jobs.make_ready(id, name, key, queue_name, prio)
       end
       id
+    end
+
+    # limits_concurrency: a job with a key runs only while it holds its
+    # key's semaphore; otherwise it waits blocked (or is discarded, with
+    # on_conflict: :discard) until a job with that key ends or the
+    # semaphore expires, as in Solid Queue.
+    def self.make_ready(id, name, key, queue_name, prio)
+      if key.empty? || Jobs.acquire(name, key)
+        Jobs.insert_execution("INSERT INTO spinrail_queue_ready_executions (job_id, queue_name, priority, created_at) VALUES (?, ?, ?, ?)",
+                              id, queue_name, prio, "")
+      elsif SpinrailJobs.concurrency_discard(name)
+        Jobs.mark_finished(id)
+      else
+        db = Spinrail.prepare("INSERT INTO spinrail_queue_blocked_executions (job_id, queue_name, priority, concurrency_key, expires_at, created_at) " \
+                              "VALUES (?, ?, ?, ?, ?, ?)", true)
+        db.bind_int(1, id)
+        db.bind_str(2, queue_name)
+        db.bind_int(3, prio)
+        db.bind_str(4, key)
+        db.bind_str(5, Jobs.expiry(name))
+        db.bind_str(6, Jobs.now)
+        db.step
+        db.finalize
+      end
+    end
+
+    def self.expiry(name) = Spinrail.format_time(Time.now + SpinrailJobs.concurrency_duration(name))
+
+    # The semaphore starts at the limit; RETURNING says whether a slot was taken.
+    def self.acquire(name, key)
+      now = Jobs.now
+      db = Spinrail.prepare("INSERT INTO spinrail_queue_semaphores (key, value, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?) " \
+                            "ON CONFLICT DO NOTHING", true)
+      db.bind_str(1, key)
+      db.bind_int(2, SpinrailJobs.concurrency_limit(name))
+      db.bind_str(3, Jobs.expiry(name))
+      db.bind_str(4, now)
+      db.bind_str(5, now)
+      db.step
+      db.finalize
+      db = Spinrail.prepare("UPDATE spinrail_queue_semaphores SET value = value - 1, expires_at = ?, updated_at = ? WHERE key = ? AND value > 0 RETURNING value", true)
+      db.bind_str(1, Jobs.expiry(name))
+      db.bind_str(2, now)
+      db.bind_str(3, key)
+      taken = db.step == 1
+      db.finalize
+      taken
+    end
+
+    # A job with a key ended: give its slot back and let the next blocked one in.
+    def self.signal(name, key)
+      return if key.empty?
+      db = Spinrail.prepare("UPDATE spinrail_queue_semaphores SET value = value + 1, updated_at = ? WHERE key = ? AND value < ?", true)
+      db.bind_str(1, Jobs.now)
+      db.bind_str(2, key)
+      db.bind_int(3, SpinrailJobs.concurrency_limit(name))
+      db.step
+      db.finalize
+      Jobs.unblock(key)
+    end
+
+    def self.unblock(key)
+      db = Spinrail.prepare("SELECT b.job_id, j.class_name, b.queue_name, b.priority FROM spinrail_queue_blocked_executions b " \
+                            "JOIN spinrail_queue_jobs j ON j.id = b.job_id WHERE b.concurrency_key = ? ORDER BY b.priority, b.job_id LIMIT 1", true)
+      db.bind_str(1, key)
+      found = db.step == 1
+      id = found ? db.col_int(0) : 0
+      name = found ? db.col_str(1) : ""
+      queue_name = found ? db.col_str(2) : ""
+      prio = found ? db.col_int(3) : 0
+      db.finalize
+      return unless found && Jobs.acquire(name, key)
+      Jobs.delete_where("DELETE FROM spinrail_queue_blocked_executions WHERE job_id = ?", id)
+      Jobs.insert_execution("INSERT INTO spinrail_queue_ready_executions (job_id, queue_name, priority, created_at) VALUES (?, ?, ?, ?)",
+                            id, queue_name, prio, "")
+    end
+
+    # Expired semaphores go, and keys with blocked jobs past their expiry get
+    # another try: a job that died holding a slot doesn't block its key for good.
+    def self.expire_concurrency
+      now = Jobs.now
+      db = Spinrail.prepare("DELETE FROM spinrail_queue_semaphores WHERE expires_at < ?", true)
+      db.bind_str(1, now)
+      db.step
+      db.finalize
+      db = Spinrail.prepare("SELECT DISTINCT concurrency_key FROM spinrail_queue_blocked_executions WHERE expires_at < ? LIMIT 100", true)
+      db.bind_str(1, now)
+      keys = [""]
+      keys.clear
+      keys << db.col_str(0) while db.step == 1
+      db.finalize
+      keys.each { |key| Spinrail.transaction { Jobs.unblock(key) } }
     end
 
     def self.insert_execution(sql, id, queue_name, prio, scheduled)
@@ -189,16 +291,40 @@ module Spinrail
       return unless due
       return unless Spinrail.db.exec("BEGIN IMMEDIATE")
       db = Spinrail.prepare("INSERT INTO spinrail_queue_ready_executions (job_id, queue_name, priority, created_at) " \
-                            "SELECT job_id, queue_name, priority, ? FROM spinrail_queue_scheduled_executions WHERE scheduled_at <= ? " \
+                            "SELECT s.job_id, s.queue_name, s.priority, ? FROM spinrail_queue_scheduled_executions s " \
+                            "JOIN spinrail_queue_jobs j ON j.id = s.job_id WHERE s.scheduled_at <= ? AND j.concurrency_key = '' " \
                             "ON CONFLICT DO NOTHING", true)
       db.bind_str(1, now)
       db.bind_str(2, now)
       db.step
       db.finalize
-      db = Spinrail.prepare("DELETE FROM spinrail_queue_scheduled_executions WHERE scheduled_at <= ?", true)
+      db = Spinrail.prepare("DELETE FROM spinrail_queue_scheduled_executions WHERE scheduled_at <= ? AND job_id IN " \
+                            "(SELECT job_id FROM spinrail_queue_ready_executions)", true)
       db.bind_str(1, now)
       db.step
       db.finalize
+      # Jobs with a concurrency key go one by one, through their semaphore.
+      db = Spinrail.prepare("SELECT s.job_id, j.class_name, j.concurrency_key, s.queue_name, s.priority FROM spinrail_queue_scheduled_executions s " \
+                            "JOIN spinrail_queue_jobs j ON j.id = s.job_id WHERE s.scheduled_at <= ? ORDER BY s.scheduled_at, s.priority, s.job_id LIMIT 100", true)
+      db.bind_str(1, now)
+      ids = [0]
+      ids.clear
+      rows = [""]
+      rows.clear
+      prios = [0]
+      prios.clear
+      while db.step == 1
+        ids << db.col_int(0)
+        rows << db.col_str(1)
+        rows << db.col_str(2)
+        rows << db.col_str(3)
+        prios << db.col_int(4)
+      end
+      db.finalize
+      ids.each_with_index do |id, i|
+        Jobs.delete_where("DELETE FROM spinrail_queue_scheduled_executions WHERE job_id = ?", id)
+        Jobs.make_ready(id, rows[i * 3], rows[i * 3 + 1], rows[i * 3 + 2], prios[i])
+      end
       Spinrail.db.exec("COMMIT")
     end
 
@@ -252,39 +378,41 @@ module Spinrail
     def self.work_one(queues, process_id)
       id = Jobs.claim(queues, process_id)
       return false if id == 0
-      db = Spinrail.prepare("SELECT class_name, arguments, queue_name, priority, executions FROM spinrail_queue_jobs WHERE id = ?", true)
+      db = Spinrail.prepare("SELECT class_name, arguments, queue_name, priority, executions, concurrency_key FROM spinrail_queue_jobs WHERE id = ?", true)
       db.bind_int(1, id)
       name = ""
       arguments = "[]"
       queue_name = ""
       prio = 0
       executions = 1
+      key = ""
       if db.step == 1
         name = db.col_str(0)
         arguments = db.col_str(1)
         queue_name = db.col_str(2)
         prio = db.col_int(3)
         executions = db.col_int(4) + 1
+        key = db.col_str(5)
       end
       db.finalize
       t0 = Spinrail.clock
       begin
         SpinrailJobs.dispatch(name, Jobs.decode(arguments))
-        Jobs.finish(id)
+        Jobs.finish(id, name, key)
         Spinrail.say("Performed " + name + " #" + id.to_s + " in " + format("%.1f", (Spinrail.clock - t0) * 1000.0) + "ms")
       rescue StandardError => e
         wait = SpinrailJobs.retry_wait(name, e, executions)
         if wait == DISCARD
-          Jobs.finish(id)
+          Jobs.finish(id, name, key)
           Spinrail.say("Discarded " + name + " #" + id.to_s + ": " + e.message)
         elsif wait == FAIL
-          Jobs.fail(id, e.class.name + ": " + e.message)
+          Jobs.fail(id, e.class.name + ": " + e.message, name, key)
           Spinrail.say("Failed " + name + " #" + id.to_s + ": " + e.message)
         else
           at = Spinrail.format_time(Time.now + wait)
           Spinrail.transaction do
-            Jobs.finish(id)
-            Jobs.insert(name, arguments, queue_name, prio, wait > 0 ? at : "", executions)
+            Jobs.finish(id, name, key)
+            Jobs.insert(name, arguments, queue_name, prio, wait > 0 ? at : "", executions, key)
           end
           Spinrail.say("Failed " + name + " #" + id.to_s + ": " + e.message + " (retrying in " + wait.to_s + "s)")
         end
@@ -292,22 +420,28 @@ module Spinrail
       true
     end
 
-    def self.finish(id)
+    def self.finish(id, name, key)
       Spinrail.transaction do
         Jobs.release(id)
-        db = Spinrail.prepare("UPDATE spinrail_queue_jobs SET finished_at = ?, updated_at = ? WHERE id = ?", true)
-        now = Jobs.now
-        db.bind_str(1, now)
-        db.bind_str(2, now)
-        db.bind_int(3, id)
-        db.step
-        db.finalize
+        Jobs.mark_finished(id)
+        Jobs.signal(name, key)
       end
     end
 
-    def self.fail(id, error)
+    def self.mark_finished(id)
+      db = Spinrail.prepare("UPDATE spinrail_queue_jobs SET finished_at = ?, updated_at = ? WHERE id = ?", true)
+      now = Jobs.now
+      db.bind_str(1, now)
+      db.bind_str(2, now)
+      db.bind_int(3, id)
+      db.step
+      db.finalize
+    end
+
+    def self.fail(id, error, name, key)
       Spinrail.transaction do
         Jobs.release(id)
+        Jobs.signal(name, key)
         db = Spinrail.prepare("INSERT INTO spinrail_queue_failed_executions (job_id, error, created_at) VALUES (?, ?, ?)", true)
         db.bind_int(1, id)
         db.bind_str(2, error)
@@ -418,7 +552,8 @@ module Spinrail
         return
       end
       queue_name = queue.empty? ? SpinrailJobs.queue_for(name) : queue
-      id = Jobs.insert(name, Jobs.encode(args), queue_name, priority < 0 ? SpinrailJobs.priority_for(name) : priority, "", 0)
+      id = Jobs.insert(name, Jobs.encode(args), queue_name, priority < 0 ? SpinrailJobs.priority_for(name) : priority, "", 0,
+                       SpinrailJobs.concurrency_key(name, args))
       db = Spinrail.prepare("UPDATE spinrail_queue_recurring_executions SET job_id = ? WHERE task_key = ? AND run_at = ?", true)
       db.bind_int(1, id)
       db.bind_str(2, key)
@@ -473,6 +608,7 @@ module Spinrail
       Jobs.heartbeat(process_id)
       Jobs.prune(process_id)
       Jobs.clear_finished(false)
+      Jobs.expire_concurrency
     end
 
     def self.delete_where(sql, id)
@@ -525,7 +661,8 @@ module Spinrail
 
     def self.status
       [["ready", "spinrail_queue_ready_executions"], ["scheduled", "spinrail_queue_scheduled_executions"],
-       ["claimed", "spinrail_queue_claimed_executions"], ["failed", "spinrail_queue_failed_executions"],
+       ["claimed", "spinrail_queue_claimed_executions"], ["blocked", "spinrail_queue_blocked_executions"],
+       ["failed", "spinrail_queue_failed_executions"],
        ["processes", "spinrail_queue_processes"]].map { |pair| pair[0] + "=" + Jobs.count("SELECT COUNT(*) FROM " + pair[1]).to_s }
         .join(" ") + " finished=" + Jobs.count("SELECT COUNT(*) FROM spinrail_queue_jobs WHERE finished_at != ''").to_s
     end

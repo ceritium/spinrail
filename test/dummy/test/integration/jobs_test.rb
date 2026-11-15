@@ -121,7 +121,7 @@ class ProcessesTest < Spinrail::IntegrationTest
     assert_equal 0, $?.exitstatus
     assert_equal 1, File.read(log).scan("Performed SlowJob").size
     assert_includes File.read(log), "stopped working jobs"
-    assert_equal "ready=1 scheduled=0 claimed=0 failed=0 processes=0 finished=2", status
+    assert_equal "ready=1 scheduled=0 claimed=0 blocked=0 failed=0 processes=0 finished=2", status
   ensure
     Process.kill("KILL", pid) rescue nil if pid
     Process.wait(pid) rescue nil if pid
@@ -136,13 +136,13 @@ class ProcessesTest < Spinrail::IntegrationTest
     wait_for(log, "Performed ShoutJob")
     Process.kill("KILL", pid)
     Process.wait(pid)
-    assert_equal "ready=0 scheduled=0 claimed=1 failed=0 processes=1 finished=1", status
+    assert_equal "ready=0 scheduled=0 claimed=1 blocked=0 failed=0 processes=1 finished=1", status
     sleep 1.1
     log = File.join(Dir.tmpdir, "spinrail-prune-#{Process.pid}.log")
     pid = worker(log, "SPINRAIL_JOBS_ALIVE_THRESHOLD" => "1")
     wait_for(log, "working jobs")
     sleep 0.3
-    assert_equal "ready=0 scheduled=0 claimed=0 failed=1 processes=1 finished=1", status
+    assert_equal "ready=0 scheduled=0 claimed=0 blocked=0 failed=1 processes=1 finished=1", status
   ensure
     if pid
       Process.kill("KILL", pid) rescue nil
@@ -159,16 +159,16 @@ class QueueCommandsTest < Spinrail::IntegrationTest
     get "/models/seed"
     get "/models/shout?broken=1"
     assert_equal ["paused default"], jobs("pause default")
-    assert_equal ["ready=2 scheduled=0 claimed=0 failed=0 processes=0 finished=0", "paused: default"], jobs("status")
+    assert_equal ["ready=2 scheduled=0 claimed=0 blocked=0 failed=0 processes=0 finished=0", "paused: default"], jobs("status")
     log = File.join(Dir.tmpdir, "spinrail-pause-#{Process.pid}.log")
     pid = worker(log)
     wait_for(log, "working jobs")
     sleep 0.5
-    assert_equal "ready=2 scheduled=0 claimed=0 failed=0 processes=1 finished=0", status
+    assert_equal "ready=2 scheduled=0 claimed=0 blocked=0 failed=0 processes=1 finished=0", status
     jobs("resume default")
     wait_for(log, "Failed BrokenJob")
     sleep 0.2
-    assert_equal "ready=0 scheduled=0 claimed=0 failed=1 processes=1 finished=1", status
+    assert_equal "ready=0 scheduled=0 claimed=0 blocked=0 failed=1 processes=1 finished=1", status
     assert_match(/\A\d+ BrokenJob default \["x"\] \S+ \S+  ArgumentError: broken x\z/, jobs("failed").last)
     jobs("retry all")
     50.times do
@@ -176,9 +176,9 @@ class QueueCommandsTest < Spinrail::IntegrationTest
       sleep 0.1
     end
     sleep 0.2
-    assert_equal "ready=0 scheduled=0 claimed=0 failed=1 processes=1 finished=1", status
-    assert_equal "ready=0 scheduled=0 claimed=0 failed=0 processes=1 finished=1", jobs("discard 2").last
-    assert_equal "ready=0 scheduled=0 claimed=0 failed=0 processes=1 finished=0", jobs("clear").last
+    assert_equal "ready=0 scheduled=0 claimed=0 blocked=0 failed=1 processes=1 finished=1", status
+    assert_equal "ready=0 scheduled=0 claimed=0 blocked=0 failed=0 processes=1 finished=1", jobs("discard 2").last
+    assert_equal "ready=0 scheduled=0 claimed=0 blocked=0 failed=0 processes=1 finished=0", jobs("clear").last
   ensure
     if pid
       Process.kill("KILL", pid) rescue nil
@@ -211,6 +211,31 @@ class RecurringJobsTest < Spinrail::IntegrationTest
     assert_operator enqueued - ticks, :<=, 2
   ensure
     (pids || []).each do |pid|
+      Process.kill("KILL", pid) rescue nil
+      Process.wait(pid) rescue nil
+    end
+  end
+end
+
+class ConcurrencyTest < Spinrail::IntegrationTest
+  include WorkerHelpers
+  server_env "SPINRAIL_JOBS_INLINE" => "0"
+
+  def test_limits_concurrency
+    get "/models/serial"
+    # a#1, b and the first OnceJob are ready; two a's wait; the second OnceJob is dropped.
+    assert_equal "ready=3 scheduled=0 claimed=0 blocked=2 failed=0 processes=0 finished=1", status
+    log = File.join(Dir.tmpdir, "spinrail-serial-#{Process.pid}.log")
+    pid = worker(log)
+    50.times do
+      break if File.read(log).scan("Performed SerialJob").size == 4
+      sleep 0.1
+    end
+    sleep 0.2
+    assert_equal "ready=0 scheduled=0 claimed=0 blocked=0 failed=0 processes=1 finished=6", status
+    assert_equal %w[1 2 3 4], File.read(log).scan(/Performed SerialJob #(\d+)/).flatten
+  ensure
+    if pid
       Process.kill("KILL", pid) rescue nil
       Process.wait(pid) rescue nil
     end

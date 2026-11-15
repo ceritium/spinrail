@@ -427,7 +427,7 @@ module Spinrail
       end
     end
 
-    JOB_DSL = %i[queue_as queue_with_priority retry_on discard_on].freeze
+    JOB_DSL = %i[queue_as queue_with_priority retry_on discard_on limits_concurrency].freeze
     JOB_SET = %i[queue priority wait wait_until].freeze
 
     # WelcomeJob.perform_later(x, y), or WelcomeJob.set(...).perform_later:

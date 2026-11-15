@@ -188,6 +188,12 @@ class ModelsController < ApplicationController
     render plain: "queued"
   end
 
+  def serial
+    %w[a a a b].each { |group| SerialJob.perform_later(group) }
+    2.times { OnceJob.perform_later("x") }
+    render plain: "queued"
+  end
+
   def enqueue
     NoteJob.set(wait: 2.seconds).perform_later("later")
     NoteJob.perform_later("low")
