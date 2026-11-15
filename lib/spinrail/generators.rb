@@ -26,6 +26,7 @@ module Spinrail
 
     def initialize(app, out = $stdout)
       @app = app
+      Inflector.load_app(app)
       @out = out
     end
 
