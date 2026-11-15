@@ -16,6 +16,7 @@ class ModelsController < ApplicationController
     lines << "by_rating=" + Post.order("rating ASC").pluck(:title).join(",")
     lines << "offset=" + Post.order(id: :asc).limit(1).offset(1).pluck(:title).join(",")
     lines << "count=" + Post.where(published: true).count.to_s
+    lines << "in=" + Post.where(title: ["First", "Third", "Nope"]).order(id: :asc).pluck(:title).join(",") + ";" + Post.where(title: []).count.to_s
     lines << "exists=" + Post.exists?(title: "Third").to_s + "," + Post.exists?(title: "Nope").to_s
     found = Post.find_by(title: "Second")
     missing = Post.find_by(title: "Nope")

@@ -1055,6 +1055,8 @@ module Spinrail
             conditions.each do |column, value|
               if value.nil?
                 relation.add_where_null(column.to_s, "IS NULL")
+              elsif value.is_a?(Array)
+                relation.add_where_in(column.to_s, value.map { |v| Spinrail.sql_text(v) })
               else
                 relation.add_where(column.to_s, Spinrail.sql_text(value), "=")
               end

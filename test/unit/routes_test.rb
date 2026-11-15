@@ -30,6 +30,12 @@ class RoutesTest < CompilerTest
     assert_includes table(r), "GET /users/:user_id/profile users/profiles#show"
   end
 
+  def test_scope_path_with_a_dynamic_segment_inside_resources
+    r = routes("resources :rooms do\n scope path: \":bot_key\", as: :bot do\n resources :messages, controller: \"messages/by_bots\", only: %i[create]\n end\nend")
+    assert_includes table(r), "POST /rooms/:room_id/:bot_key/messages messages/by_bots#create"
+    assert_equal ["room_id", "bot_key"], r.helpers["room_bot_messages_path"][0]
+  end
+
   def test_action_class_targets
     r = routes("get \"/stats\", to: Actions::Stats::Show")
     assert_equal [nil, "stats.show"], [r.routes.first.controller, r.routes.first.action]

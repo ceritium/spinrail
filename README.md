@@ -134,7 +134,7 @@ to the server.
   are nullable unless `null: false`, as in Rails. A `null: false` column gets a
   zero default (`""`, `0`, `false`, the epoch) and its reader never returns nil, which
   spinel compiles to a single type; declare it wherever nil can't happen. `all`,
-  `where`, `where.not`, `order`, `limit`, `offset`, `first`, `last`, `count`,
+  `where` (an array value is `IN`), `where.not`, `order`, `limit`, `offset`, `first`, `last`, `count`,
   `exists?`, `pluck`, `find`, `find_by` (and `find_by!`), `create`, `save`, `update`,
   `destroy` and their `!` forms, `transaction`; validations (`presence`,
   `length`, `numericality`, `format`, `inclusion`, `exclusion`, `uniqueness`,
@@ -145,7 +145,8 @@ to the server.
   ActiveSupport::CurrentAttributes` keeps one instance per fiber, reset for each
   request, with `Current.set { }` and reset callbacks; `belongs_to` takes
   `default: -> { Current.user }`; `delegate` (methods without arguments).
-- Controllers: `params[:x]`, `params[:post][:title]`, strong params,
+- Controllers: `params[:x]`, `params[:post][:title]`, `params.fetch(:ids, [])`
+  for repeated `ids[]`, strong params, `request.raw_post`,
   `request.files["post[avatar]"]` for uploads, `render :action, status:`,
   `render plain:` (with `content_type:`), `render json:`, `head`, `expires_in`, `render view: Views::Stats::Show,
   exposure: value`, `redirect_to path, status:, notice:`, implicit render;
@@ -153,7 +154,7 @@ to the server.
   CSRF protection, `_method` override.
 - Views: layout with `yield`, partials (`render "entry", entry: entry`),
   `<%= %>` escapes, `<%== %>` and `raw` don't, `form_with` and field
-  helpers (`file_field` makes the form multipart), `link_to`, `button_to`, `csrf_meta_tags`, `pluralize`.
+  helpers (`file_field` makes the form multipart), `link_to`, `button_to` (`params:` as hidden fields), `csrf_meta_tags`, `pluralize`.
 - Request log: Rails-style by default (filtered params, SQL, rendered
   templates, timings); one line per request with `SPINRAIL_LOG_FORMAT=logfmt`
   or `json`. Each response carries `X-Request-Id`.

@@ -30,6 +30,8 @@ Roughly in priority order within each section.
 - [ ] `find_or_create_by`; `last(n)` in `def self.x` (scope bodies only for now);
       named binds (`where("x = :y", y:)`).
 - [ ] `left_joins`, `distinct`, `having`, nested includes (`includes(comments: :author)`).
+- [x] `where(id: [1, 2])` as `IN`.
+- [ ] Subqueries: `where(id: Membership.where(...).select(:room_id))`.
 - [x] `has_many :users, through: :memberships` (one hop, as a subquery; no
       `includes`/`joins` of it yet); `find_by` on relations; `order(:col)`.
 - [x] Single-table inheritance: `class Rooms::Open < Room` in
@@ -95,6 +97,8 @@ Roughly in priority order within each section.
 - [x] `cookies.signed` (HMAC with the session secret) / `cookies.permanent`, in
       either order; `{ value:, httponly:, same_site: }` values.
 - [ ] `cookies.encrypted`.
+- [x] Repeated `ids[]` params (form body or query), read with `params.fetch(:ids, [])`.
+- [x] `request.raw_post`.
 - [x] `flash`, `flash.now`, `redirect_to ..., notice:/alert:`, `notice`/`alert` in views.
 - [x] CSRF protection (form param or `X-CSRF-Token`), `skip_forgery_protection`,
       `csrf_meta_tags`; off in tests unless `forgery_protection!`.
@@ -157,6 +161,11 @@ Roughly in priority order within each section.
 - [x] Layout per controller (`layout "x"`, `layout false`, layouts/<controller>).
 - [x] `layout:` option on `render`.
 - [x] Partials drop their trailing newline.
+- [x] `button_to url, params: { ids: [1] }` renders hidden fields.
+- [ ] A form builder passed to a partial (`render "form", form: form`).
+- [ ] `form_with model: @bot` names fields after the variable (`bot[name]`), not
+      the model class (`user[name]`); pass `scope:` for now.
+- [ ] JSON templates (`index.json.erb`, jbuilder).
 
 ## Actions and views
 
@@ -174,6 +183,7 @@ Roughly in priority order within each section.
 - [x] `shallow`, `scope` (path, `module:`, `as:`), `concern`/`concerns:`,
       `form_with model: [@post, @comment]`.
 - [x] `.json` suffix on any path sets `format=json`.
+- [x] `scope path: ":bot_key"` adds the segment to the nested helpers' arguments.
 - [x] Route globbing (`*path`) and `constraints: { id: /\d+/ }`.
 - [x] `get "up" => "rails/health#show"` (the `path => endpoint` form and Rails' health check).
 - [x] Path helpers that accept ids as well as records (`to_param`); `_url` helpers.

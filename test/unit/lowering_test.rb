@@ -6,6 +6,7 @@ class LoweringTest < CompilerTest
     assert_equal %(param("post[author][name]")), lower("params[:post][:author][:name]")
     assert_equal %(params.require_key("post").permit_keys(["title", "body"])), lower("params.require(:post).permit(:title, :body)")
     assert_equal %(params.require_key("post").permit_keys(["title"])), lower("params.expect(post: [:title])")
+    assert_equal %(params.array("tag_ids")), lower("params.fetch(:tag_ids, [])")
   end
 
   def test_request_params_in_actions
@@ -75,6 +76,11 @@ class LoweringTest < CompilerTest
     assert_equal %(Post.with_joins(["sql:join x on x.id = posts.id"])), lower(%(Post.joins("join x on x.id = posts.id")))
     assert_equal %(Spinrail.execute(Spinrail.sanitize_sql("delete from x where id = ?", [Spinrail.sql_text(id)]))),
                  lower(%(self.class.connection.execute self.class.sanitize_sql(["delete from x where id = ?", id])))
+  end
+
+  def test_button_to_params
+    out = lower(%(button_to path, params: { ids: [user.id], kind: "x" } do\nend), view: true, controller: false)
+    assert_includes out, %(form_open((path).to_s, "post", " class=\\"button_to\\"") + "<input type=\\"hidden\\" name=\\"" + h("ids[]") + "\\" value=\\"" + h((user.id).to_s) + "\\">" + "<input type=\\"hidden\\" name=\\"" + h("kind") + "\\" value=\\"" + h(("x").to_s) + "\\">" + "<button)
   end
 
   def test_button_to_with_a_block

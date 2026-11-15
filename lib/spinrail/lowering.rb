@@ -439,6 +439,7 @@ module Spinrail
       case node.name
       when :require, :permit then true
       when :expect then bare?(node.receiver, :params)
+      when :fetch then bare?(node.receiver, :params) && node.arguments&.arguments&.last.is_a?(Prism::ArrayNode)
       else false
       end
     end
@@ -450,6 +451,9 @@ module Spinrail
         case node.name
         when :require then "#{recv}.require_key(#{Spinrail.literal(args.first).to_s.inspect})"
         when :permit then "#{recv}.permit_keys(#{args.map { |a| Spinrail.literal(a).to_s }.inspect})"
+        when :fetch
+          fail!(node, "params.fetch with an array default takes [] only") unless args.last.elements.empty?
+          "#{recv}.array(#{Spinrail.literal(args.first).to_s.inspect})"
         when :expect
           key, fields = kw.first
           "#{recv}.require_key(#{key.to_s.inspect}).permit_keys(#{Spinrail.literal(fields).map(&:to_s).inspect})"
@@ -713,8 +717,8 @@ module Spinrail
         url = "(#{@rw.slice(args[0])}).to_s"
         body = node.block.body ? @rw.slice(node.block.body) : ""
         if node.name == :button_to
-          attrs = html_attrs(kw.reject { |k, _| k == :method })
-          "out << form_open(#{url}, #{method.inspect}, \" class=\\\"button_to\\\"\") + \"<button type=\\\"submit\\\"\" + #{attrs} + \">\"\n#{body}\nout << \"</button></form>\""
+          attrs = html_attrs(kw.reject { |k, _| %i[method params].include?(k) })
+          "out << form_open(#{url}, #{method.inspect}, \" class=\\\"button_to\\\"\")#{hidden_params(kw[:params])} + \"<button type=\\\"submit\\\"\" + #{attrs} + \">\"\n#{body}\nout << \"</button></form>\""
         else
           "out << \"<a href=\\\"\" + h(#{url}) + \"\\\"\" + #{html_attrs(kw)} + \">\"\n#{body}\nout << \"</a>\""
         end
@@ -735,9 +739,22 @@ module Spinrail
       end
     end
 
+    # button_to params: { ids: [1, 2] } -> hidden ids[] inputs, as in Rails.
+    def hidden_params(node)
+      return "" if node.nil?
+      fail!(node, "button_to params: takes a hash literal") unless node.is_a?(Prism::HashNode)
+      inputs = node.elements.flat_map do |assoc|
+        name = Spinrail.literal(assoc.key).to_s
+        pairs = assoc.value.is_a?(Prism::ArrayNode) ? assoc.value.elements.map { |v| ["#{name}[]", v] } : [[name, assoc.value]]
+        pairs.map { |n, v| "\"<input type=\\\"hidden\\\" name=\\\"\" + h(#{n.inspect}) + \"\\\" value=\\\"\" + h((#{@rw.slice(v)}).to_s) + \"\\\">\"" }
+      end
+      inputs.map { |i| " + #{i}" }.join
+    end
+
     def lower_link(node)
       args, kw = Spinrail.call_args(node)
       fail!(node, "#{node.name}(text, url, html_options)") unless args.size == 2
+      fail!(node, "button_to params: needs the block form") if kw[:params]
       method = kw[:method] ? Spinrail.literal(kw[:method]).to_s : "post"
       @rw.replace(node) do
         attrs = html_attrs(kw.reject { |k, _| k == :method })
@@ -1034,7 +1051,9 @@ module Spinrail
       unknown = kw.keys - %i[target partial locals html]
       fail!(node, "#{node.name}: unsupported option #{unknown.first}") if unknown.any?
       model = node.receiver.nil? ? @ctx.model_name : nil
-      fail!(node, "#{node.name} without a receiver only works in a model") if node.receiver.nil? && model.nil?
+      # Bare in a controller too (turbo-rails' Broadcasts), given target: and content.
+      explicit = kw[:target] && (kw[:partial] || kw[:html] || action == "remove")
+      fail!(node, "#{node.name} without a receiver needs a model, or target: and partial: or html:") if node.receiver.nil? && model.nil? && !explicit
       singular = model && Inflector.underscore(model.split("::").last)
       plural = model && Inflector.pluralize(singular)
       @rw.replace(node) do

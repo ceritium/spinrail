@@ -985,6 +985,9 @@ module Spinrail
           if !content_type.nil? && content_type.include?("application/json") && req.raw_body.length > 0
             Spinrail::JsonParams.new(req.raw_body.dup.force_encoding("UTF-8"), req.params).parse
           end
+          qmark = req.raw_path.index("?")
+          Spinrail.index_array_params(req.raw_path[qmark + 1, req.raw_path.length - qmark - 1], req.params) unless qmark.nil?
+          Spinrail.index_array_params(req.raw_body, req.params) if req.form?
           if req.path.end_with?(".json")
             req.path = req.path.delete_suffix(".json")
             req.params["format"] = "json"

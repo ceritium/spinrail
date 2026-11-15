@@ -78,16 +78,18 @@ module Spinrail
       end
     end
 
-    # scope "/prefix", module: "admin", as: "admin", defaults: { user_id: "me" }
+    # scope "/prefix" (or path: ":key"), module: "admin", as: "admin", defaults: { user_id: "me" }
     # -- each part optional; a default makes that helper argument optional.
     def path_scope(node)
       args, kw = Spinrail.call_args(node)
       defaults = scope.defaults.dup
       (kw[:defaults]&.elements || []).each { |e| defaults[Spinrail.literal(e.key).to_s] = Spinrail.literal(e.value).to_s }
-      prefix = args.first ? "/#{Spinrail.literal(args.first).to_s.delete_prefix('/')}" : ""
+      given = args.first || kw[:path]
+      prefix = given ? "/#{Spinrail.literal(given).to_s.delete_prefix('/')}" : ""
+      params = scope.params + prefix.scan(/:(\w+)/).flatten
       mod = kw[:module] ? "#{Spinrail.literal(kw[:module])}/" : ""
       as = kw[:as] ? "#{Spinrail.literal(kw[:as])}_" : ""
-      within(Scope.new("#{scope.path}#{prefix}", "#{scope.helper}#{as}", "#{scope.module}#{mod}", scope.params, nil,
+      within(Scope.new("#{scope.path}#{prefix}", "#{scope.helper}#{as}", "#{scope.module}#{mod}", params, nil,
                        "#{scope.base_path}#{prefix}", "#{scope.base_helper}#{as}", scope.shallow, defaults)) do
         body(node.block)
       end

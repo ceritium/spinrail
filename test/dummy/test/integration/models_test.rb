@@ -19,6 +19,7 @@ class ModelsTest < Spinrail::IntegrationTest
       by_rating=Second,Third,First
       offset=Second
       count=2
+      in=First,Third;0
       exists=true,false
       find_by=Second,nil
       ratings=4.5,2.0,3.25

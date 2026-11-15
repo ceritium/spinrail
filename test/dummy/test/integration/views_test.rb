@@ -33,6 +33,15 @@ class ViewsTest < Spinrail::IntegrationTest
     assert_equal %(<main class="bare"><p>no chrome</p>\n</main>\n), response.body
   end
 
+  def test_repeated_array_params
+    post "/plain/ids", params: { ids: [3, 1, 2] }
+    assert_equal "3,1,2", response.body
+    get "/plain/ids?ids[]=5&ids%5B%5D=6"
+    assert_equal "5,6", response.body
+    get "/plain/ids"
+    assert_equal "", response.body
+  end
+
   def test_layout_false
     get "/plain"
     assert_equal "<p>plain</p>\n", response.body

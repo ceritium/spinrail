@@ -7,6 +7,7 @@ module Tep
     def remote_ip = @remote_host
     def user_agent = @req_headers["user-agent"]
     def protocol = ssl? ? "https://" : "http://"
+    def raw_post = raw_body
   end
 
   class UploadedFile
@@ -28,6 +29,9 @@ class String
   def html_safe = self
   def first(n = 1) = self[0, n]
   def last(n = 1) = n >= length ? self : self[length - n, n]
+  def blank? = strip.empty?
+  def present? = !blank?
+  def presence = blank? ? nil : self
 end
 
 class Integer
@@ -75,6 +79,9 @@ end
 
 class NilClass
   def to_json = "null"
+  def blank? = true
+  def present? = false
+  def presence = nil
 end
 
 class Array
@@ -349,6 +356,22 @@ module Spinrail
     ENV.fetch("DATABASE_PATH", "./db/development.sqlite3")
   end
 
+  # tep keeps only the last of repeated "ids[]" pairs; number them like JSON
+  # arrays instead.
+  def self.index_array_params(query, params)
+    return unless query.include?("%5B%5D") || query.include?("[]")
+    counts = { "" => 0 }
+    query.split("&").each do |pair|
+      eq = pair.index("=")
+      key = SpinelKit::Url.unescape(eq.nil? ? pair : pair[0, eq])
+      next unless key.end_with?("[]")
+      base = key[0, key.length - 2]
+      n = counts.fetch(base, 0)
+      params[base + "[" + n.to_s + "]"] = eq.nil? ? "" : SpinelKit::Url.unescape(pair[eq + 1, pair.length - eq - 1])
+      counts[base] = n + 1
+    end
+  end
+
   class RecordInvalid < StandardError; end
   class RecordNotDestroyed < StandardError; end
   class ParameterMissing < StandardError; end
@@ -503,6 +526,18 @@ module Spinrail
 
     # user_params[:name]: "" when absent or not permitted.
     def [](key) = get(key.to_s)
+
+    # params.fetch(:ids, []): "ids[0]", "ids[1]"... in order.
+    def array(key)
+      out = []
+      return out if @filtered && !@permitted.include?(key)
+      n = 0
+      while @source.key?(full(key) + "[" + n.to_s + "]")
+        out << @source[full(key) + "[" + n.to_s + "]"].dup.force_encoding("UTF-8").scrub("")
+        n += 1
+      end
+      out
+    end
 
     def full(key) = @prefix.empty? ? key : @prefix + "[" + key + "]"
 
