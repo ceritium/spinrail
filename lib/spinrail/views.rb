@@ -9,7 +9,7 @@ module Spinrail
 
     # Helpers that return markup; their output isn't escaped again.
     HTML_HELPERS = /\A(turbo_frame_tag|turbo_stream_from|turbo_stream\.\w+|paginate|csrf_meta_tags|content_for|simple_format|
-                      stylesheet_link_tag|javascript_include_tag|javascript_importmap_tags|image_tag|link_to|button_to|
+                      stylesheet_link_tag|javascript_include_tag|javascript_importmap_tags|image_tag|favicon_link_tag|link_to|button_to|
                       \w+\.(label|\w+_field|text_?area|rich_text_?area|check_?box|select|collection_select|submit))\b/x
     BLOCK = /\bdo\s*(\|[^|]*\|)?\z/
 

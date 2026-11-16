@@ -91,6 +91,11 @@ class LoweringTest < CompilerTest
     assert_includes out, %(out << "</button></form>")
   end
 
+  def test_favicon_link_tag
+    assert_includes lower(%(favicon_link_tag), view: true), %(favicon_link_tag(("favicon.ico").to_s, "icon", "", ""))
+    assert_includes lower(%(favicon_link_tag "a.png", rel: "apple-touch-icon"), view: true), %(favicon_link_tag(("a.png").to_s, ("apple-touch-icon").to_s, "", ""))
+  end
+
   def test_image_tag_size
     assert_includes lower(%(image_tag "a.svg", size: 20, class: "x"), view: true), %( width=\\"20\\" height=\\"20\\")
     assert_includes lower(%(image_tag "a.svg", size: "20x30"), view: true), %( width=\\"20\\" height=\\"30\\")

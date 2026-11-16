@@ -147,6 +147,15 @@ module Spinrail
           dims = %( + #{%( width="#{w}" height="#{hh || w}").inspect})
         end
         @rw.replace(node) { "#{node.name}((#{@rw.slice(args.first)}).to_s, #{html_attrs(kw)}#{dims})" }
+      elsif @ctx.view? && node.receiver.nil? && node.name == :favicon_link_tag
+        args, kw = Spinrail.call_args(node)
+        rel = kw.delete(:rel)
+        type = kw.delete(:type)
+        src = args.first ? @rw.slice(args.first) : '"favicon.ico"'
+        @rw.replace(node) do
+          "favicon_link_tag((#{src}).to_s, #{rel ? "(#{@rw.slice(rel)}).to_s" : '"icon"'}, " \
+            "#{type ? "(#{@rw.slice(type)}).to_s" : '""'}, #{html_attrs(kw)})"
+        end
       elsif @ctx.view? && node.receiver.nil? && node.name == :javascript_importmap_tags
         args, = Spinrail.call_args(node)
         @rw.replace(node) { "javascript_importmap_tags(#{args.first ? "(#{@rw.slice(args.first)}).to_s" : '"application"'})" }

@@ -75,5 +75,10 @@ class FeaturesTest < Spinrail::IntegrationTest
     assert_response :success
     assert_includes body, '<script src="https://cdn.example.com/x.js" defer></script>'
     assert_includes body, '<img src="/logo.png" alt="Logo">'
+    icon = body[%r{<link rel="icon" type="image/svg\+xml" href="(/favicon-\h{12}\.svg)">}, 1]
+    assert icon, body
+    get icon
+    assert_includes response.body, "<circle"
+    assert_includes body, '<link rel="apple-touch-icon" type="image/png" href="/apple.png" sizes="180x180">'
   end
 end

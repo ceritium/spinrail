@@ -1555,6 +1555,17 @@ module Spinrail
       "<img src=\"" + h(asset_path(source, "")) + "\"" + attrs + ">"
     end
 
+    # Rails says image/x-icon for any file; the type follows the extension here.
+    def favicon_link_tag(source, rel, type, attrs)
+      if type.empty?
+        type = if source.end_with?(".svg") then "image/svg+xml"
+               elsif source.end_with?(".png") then "image/png"
+               else "image/x-icon"
+               end
+      end
+      "<link rel=\"" + h(rel) + "\" type=\"" + h(type) + "\" href=\"" + h(asset_path(source, "")) + "\"" + attrs + ">"
+    end
+
     def csrf_meta_tags
       "<meta name=\"csrf-param\" content=\"authenticity_token\">\n" \
         "<meta name=\"csrf-token\" content=\"" + h(form_authenticity_token) + "\">"

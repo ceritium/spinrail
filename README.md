@@ -166,7 +166,8 @@ to the server.
   `db/migrate` applied at boot (`spinrail generate migration AddXToPosts x:string`,
   `spinrail db:migrate` also rewrites db/schema.rb); `db/seeds.rb`.
 - Static files in `public/`, assets in `app/assets/`, `app/javascript/` and
-  `vendor/javascript/`, and importmaps.
+  `vendor/javascript/`, and importmaps; `stylesheet_link_tag`,
+  `javascript_include_tag`, `image_tag` and `favicon_link_tag`.
 - Mailers: `app/mailers` with `mail(to:, subject:)`, `.text.erb`/`.html.erb`
   templates, `deliver_now`/`deliver_later`; delivered to the log, or to files
   with `SPINRAIL_MAIL_DELIVERY=file` (request tests read them via `deliveries`), or
