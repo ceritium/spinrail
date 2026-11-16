@@ -422,6 +422,17 @@ class BuildTest < CompilerTest
     assert_includes ruby, %(get "/up" do\n  "<!DOCTYPE html><html><body style=\\"background-color: green\\"></body></html>"\nend)
   end
 
+  def test_database_opened_only_when_needed
+    boot = ->(ruby) { ruby[/^on_start do\n.*?^end$/m] }
+    none = boot.(build({}))
+    refute_includes none, "db = Spinrail.db"
+    assert_includes none, %(Spinrail::Jobs.schema unless ENV.fetch("SPINRAIL_JOBS", "").empty?)
+    tables = build("db/schema.rb" => "Spinrail::Schema.define do\n create_table :posts do |t|\n t.string :title\n end\nend\n")
+    assert_includes boot.(tables), "db = Spinrail.db"
+    jobs = build("app/jobs/ping_job.rb" => "class PingJob < ApplicationJob\n def perform\n end\nend\n")
+    assert_match(/^  Spinrail::Jobs.schema$/, boot.(jobs))
+  end
+
   def test_rich_text
     schema = "Spinrail::Schema.define do\n create_table :posts do |t|\n t.string :title\n end\n " \
              "create_table :action_text_rich_texts do |t|\n t.string :name\n t.text :body\n t.string :record_type\n " \

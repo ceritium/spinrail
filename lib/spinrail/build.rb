@@ -1039,6 +1039,13 @@ module Spinrail
 
     def migrations = @migrations ||= Migrations.new(path("db/migrate"))
 
+    # Jobs, recurring tasks or mailers (deliver_later) need the queue tables.
+    def jobs?
+      Dir[path("app/jobs/*.rb")].any? { |f| !f.end_with?("/application_job.rb") } ||
+        Dir[path("app/mailers/*.rb")].any? ||
+        Recurring.new(path("config/recurring.yml")).tasks.any?
+    end
+
     # app/jobs: ApplicationJob, each job class, and the dispatcher the
     # worker calls by name (spinel can't look classes up at runtime).
     # app/mailers: ApplicationMailer (default from:) and mailers whose
@@ -1311,15 +1318,17 @@ module Spinrail
                        schema.virtual_tables.map { |sql| "  db.exec(#{sql.inspect})" }
                    end
       seeds = File.exist?(path("db/seeds.rb"))
+      # An app with no tables, jobs or seeds never opens the database, so the
+      # binary runs anywhere without a writable db/.
+      queue = @tests || @threads || seeds || jobs?
       <<~RUBY
         on_start do
           if Spinrail.env == "production" && ENV.fetch("SECRET_KEY_BASE", "").empty?
             $stderr.puts "spinrail: set SECRET_KEY_BASE in production"
             exit(1)
           end
-          db = Spinrail.db
-        #{statements.join("\n")}
-          Spinrail::Jobs.schema
+        #{statements.empty? ? "" : "  db = Spinrail.db\n#{statements.join("\n")}"}
+        #{queue ? "  Spinrail::Jobs.schema" : '  Spinrail::Jobs.schema unless ENV.fetch("SPINRAIL_JOBS", "").empty?'}
           boot_sql = ENV.fetch("SPINRAIL_BOOT_SQL", "")
           Spinrail.run_sql_file(boot_sql) unless boot_sql.empty?
         #{seeds ? "  if ENV.fetch(\"SPINRAIL_SEED\", \"\") == \"1\"\n    SpinrailSeeds.run\n    puts \"spinrail: seeded\"\n    exit(0)\n  end" : ""}
