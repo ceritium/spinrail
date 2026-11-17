@@ -25,6 +25,7 @@ module Spinrail
       "test" => "Build if needed and run test/**/*_test.rb (FILES, minitest options)",
       "jobs" => "Work background jobs until Ctrl+C (-c THREADS, -q QUEUES); jobs status|failed|pause Q|resume Q|retry ID|discard ID|clear",
       "runner" => "Compile and run a script against the app: runner FILE or runner -e CODE",
+      "command" => "Run an app command from app/commands in the binary: command NAME [args]",
       "db:migrate" => "Apply db/migrate and rewrite db/schema.rb from it",
       "db:rollback" => "Undo the latest applied migration",
       "db:seed" => "Run db/seeds.rb against the database",
@@ -56,6 +57,7 @@ module Spinrail
       when "clean" then clean
       when "jobs" then jobs
       when "runner" then runner
+      when "command" then app_command
       when "db:migrate" then migrate
       when "db:rollback" then rollback
       when "db:seed" then seed
@@ -214,6 +216,16 @@ module Spinrail
       ensure
         system("dropdb", "--if-exists", pg_database) if pg_database
       end
+    end
+
+    # The binary dispatches app/commands to its positional first argument, so
+    # this only builds and hands the arguments over.
+    def app_command
+      name = @argv.shift or abort "spinrail: command NAME [args]"
+      build(binary) if stale?
+      Dir.chdir(@app)
+      $stdout.flush
+      exec(binary, name, *@argv)
     end
 
     def runner

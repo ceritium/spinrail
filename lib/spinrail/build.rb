@@ -344,6 +344,7 @@ module Spinrail
         *current_files.map { |f| "#{SOURCE_MARK}generated #{rel(f)}\n#{Current.new(f, rel(f), self).to_ruby}" },
         *(current_files.empty? ? ["module Spinrail\n  def self.reset_current = nil\nend\n"] : []),
         *plain_model_files.map { |f| "#{SOURCE_MARK}#{rel(f)}\n" + Lowering.lower(File.read(f), rel(f), Context.new(self, "", view: false)) },
+        *command_files.map { |f| "#{SOURCE_MARK}#{rel(f)}\n" + Lowering.lower(File.read(f), rel(f), Context.new(self, "", view: false)) },
         views,
         mailers_source,
         jobs_source,
@@ -1037,6 +1038,29 @@ module Spinrail
       "#{SOURCE_MARK}db/seeds.rb\nclass SpinrailSeeds\n  def self.run\n#{body.gsub(/^(?=.)/, '    ')}\n  end\nend\n"
     end
 
+    # app/commands holds plain classes the binary runs instead of serving when
+    # its first argument isn't an option: `localito grep -k foo`. Each file is
+    # command name -> class (grep.rb -> Grep, db/status.rb -> Db::Status, run
+    # as `db:status`); its self.run(argv) gets ARGV as given and returns the
+    # exit status.
+    def command_files = Dir[path("app/commands/**/*.rb")].sort
+
+    def command_name(file)
+      rel(file).delete_prefix("app/commands/").delete_suffix(".rb").split("/").map { |part| Inflector.underscore(part) }.join(":")
+    end
+
+    def command_class(file) = Inflector.camelize(rel(file).delete_prefix("app/commands/").delete_suffix(".rb"))
+
+    def commands_source
+      return "" if command_files.empty?
+      out = +"  if ARGV.length > 0 && !ARGV[0].start_with?(\"-\")\n"
+      command_files.each do |file|
+        out << "    if ARGV[0] == #{command_name(file).inspect}\n      exit(#{command_class(file)}.run(ARGV))\n    end\n"
+      end
+      out << "    $stderr.puts \"spinrail: unknown command \" + ARGV[0]\n    exit(2)\n  end\n"
+      out
+    end
+
     def migrations = @migrations ||= Migrations.new(path("db/migrate"))
 
     # Jobs, recurring tasks or mailers (deliver_later) need the queue tables.
@@ -1323,6 +1347,7 @@ module Spinrail
       queue = @tests || @threads || seeds || jobs?
       <<~RUBY
         on_start do
+        #{commands_source}
           if Spinrail.env == "production" && ENV.fetch("SECRET_KEY_BASE", "").empty?
             $stderr.puts "spinrail: set SECRET_KEY_BASE in production"
             exit(1)
