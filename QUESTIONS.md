@@ -38,8 +38,11 @@ is easy to revisit.
   `require "securerandom"` (and other packages bundled with spinel), which
   tep used to drop. Candidates for
   upstream PRs.
-- Default production builds to the prefork server? The scheduled one no
-  longer drops connections in bursts (fixed in the fork).
+- Keep `scheduled` as the default server. Prefork was better on bursts at
+  first, but scheduled no longer drops them; prefork still waits its 5 s
+  keep-alive timeout behind an idle client and returns 501 for WebSocket
+  upgrades, which Action Cable/Turbo Streams need. Prefork stays opt-in with
+  `SPINRAIL_SERVER=prefork`.
 - The gemspec says MIT and lists you as author; the repo has no LICENSE
   yet. Confirm before publishing anything.
 - Jobs take several arguments, but as Strings (perform(id) gets "3"). Typing

@@ -309,6 +309,9 @@ module Spinrail
     def rel(file) = file.delete_prefix("#{@app}/")
 
     def generate
+      if ENV.fetch("SPINRAIL_SERVER", "scheduled") == "prefork" && cable?
+        warnings << "SPINRAIL_SERVER=prefork returns 501 for WebSocket upgrades; use scheduled for Action Cable/Turbo Streams"
+      end
       schema = migrations.any? ? Schema.from_migrations(migrations) : Schema.new(path("db/schema.rb"))
       @templates = Dir[path("app/views/**/*.{html,text,turbo_stream,svg}.erb")].to_h do |file|
         key = rel(file).delete_prefix("app/views/").delete_suffix(".erb").delete_suffix(".html")

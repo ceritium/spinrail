@@ -302,9 +302,14 @@ Roughly in priority order within each section.
 
 ## Upstream
 
-- [ ] Default to the prefork server? The fork fixes
-      [OriPekelman/tep#277](https://github.com/OriPekelman/tep/issues/277) (idle
-      keep-alive clients held the worker and blocked Ctrl+C).
+- [x] Default to the prefork server? No: keep `scheduled` (issue #33).
+      [OriPekelman/tep#277](https://github.com/OriPekelman/tep/issues/277)
+      (idle keep-alive clients blocked Ctrl+C) is fixed and scheduled no longer
+      drops bursts, but prefork still waits out its 5 s keep-alive timeout behind
+      an idle client and returns 501 for WebSocket upgrades, which Action
+      Cable/Turbo Streams need. Prefork stays opt-in with
+      `SPINRAIL_SERVER=prefork`; the build warns when an app with live streams
+      asks for it.
 - [x] Reason phrases: the fork carries
       [OriPekelman/tep#278](https://github.com/OriPekelman/tep/pull/278).
 - [x] Compare notes with [rubys/roundhouse](https://github.com/rubys/roundhouse)
