@@ -417,6 +417,27 @@ class BuildTest < CompilerTest
     assert_includes ruby, %(Spinrail::Cable.upgrade(req, res, ApplicationCable::Connection.new(req)))
   end
 
+  def test_prefork_warns_about_websockets
+    previous = ENV.fetch("SPINRAIL_SERVER", nil)
+    files = {
+      "config/routes.rb" => %(Spinrail.routes.draw do\n get "/", to: "posts#index"\nend\n),
+      "db/schema.rb" => "Spinrail::Schema.define do\n create_table :posts do |t|\n t.string :title\n end\nend\n",
+      "app/models/post.rb" => "class Post < ApplicationRecord\nend\n",
+      "app/controllers/posts_controller.rb" => "class PostsController < ApplicationController\n def index\n end\nend\n",
+      "app/views/posts/index.html.erb" => "<%= turbo_stream_from :posts %>"
+    }
+    build = Spinrail::Build.new(minimal_app(files))
+    build.send(:generate)
+    assert_empty build.warnings
+
+    ENV["SPINRAIL_SERVER"] = "prefork"
+    build = Spinrail::Build.new(minimal_app(files))
+    build.send(:generate)
+    assert_match(/WebSocket upgrades/, build.warnings.join)
+  ensure
+    ENV["SPINRAIL_SERVER"] = previous
+  end
+
   def test_rails_health_check
     ruby = build("config/routes.rb" => %(Spinrail.routes.draw do\n get "up" => "rails/health#show", as: :rails_health_check\nend\n))
     assert_includes ruby, %(get "/up" do\n  "<!DOCTYPE html><html><body style=\\"background-color: green\\"></body></html>"\nend)

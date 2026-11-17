@@ -225,7 +225,7 @@ to the server.
 | `SPINRAIL_LOG_LEVEL` | `debug` (`info` in production) | SQL and templates only at `debug` |
 | `SPINRAIL_LOG_FILE` | stdout | |
 | `SPINRAIL_DATABASE` (build) | `sqlite` | `postgres` (experimental): uses `DATABASE_URL` and libpq from `pg_config` |
-| `SPINRAIL_SERVER` (build) | `scheduled` | `prefork` for production: tep's default server handles bursts better but ignores Ctrl+C on idle keep-alive connections ([OriPekelman/tep#277](https://github.com/OriPekelman/tep/issues/277)) |
+| `SPINRAIL_SERVER` (build) | `scheduled` | `prefork` is opt-in: one connection per worker, and no WebSockets (upgrades get 501), so apps using Action Cable/Turbo Streams need `scheduled` |
 | `SPINRAIL_FILTER_PARAMETERS` | `password,token,secret,...` | substrings, comma-separated |
 
 `config/application.rb` holds what is fixed at build time:
