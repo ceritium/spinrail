@@ -591,4 +591,15 @@ class BuildTest < CompilerTest
     assert_includes ruby, %(return true if name == "SyncJob")
     assert_raises(Spinrail::CompileError) { build("app/jobs/a_job.rb" => "class AJob < ApplicationJob\n  limits_concurrency to: 1\nend\n") }
   end
+
+  def test_app_commands_dispatch_before_serving
+    ruby = build("app/commands/grep.rb" => "class Grep\n  def self.run(argv)\n    0\n  end\nend\n",
+                 "app/commands/db/status.rb" => "module Db\n  class Status\n    def self.run(argv)\n      0\n    end\n  end\nend\n")
+    assert_includes ruby, "class Grep"
+    assert_includes ruby, "class Status"
+    assert_includes ruby, "if ARGV.length > 0 && !ARGV[0].start_with?(\"-\")"
+    assert_includes ruby, %(    if ARGV[0] == "grep"\n      exit(Grep.run(ARGV))\n    end)
+    assert_includes ruby, %(    if ARGV[0] == "db:status"\n      exit(Db::Status.run(ARGV))\n    end)
+    refute_includes build({}), "unknown command"
+  end
 end

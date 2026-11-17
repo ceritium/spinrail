@@ -79,7 +79,8 @@ bin/spinrail routes
 bin/spinrail test     # test/**/*_test.rb against the compiled binary
 bin/spinrail check    # static checks only, no compile (N+1 warnings too)
 bin/spinrail runner -e 'puts Entry.count'   # a script against the app's models
-bin/spinrail          # all commands: server, build, routes, test, clean, setup
+bin/spinrail command grep -k hello          # an app command from app/commands
+bin/spinrail          # all commands: server, build, routes, test, command, clean, setup
 ```
 
 The generated source lands in `tmp/spinrail/app.rb`, which is the place to look
@@ -207,6 +208,11 @@ to the server.
   spinel can't compile). The gem must compile with spinel.
 - i18n: `config/locales/*.yml`, `t(".title")`, `t("greeting", name: x)`,
   `I18n.locale = params[:locale]`, translated validation messages.
+- App commands: plain classes in `app/commands/**/*.rb` compile into the
+  binary; the first argument picks one instead of serving (`grep.rb` →
+  `grep`, `db/status.rb` → `db:status`) and its `self.run(argv)` returns the
+  exit status, so a release binary can carry its own CLI. `bin/spinrail command
+  NAME [args]` builds and runs it.
 
 ## Configuration
 
