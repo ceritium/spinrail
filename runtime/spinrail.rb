@@ -393,6 +393,8 @@ module Spinrail
   class RecordInvalid < StandardError; end
   class RecordNotDestroyed < StandardError; end
   class ParameterMissing < StandardError; end
+  # Model.new(params.require(:post)) without permit/expect, as in Rails.
+  class ForbiddenAttributesError < StandardError; end
 
   # A JSON request body flattened into form-style names: {"post": {"title":
   # "x"}} -> "post[title]" => "x", arrays -> "ids[0]", null -> "".
