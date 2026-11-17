@@ -6,6 +6,7 @@ Spinrail.routes.draw do
     end
     collection do
       get :search
+      post :unpermitted
     end
   end
   resource :profile, only: [:show]

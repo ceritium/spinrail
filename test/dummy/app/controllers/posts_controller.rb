@@ -41,6 +41,12 @@ class PostsController < ApplicationController
     redirect_to post_path(@post.id)
   end
 
+  # Mass assignment with params.require alone, no permit: must raise.
+  def unpermitted
+    @post = Post.new(params.require(:post))
+    redirect_to post_path(@post)
+  end
+
   def destroy
     @post.destroy
     redirect_to posts_path, notice: "Post deleted", status: :see_other

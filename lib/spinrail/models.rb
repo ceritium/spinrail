@@ -887,6 +887,7 @@ module Spinrail
           end
 
           def self.from_params(params)
+            raise Spinrail::ForbiddenAttributesError, "mass assignment needs params.require(...).permit(...)" unless params.filtered
             record = new
             record.assign_params(params)
             record
@@ -905,6 +906,7 @@ module Spinrail
           end
 
           def assign_params(params)
+            raise Spinrail::ForbiddenAttributesError, "mass assignment needs params.require(...).permit(...)" unless params.filtered
         #{indent(param_assignments, 4)}
             self
           end

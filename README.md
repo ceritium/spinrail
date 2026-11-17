@@ -152,6 +152,8 @@ to the server.
   exposure: value`, `redirect_to path, status:, notice:`, implicit render;
   `before_action`/`after_action`/`skip_*`, `rescue_from`, `session`, `flash`,
   CSRF protection, `_method` override.
+  Mass assignment (`Post.new(params.require(:post))`) needs `permit` or
+  `expect` first; otherwise it raises `Spinrail::ForbiddenAttributesError`.
 - Views: layout with `yield`, partials (`render "entry", entry: entry`),
   `<%= %>` escapes, `<%== %>` and `raw` don't, `form_with` and field
   helpers (`file_field` makes the form multipart), `link_to`, `button_to` (`params:` as hidden fields), `csrf_meta_tags`, `pluralize`.
