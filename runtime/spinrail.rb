@@ -1941,11 +1941,7 @@ module Spinrail
           if location[0, 1] == "/"
             parts = SpinelKit::Url.split_url(url)
             port = parts["port"]
-            unless port.empty? || port == "80" || port == "443"
-              port = ":" + port
-            else
-              port = ""
-            end
+            port = port.empty? || port == "80" || port == "443" ? "" : ":" + port
             location = parts["scheme"] + "://" + parts["host"] + port + location
           end
           return request(verb, location, body, headers, redirects - 1, raise_on_error)
@@ -1955,42 +1951,42 @@ module Spinrail
       res
     end
 
-    def self.get(url, headers = nil, raise_on_error = false)
+    def self.get(url, headers = nil, raise_on_error: false)
       request("GET", url, "", headers(headers), MAX_REDIRECTS, raise_on_error)
     end
 
-    def self.post(url, body, headers = nil, raise_on_error = false)
+    def self.post(url, body, headers = nil, raise_on_error: false)
       request("POST", url, body, headers(headers), MAX_REDIRECTS, raise_on_error)
     end
 
-    def self.put(url, body, headers = nil, raise_on_error = false)
+    def self.put(url, body, headers = nil, raise_on_error: false)
       request("PUT", url, body, headers(headers), MAX_REDIRECTS, raise_on_error)
     end
 
-    def self.patch(url, body, headers = nil, raise_on_error = false)
+    def self.patch(url, body, headers = nil, raise_on_error: false)
       request("PATCH", url, body, headers(headers), MAX_REDIRECTS, raise_on_error)
     end
 
-    def self.delete(url, headers = nil, raise_on_error = false)
+    def self.delete(url, headers = nil, raise_on_error: false)
       request("DELETE", url, "", headers(headers), MAX_REDIRECTS, raise_on_error)
     end
 
     # A request whose response body is JSON: parsed on success, HTTPError
     # otherwise (status 0, a network failure, included).
     def self.get_json(url, headers = nil)
-      JSON.parse(get(url, headers, true).body)
+      JSON.parse(get(url, headers, raise_on_error: true).body)
     end
 
     def self.post_json(url, obj, headers = nil)
-      post(url, JSON.generate(obj), json_headers(headers), true)
+      post(url, JSON.generate(obj), json_headers(headers), raise_on_error: true)
     end
 
     def self.put_json(url, obj, headers = nil)
-      put(url, JSON.generate(obj), json_headers(headers), true)
+      put(url, JSON.generate(obj), json_headers(headers), raise_on_error: true)
     end
 
     def self.patch_json(url, obj, headers = nil)
-      patch(url, JSON.generate(obj), json_headers(headers), true)
+      patch(url, JSON.generate(obj), json_headers(headers), raise_on_error: true)
     end
   end
 end

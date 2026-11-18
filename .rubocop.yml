@@ -185,7 +185,7 @@ Bundler:
 
 Style/RescueModifier:
   Enabled: false                # `rescue nil` in test cleanup
-Style/RedundantStringCoercion:
+Lint/RedundantStringCoercion:
   Exclude: ["runtime/**/*"]     # puts doesn't call to_s on spinel objects
 Naming/RescuedExceptionsVariableName:
   Enabled: false                # `rescue => e` would shadow a typed parameter

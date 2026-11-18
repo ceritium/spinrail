@@ -14,7 +14,7 @@ class PagesController < ApplicationController
   # Spinrail::HTTP against this same server, so the test exercises the
   # compiled client end to end (Tep::Http only exists inside the binary).
   def http_probe
-    res = Spinrail::HTTP.get("http://" + request.host + "/plain", nil, true)
+    res = Spinrail::HTTP.get("http://" + request.host + "/plain", nil, raise_on_error: true)
     render plain: "status=" + res.status.to_s + " body=" + res.body
   end
 
@@ -24,7 +24,7 @@ class PagesController < ApplicationController
   end
 
   def http_probe_redirect
-    res = Spinrail::HTTP.get("http://" + request.host + "/http/redirect_target", nil, true)
+    res = Spinrail::HTTP.get("http://" + request.host + "/http/redirect_target", nil, raise_on_error: true)
     render plain: "status=" + res.status.to_s + " body=" + res.body
   end
 
