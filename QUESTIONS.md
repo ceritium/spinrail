@@ -56,10 +56,16 @@ is easy to revisit.
   path). Fix in the fork by keeping relative paths relative to the cwd at
   run time, or leave upstream's behaviour?
 - `require "json"` and `JSON.generate`/`JSON.parse` (spinel's json package)
-  need a spinel fix: the json reflect bridge (`emit_obj_to_json_dispatch`)
-  composed `sp_Time_to_json` for a reopened builtin, but the method is
-  emitted as `sp_Time_oc_to_json`, so the program didn't compile. Fixed on
-  the `fixes/to-json-dispatch-reopened-builtin` branch of ceritium/spinel
-  (vendor/spinel is on it; the branch is also pushed there). A fresh
-  `vendor/` from `make setup` builds the pinned matz/spinel without the
-  fix; decide between an upstream PR and pinning the fork in toolchain.mk.
+  need two spinel fixes, on the `fixes/to-json-dispatch-reopened-builtin`
+  branch of ceritium/spinel (vendor/spinel is on it; pushed there):
+  (1) the json reflect bridge composed `sp_Time_to_json` for a reopened
+  builtin, but the method is emitted as `sp_Time_oc_to_json`, so the
+  program didn't compile; (2) once `JSON.generate` was reachable, the same
+  bridge emitted arms for primitives (Integer, Float, true/false, nil,
+  Array) that cast `v.v.p` to structs that don't exist (`sp_Integer`).
+  A fresh `vendor/` from `make setup` builds the pinned matz/spinel without
+  them; decide between an upstream PR and pinning the fork in toolchain.mk.
+- tep's `fixes-4` tag (https://github.com/ceritium/tep) raises outbound
+  HTTP responses from the 64 KiB static buffer to 4 MiB (heap, thread-local
+  under SP_THREADS), and `COOP_RESPONSE_MAX` follows. `TEP_REF` now
+  defaults to it; gitlab-style providers fetching whole files need it.
