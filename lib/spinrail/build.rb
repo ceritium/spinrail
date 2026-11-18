@@ -331,6 +331,29 @@ module Spinrail
         'require "base64"',
         # JSON for the runtime's Spinrail::HTTP and app integrations (spinel's json package).
         'require "json"',
+        # A .env in the working directory (or SPINRAIL_ENV_FILE) fills ENV at
+        # boot; variables already in the environment win, so deployments keep
+        # theirs. Quotes around a value are dropped, comments and blanks skipped.
+        <<~'RUBY',
+          env_file = ENV.fetch("SPINRAIL_ENV_FILE", ".env")
+          if File.exist?(env_file)
+            File.read(env_file).split("\n").each do |line|
+              stripped = line.strip
+              next if stripped.empty? || stripped.start_with?("#")
+
+              key, value = line.split("=", 2)
+              next if value.nil?
+
+              key = key.strip
+              value = value.strip
+              if value.length >= 2 && ((value.start_with?('"') && value.end_with?('"')) ||
+                                       (value.start_with?("'") && value.end_with?("'")))
+                value = value[1..-2]
+              end
+              ENV[key] = value if !key.empty? && ENV.fetch(key, "").empty?
+            end
+          end
+        RUBY
         *(attachments? ? ['require "digest"', 'require "fileutils"'] : []),
         # Time.now and Time.current in config.time_zone; the database keeps UTC.
         "ENV[\"TZ\"] = #{time_zone.inspect}",
