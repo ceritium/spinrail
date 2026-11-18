@@ -11,6 +11,27 @@ class PagesController < ApplicationController
     render plain: "word " + params[:word]
   end
 
+  # Spinrail::HTTP against this same server, so the test exercises the
+  # compiled client end to end (Tep::Http only exists inside the binary).
+  def http_probe
+    res = Spinrail::HTTP.get("http://" + request.host + "/plain", nil, true)
+    render plain: "status=" + res.status.to_s + " body=" + res.body
+  end
+
+  def http_probe_json
+    data = Spinrail::HTTP.get_json("http://" + request.host + "/widgets")
+    render plain: "ok=" + data["ok"].to_s + " tags=" + data["tags"].length.to_s
+  end
+
+  def http_probe_redirect
+    res = Spinrail::HTTP.get("http://" + request.host + "/http/redirect_target", nil, true)
+    render plain: "status=" + res.status.to_s + " body=" + res.body
+  end
+
+  def http_redirect_target
+    redirect_to "/plain"
+  end
+
   def badge
     @label = params[:label]
     expires_in 30.minutes, public: true

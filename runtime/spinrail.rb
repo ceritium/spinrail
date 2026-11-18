@@ -1887,3 +1887,110 @@ module Spinrail
     end
   end
 end
+
+# Outbound HTTP for integrations (OAuth, provider APIs, webhooks): a thin
+# client over Tep::Http that follows redirects (Tep::Http doesn't), raises
+# an error carrying the status, and encodes/decodes JSON. Tep caps each
+# response at ~64 KB; keep provider API pages small.
+module Spinrail
+  class HTTPError < StandardError
+    attr_reader :status, :body
+
+    def initialize(status, body)
+      @status = status
+      @body = body
+      super("HTTP " + status.to_s)
+    end
+  end
+
+  module HTTP
+    REDIRECTS = [301, 302, 303, 307, 308].freeze
+    MAX_REDIRECTS = 5
+
+    # A fresh headers hash (String keys and values), with extra merged in.
+    def self.headers(extra = nil)
+      h = Tep.str_hash
+      unless extra.nil?
+        extra.each { |k, v| h[k] = v }
+      end
+      h
+    end
+
+    def self.json_headers(extra = nil)
+      h = headers(extra)
+      h["Content-Type"] = "application/json"
+      h
+    end
+
+    def self.bearer(token)
+      h = Tep.str_hash
+      h["Authorization"] = "Bearer " + token
+      h
+    end
+
+    # The workhorse: verb, absolute url, body, headers, redirects left,
+    # raise_on_error. Returns a Tep::Http::Response (.status, .headers,
+    # .body); .status is 0 on network failure. Follows 3xx Location
+    # headers up to MAX_REDIRECTS times (same verb, same body).
+    def self.request(verb, url, body, headers, redirects, raise_on_error)
+      res = Tep::Http.send_req(verb, url, body, headers)
+      if REDIRECTS.include?(res.status) && redirects > 0
+        location = res.headers["location"]
+        unless location.empty?
+          # A root-relative Location resolves against the current origin.
+          if location[0, 1] == "/"
+            parts = SpinelKit::Url.split_url(url)
+            port = parts["port"]
+            unless port.empty? || port == "80" || port == "443"
+              port = ":" + port
+            else
+              port = ""
+            end
+            location = parts["scheme"] + "://" + parts["host"] + port + location
+          end
+          return request(verb, location, body, headers, redirects - 1, raise_on_error)
+        end
+      end
+      raise HTTPError.new(res.status, res.body) if raise_on_error && (res.status < 200 || res.status >= 300)
+      res
+    end
+
+    def self.get(url, headers = nil, raise_on_error = false)
+      request("GET", url, "", headers(headers), MAX_REDIRECTS, raise_on_error)
+    end
+
+    def self.post(url, body, headers = nil, raise_on_error = false)
+      request("POST", url, body, headers(headers), MAX_REDIRECTS, raise_on_error)
+    end
+
+    def self.put(url, body, headers = nil, raise_on_error = false)
+      request("PUT", url, body, headers(headers), MAX_REDIRECTS, raise_on_error)
+    end
+
+    def self.patch(url, body, headers = nil, raise_on_error = false)
+      request("PATCH", url, body, headers(headers), MAX_REDIRECTS, raise_on_error)
+    end
+
+    def self.delete(url, headers = nil, raise_on_error = false)
+      request("DELETE", url, "", headers(headers), MAX_REDIRECTS, raise_on_error)
+    end
+
+    # A request whose response body is JSON: parsed on success, HTTPError
+    # otherwise (status 0, a network failure, included).
+    def self.get_json(url, headers = nil)
+      JSON.parse(get(url, headers, true).body)
+    end
+
+    def self.post_json(url, obj, headers = nil)
+      post(url, JSON.generate(obj), json_headers(headers), true)
+    end
+
+    def self.put_json(url, obj, headers = nil)
+      put(url, JSON.generate(obj), json_headers(headers), true)
+    end
+
+    def self.patch_json(url, obj, headers = nil)
+      patch(url, JSON.generate(obj), json_headers(headers), true)
+    end
+  end
+end

@@ -329,6 +329,8 @@ module Spinrail
         # Rails apps get SecureRandom and Base64 without asking (Active Support loads them).
         'require "securerandom"',
         'require "base64"',
+        # JSON for the runtime's Spinrail::HTTP and app integrations (spinel's json package).
+        'require "json"',
         *(attachments? ? ['require "digest"', 'require "fileutils"'] : []),
         # Time.now and Time.current in config.time_zone; the database keeps UTC.
         "ENV[\"TZ\"] = #{time_zone.inspect}",

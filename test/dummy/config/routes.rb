@@ -17,6 +17,10 @@ Spinrail.routes.draw do
     resources :posts, only: [:index]
   end
   get "/home", to: "pages#home"
+  get "/http/probe", to: "pages#http_probe"
+  get "/http/probe_json", to: "pages#http_probe_json"
+  get "/http/probe_redirect", to: "pages#http_probe_redirect"
+  get "/http/redirect_target", to: "pages#http_redirect_target"
   get "/badge/:label", to: "pages#badge"
   get "/mark", to: "pages#mark"
   get "/files/*path", to: "pages#file", as: :files

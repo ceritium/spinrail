@@ -55,3 +55,11 @@ is easy to revisit.
   (hit by the spinelgems mirror; worked around by building in its final
   path). Fix in the fork by keeping relative paths relative to the cwd at
   run time, or leave upstream's behaviour?
+- `require "json"` and `JSON.generate`/`JSON.parse` (spinel's json package)
+  need a spinel fix: the json reflect bridge (`emit_obj_to_json_dispatch`)
+  composed `sp_Time_to_json` for a reopened builtin, but the method is
+  emitted as `sp_Time_oc_to_json`, so the program didn't compile. Fixed on
+  the `fixes/to-json-dispatch-reopened-builtin` branch of ceritium/spinel
+  (vendor/spinel is on it; the branch is also pushed there). A fresh
+  `vendor/` from `make setup` builds the pinned matz/spinel without the
+  fix; decide between an upstream PR and pinning the fork in toolchain.mk.
