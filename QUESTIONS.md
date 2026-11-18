@@ -57,14 +57,17 @@ is easy to revisit.
   run time, or leave upstream's behaviour?
 - `require "json"` and `JSON.generate`/`JSON.parse` (spinel's json package)
   need two spinel fixes, on the `fixes/to-json-dispatch-reopened-builtin`
-  branch of ceritium/spinel (vendor/spinel is on it; pushed there):
+  branch of ceritium/spinel, tagged `fixes-1` (vendor/spinel is on it;
+  branch and tag are pushed):
   (1) the json reflect bridge composed `sp_Time_to_json` for a reopened
   builtin, but the method is emitted as `sp_Time_oc_to_json`, so the
   program didn't compile; (2) once `JSON.generate` was reachable, the same
   bridge emitted arms for primitives (Integer, Float, true/false, nil,
   Array) that cast `v.v.p` to structs that don't exist (`sp_Integer`).
-  A fresh `vendor/` from `make setup` builds the pinned matz/spinel without
-  them; decide between an upstream PR and pinning the fork in toolchain.mk.
+  `SPINEL_REPO`/`SPINEL_REF` in toolchain.mk now override the source, so
+  an app pins the fork (`SPINEL_REPO=https://github.com/ceritium/spinel
+  SPINEL_REF=fixes-1`); the default stays upstream matz/spinel. An
+  upstream PR is still pending.
 - tep's `fixes-4` tag (https://github.com/ceritium/tep) raises outbound
   HTTP responses from the 64 KiB static buffer to 4 MiB (heap, thread-local
   under SP_THREADS), and `COOP_RESPONSE_MAX` follows. `TEP_REF` now

@@ -2,8 +2,11 @@
 # tep is a fork (upstream main plus fixes not yet proposed upstream), built
 # and tested against spinel at SPINEL_REF. Bump TEP_REF to a new fixes-N tag
 # to pick up fork changes; setup moves vendor/tep to it.
-# A matz/spinel commit (or tag); setup moves vendor/spinel to it.
-SPINEL_REF    := 2026.10.25
+# A spinel commit (or tag); setup moves vendor/spinel to it. The default is
+# upstream matz/spinel; apps that need a fork pass SPINEL_REPO and
+# SPINEL_REF (e.g. ceritium/spinel's fixes-1 for the json dispatch fixes).
+SPINEL_REPO   ?= https://github.com/matz/spinel
+SPINEL_REF    ?= 2026.10.25
 TEP_REPO      ?= https://github.com/ceritium/tep
 TEP_REF       ?= fixes-4
 SPINELKIT_REF := v0.3.1
@@ -39,7 +42,7 @@ $(SPINEL): $(SPINEL_STAMP)
 
 $(SPINEL_STAMP):
 	[ -d $(SPINEL_DIR)/.git ] || git init --quiet $(SPINEL_DIR)
-	cd $(SPINEL_DIR) && git fetch --quiet --depth 1 https://github.com/matz/spinel $(SPINEL_REF) && \
+	cd $(SPINEL_DIR) && git fetch --quiet --depth 1 $(SPINEL_REPO) $(SPINEL_REF) && \
 	  git -c advice.detachedHead=false checkout --quiet FETCH_HEAD
 	$(MAKE) -C $(SPINEL_DIR) deps
 	$(MAKE) -C $(SPINEL_DIR) -j$(JOBS)
