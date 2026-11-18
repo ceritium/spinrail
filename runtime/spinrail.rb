@@ -1706,6 +1706,8 @@ module Spinrail
     def connect = nil
     def rejected? = @rejected
     def cookie_get_signed(key) = Spinrail.verify_signed(@req.cookies[key])
+    # The signed session cookie, as the controllers read it.
+    def session_get(key) = @req.session.data[key]
 
     def reject_unauthorized_connection
       @rejected = true
