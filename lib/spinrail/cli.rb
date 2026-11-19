@@ -117,6 +117,11 @@ module Spinrail
         rescue CompileError => e
           warn "spinrail: #{e.message}"
           next
+        rescue StandardError => e
+          # A failed build must not take the running server down (a concurrent
+          # `bin/spinrail build` can delete the generated file mid-watch).
+          warn "spinrail: build failed (#{e.class}: #{e.message}); keeping the running binary"
+          next
         end
         stop_server(pid)
         File.rename(next_binary, binary)

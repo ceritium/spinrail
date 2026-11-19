@@ -331,11 +331,13 @@ module Spinrail
         'require "base64"',
         # JSON for the runtime's Spinrail::HTTP and app integrations (spinel's json package).
         'require "json"',
-        # A .env in the working directory (or SPINRAIL_ENV_FILE) fills ENV at
-        # boot; variables already in the environment win, so deployments keep
-        # theirs. Quotes around a value are dropped, comments and blanks skipped.
+        # A .env fills ENV at boot: SPINRAIL_ENV_FILE, else ./.env, else the
+        # app's own .env (so server and worker agree however they are
+        # started). Variables already in the environment win, so deployments
+        # keep theirs. Quotes dropped, comments and blanks skipped.
         <<~'RUBY',
           env_file = ENV.fetch("SPINRAIL_ENV_FILE", ".env")
+          env_file = #{File.join(@app, ".env").inspect} unless File.exist?(env_file)
           if File.exist?(env_file)
             File.read(env_file).split("\n").each do |line|
               stripped = line.strip
